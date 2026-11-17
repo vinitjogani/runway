@@ -1,0 +1,174 @@
+/*
+ * Landing-page tokens.
+ *
+ * Only what the shared design tokens (design/tokens.css) don't cover:
+ * page layout, a few display sizes, and the surfaces that are the landing's
+ * own (the translucent header, the app preview, the dark Markdown card).
+ * Components reference these and the global tokens, never raw values.
+ */
+
+:root {
+  /* ---- Layout ------------------------------------------------------------ */
+  --landing-max-width: 67.5rem; /* 1080px, gutters included */
+  --landing-gutter: var(--space-4);
+  --landing-section-space: var(--space-24); /* 96px phone → 160px desktop */
+  --landing-hero-space: var(--space-16);
+  --landing-header-height: 3.5rem;
+  --landing-hero-lede-measure: 48rem; /* 768px: the hero lede in two lines on wide screens */
+  --landing-lede-measure: 35rem; /* 560px lede paragraphs */
+  --landing-mock-width: 61.25rem; /* 980px app preview */
+  --landing-mock-sidebar: 13.75rem; /* 220px */
+  --landing-mock-height: 27.5rem; /* 440px */
+  --landing-mock-text-measure: 28.75rem; /* 460px */
+  --landing-answer-width: 27.5rem; /* 440px */
+  --landing-heading-measure: 40rem; /* 640px */
+  --landing-install-measure: 32.5rem; /* 520px */
+  --landing-faq-measure: 21.25rem; /* 340px */
+  /* Auto-fit grid columns: as many as fit at this minimum, never wider than the screen. */
+  --landing-column: min(16.25rem, 100%); /* 260px: pillars, steps, features */
+  --landing-column-narrow: min(13.75rem, 100%); /* 220px: stats */
+  --landing-column-wide: min(21.25rem, 100%); /* 340px: the files split */
+  --landing-block-space: var(--space-12); /* heading → grid, 48px → 56px */
+  --landing-cta-space-end: var(--space-24); /* below the closing CTA */
+
+  /* Off-grid steps the design uses (10/14/18/22/28px). */
+  --landing-space-2-5: 0.625rem;
+  --landing-space-3-5: 0.875rem;
+  --landing-space-4-5: 1.125rem;
+  --landing-space-5-5: 1.375rem;
+  --landing-space-7: 1.75rem;
+
+  /* ---- Type -------------------------------------------------------------- */
+  --landing-font: 'Geist Variable', 'Geist Fallback', var(--font-ui);
+  --landing-text-caption: 0.8125rem; /* 13px mono captions, footer */
+  --landing-text-body: 0.9375rem; /* 15px card copy, buttons */
+  --landing-text-lede: 1.0625rem; /* 17px section ledes */
+  --landing-text-hero-lede: 1.1875rem; /* 19px */
+  --landing-text-mock-title: 1.75rem; /* 28px note title in the preview */
+  --landing-text-cta: clamp(2.25rem, 5.5vw, 3.75rem);
+  --landing-text-stat: clamp(3.5rem, 7vw, 5.25rem); /* 56px → 84px */
+  --landing-text-display: clamp(2.5rem, 7vw, 5.5rem); /* "Open. Write. Ask." */
+  /*
+   * The headline fills the content width: two lines ("Fast, private apps that" is
+   * under 10em wide), at most four short lines on phones.
+   */
+  --landing-text-hero: min(3.5rem, (100vw - 2 * var(--landing-gutter)) / 7.7);
+  --landing-text-product: clamp(2.25rem, 5.6vw, 4rem); /* the apps' section headlines */
+  --landing-apps-width: 60rem; /* 960px: the two app cards under the hero */
+  --landing-text-code-big: clamp(2.25rem, 6vw, 4rem); /* boarding-pass airport codes */
+  --landing-leading-hero: 1.02;
+  --landing-leading-heading: 1.08;
+  --landing-leading-cta: 1.05;
+  --landing-leading-stat: 1;
+  --landing-tracking-brand: -0.01em;
+  --landing-leading-code: 1.7;
+  --landing-tracking-caption: 0.06em; /* the preview's sidebar group labels */
+
+  /* ---- Radii ------------------------------------------------------------- */
+  --landing-radius-window: 1rem; /* the preview's window frame */
+  --landing-radius-card: var(--radius-xl);
+  --landing-radius-answer: 1rem;
+  --landing-radius-panel: 1.375rem; /* cards, the board, the Mac panel, the ticket */
+
+  /* ---- Header ------------------------------------------------------------ */
+  --landing-header-bg: color-mix(in srgb, var(--color-bg-subtle) 85%, transparent);
+  --landing-header-blur: blur(12px);
+  --landing-header-border: color-mix(in srgb, var(--color-border) 55%, var(--color-divider));
+
+  /* ---- App preview ------------------------------------------------------- */
+  --landing-mock-shadow: 0 1px 0 rgb(25 24 23 / 0.03), 0 30px 60px -30px rgb(25 24 23 / 0.18);
+  --landing-mock-dot-size: 0.625rem;
+
+  /* ---- Markdown card (dark in both themes) ------------------------------- */
+  --landing-code-bg: #191817;
+  --landing-code-text: #e8e5df;
+  --landing-code-muted: #8a867e;
+  --landing-code-border: #2e2c2a;
+  --landing-code-accent: #86b6ff; /* runway blue, dark */
+  --landing-code-ring: transparent;
+
+  /* ---- Dark panels (departures board, Mac app): dark in both themes -------- */
+  --landing-panel-bg: var(--landing-code-bg);
+  --landing-panel-text: var(--landing-code-text);
+  --landing-panel-muted: #a8a49c; /* >= 4.5:1 on the panel */
+  --landing-panel-line: var(--landing-code-border);
+  --landing-panel-accent: var(--landing-code-accent);
+  --landing-panel-ok: #7fe0a6;
+  --landing-panel-ok-soft: rgb(95 208 143 / 0.14);
+  --landing-panel-bad: #ff9a8c;
+  --landing-panel-bad-soft: rgb(255 128 112 / 0.16);
+  --landing-panel-shadow: 0 40px 70px -45px rgb(25 24 23 / 0.6);
+  --landing-panel-inset: #0e0d0c; /* a well inside a dark panel (the terminal) */
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --landing-plane: #d4263b; /* the paper plane: the logo's red */
+  --landing-trail: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  --landing-lift-shadow: 0 14px 28px -14px color-mix(in srgb, var(--color-accent) 75%, transparent);
+  --landing-card-shadow-hover: 0 0 0 var(--border-width) var(--color-border-strong), 0 30px 50px -30px rgb(25 24 23 / 0.35);
+  --landing-float-shadow: 0 0 0 var(--border-width) rgb(25 24 23 / 0.07), 0 18px 36px -18px rgb(25 24 23 / 0.35);
+  --landing-ease-swing: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --landing-duration-hover: 0.5s;
+  --landing-perspective: 1800px;
+  --landing-tilt-x: 0deg; /* set by tilt.ts as the pointer moves over the hero */
+  --landing-tilt-y: 0deg;
+  --landing-backdrop-text: color-mix(in srgb, var(--color-text) 5%, transparent);
+
+  /* ---- Caps preview: the recording's backdrops, camera and record dot ------ */
+  --landing-caps-backdrop: linear-gradient(135deg, #f7c59f 0%, #ec8a5c 48%, #c2533c 100%);
+  --landing-caps-backdrop-2: linear-gradient(135deg, #c9d6ff 0%, #8fa3e8 100%);
+  --landing-caps-backdrop-3: linear-gradient(135deg, #b9e4c9 0%, #5fa98a 100%);
+  --landing-caps-backdrop-4: linear-gradient(135deg, #3a3633 0%, #191817 100%);
+  --landing-caps-backdrop-5: linear-gradient(135deg, #f2f0ec 0%, #d9d4cb 100%);
+  /*
+   * Someone on camera, as a portrait-mode blur would show them: a soft, tonal
+   * silhouette in the backdrop's warm colours, lit from the window (top left),
+   * with a rim of light. No faces or features: it reads as a camera, not a cartoon.
+   */
+  --landing-caps-camera-bg: linear-gradient(160deg, #f7e2d3 0%, #eab89d 52%, #cf8463 100%);
+  --landing-caps-silhouette: rgb(122 52 30 / 0.34);
+  --landing-caps-person:
+    radial-gradient(circle at 26% 16%, rgb(255 255 255 / 0.6) 0, transparent 46%),
+    radial-gradient(circle at 54% 42%, var(--landing-caps-silhouette) 0 13%, transparent 23%),
+    radial-gradient(ellipse 46% 36% at 54% 104%, var(--landing-caps-silhouette) 0 70%, transparent 100%), var(--landing-caps-camera-bg);
+  --landing-caps-rec: #ef4444;
+  --landing-caps-screen-shadow: 0 18px 36px -16px rgb(60 20 10 / 0.45);
+  --landing-caps-bubble-ring: #ffffff;
+  --landing-caps-thumb-shadow: 0 2px 4px rgb(60 20 10 / 0.25);
+  --landing-caps-pad: 7%; /* the composition's padding (animated in motion.css) */
+}
+
+/* Registered so the Caps preview's padding can ease (motion.css). */
+@property --landing-caps-pad {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 7%;
+}
+
+:root[data-theme='dark'] {
+  --landing-mock-shadow: var(--shadow-lg);
+  /* A notch below the dark canvas, with a hairline so it doesn't dissolve into it. */
+  --landing-code-bg: #141312;
+  --landing-code-ring: var(--color-border);
+  --landing-panel-shadow: 0 0 0 var(--border-width) var(--color-border);
+  --landing-float-shadow: 0 0 0 var(--border-width) var(--color-border), 0 18px 36px -18px rgb(0 0 0 / 0.6);
+  --landing-card-shadow-hover: 0 0 0 var(--border-width) var(--color-border-strong), 0 30px 50px -30px rgb(0 0 0 / 0.7);
+  --landing-plane: #ff5a6a;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --landing-gutter: var(--space-6);
+    --landing-text-hero: min(5.75rem, (100vw - 2 * var(--landing-gutter)) / 10);
+    --landing-section-space: 8rem;
+    --landing-hero-space: var(--space-24);
+    --landing-block-space: 3.5rem; /* 56px */
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --landing-section-space: 10rem; /* 160px */
+    --landing-hero-space: 7rem; /* 112px */
+    --landing-cta-space-end: 7.5rem; /* 120px */
+  }
+}

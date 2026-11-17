@@ -1,3 +1,5 @@
+<p align="center"><img src="brand/logo.svg" width="96" alt="Runway logo"></p>
+
 # Runway
 
 **Build SwiftUI and AppKit Mac apps, unchanged, for Linux and Windows.** Runway is a
@@ -365,3 +367,16 @@ build directory, so Runway's own modules compile once for all of them
 Environment: `RUNWAY_BACKEND=headless`, `RUNWAY_COLOR_SCHEME=light|dark`,
 `RUNWAY_SCREENSHOT=out.png` (render every window to PNG, then quit),
 `RUNWAY_WORD_VECTORS=/dir` (fastText `en.vec`… for NaturalLanguage).
+
+## Website
+
+[`site/`](site) is Runway's one-page website (static HTML, built with Vite):
+
+```sh
+cd site
+npm install
+npm run dev     # http://localhost:5173
+npm run build   # site/dist, deploy anywhere static
+```
+
+The logo and colours are in [`brand/`](brand).

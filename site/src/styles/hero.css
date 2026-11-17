@@ -1,0 +1,153 @@
+/* Hero: headline (words rise in, one highlighted), lede, the two apps (apps.css), trust line, paper planes. */
+
+.hero {
+  position: relative;
+  padding-block-start: var(--landing-hero-space);
+  overflow-x: clip;
+  text-align: center;
+}
+
+.hero__inner {
+  position: relative;
+}
+
+.hero__title {
+  font-size: var(--landing-text-hero);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-tightest);
+  line-height: var(--landing-leading-hero);
+  perspective: 900px;
+}
+
+.hero__word {
+  display: inline-block;
+  transform-origin: 50% 100%;
+}
+
+/* A highlighter stroke under "private" (and the apps' marked words, product.css). */
+.hero__word--marked,
+.product__marked {
+  background-image: linear-gradient(var(--color-selection), var(--color-selection));
+  background-position: 0 86%;
+  background-repeat: no-repeat;
+  background-size: 100% 34%;
+}
+
+.hero__lede {
+  max-inline-size: var(--landing-hero-lede-measure);
+  margin: var(--space-6) auto 0;
+  text-wrap: balance;
+  color: var(--color-text-muted);
+  font-size: var(--landing-text-hero-lede);
+}
+
+.hero__trust {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1) var(--space-6);
+  margin-block-start: var(--space-8);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--landing-text-caption);
+  list-style: none;
+}
+
+.hero__trust li {
+  display: flex;
+  gap: var(--space-6);
+}
+
+.hero__trust a {
+  text-decoration: underline;
+  text-decoration-thickness: var(--border-width);
+  text-underline-offset: 0.2em;
+}
+
+.hero__trust a:hover {
+  color: var(--color-accent-text);
+}
+
+/* The dot separators are decoration: generated content, alt text left empty. */
+.hero__trust li + li::before {
+  content: '·' / '';
+}
+
+/* On phones the line wraps: no separators, so a row never starts with a dot. */
+@media (max-width: 479px) {
+  .hero__trust {
+    column-gap: var(--space-4);
+  }
+
+  .hero__trust li + li::before {
+    content: none;
+  }
+}
+
+/* ---- Paper planes ----------------------------------------------------------
+ * Each flyer is one row: its contrail, then the plane, nose to the right. The
+ * row moves as a whole and never rotates, so the trail always meets the tail.
+ */
+
+.sky {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.flyer {
+  --flyer-size: 1.75rem;
+
+  position: absolute;
+  inset-inline-start: 0;
+  display: flex;
+  align-items: center;
+  color: var(--landing-plane);
+  translate: -12rem 0;
+}
+
+.flyer__trail {
+  inline-size: 9rem;
+  /* Tucks under the plane's tail notch (x = 9 of 32). */
+  margin-inline-end: calc(var(--flyer-size) * -9 / 32);
+  border-block-start: 2px dashed var(--landing-trail);
+  mask-image: linear-gradient(to right, transparent, #000);
+}
+
+.flyer__plane {
+  position: relative;
+  inline-size: var(--flyer-size);
+  block-size: var(--flyer-size);
+}
+
+.flyer--1 {
+  inset-block-start: 5.5rem;
+}
+
+.flyer--2 {
+  --flyer-size: 1.25rem;
+
+  inset-block-start: 58%; /* behind the app cards: it shows beside them */
+  opacity: 0.55;
+}
+
+.flyer--3 {
+  --flyer-size: 1rem;
+
+  inset-block-start: 2.5rem;
+  opacity: 0.35;
+}
+
+/* Phones: one plane, above the headline. */
+@media (max-width: 639px) {
+  .flyer--1 {
+    inset-block-start: 1.25rem;
+  }
+
+  .flyer--2,
+  .flyer--3 {
+    display: none;
+  }
+}

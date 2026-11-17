@@ -1,0 +1,89 @@
+/* FAQ: intro beside an accordion of native <details> (one open at a time via `name`). */
+
+.faq {
+  display: grid;
+  gap: var(--space-10) var(--space-16);
+  align-items: start;
+}
+
+.faq__lede {
+  max-inline-size: var(--landing-faq-measure);
+}
+
+.faq__list {
+  min-inline-size: 0;
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.faq__item {
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.faq__question {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-6);
+  min-block-size: var(--tap-target);
+  padding-block: var(--space-5);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq__question::-webkit-details-marker {
+  display: none;
+}
+
+/* A round "+" that turns into a filled "×" when the answer is open. */
+.faq__question::after {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
+  /* Two centred bars, so the cross stays centred as it rotates (a "+" glyph sits off-centre). */
+  background-image: linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size:
+    0.625rem 1.5px,
+    1.5px 0.625rem;
+  color: var(--color-text-muted);
+  content: '' / '';
+  transition:
+    rotate var(--landing-duration-hover) var(--landing-ease-swing),
+    background-color var(--duration-slow) var(--ease-out);
+}
+
+.faq__item[open] > .faq__question::after {
+  background-color: var(--color-primary);
+  box-shadow: none;
+  color: var(--color-on-primary);
+  rotate: 45deg;
+}
+
+.faq__question:hover {
+  color: var(--color-accent-text);
+}
+
+.faq__answer {
+  padding: 0 var(--space-10) var(--landing-space-5-5) 0;
+  color: var(--color-text-muted);
+  font-size: var(--landing-text-body);
+}
+
+@media (max-width: 639px) {
+  .faq__answer {
+    padding-inline-end: 0;
+  }
+}
+
+@media (min-width: 960px) {
+  .faq {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+}

@@ -1,0 +1,236 @@
+/* "Why Flight": three cards, each with a small looping illustration. */
+
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--landing-column), 1fr));
+  gap: var(--space-5);
+  margin-block-start: var(--space-12);
+}
+
+.pillar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.pillar__label {
+  margin-block-start: var(--space-2);
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.pillar__title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.pillar__text {
+  color: var(--color-text-muted);
+  font-size: var(--landing-text-body);
+}
+
+.pillar__text code {
+  padding: var(--border-width) var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--landing-text-caption);
+}
+
+@media (min-width: 640px) {
+  .pillars {
+    margin-block-start: var(--landing-block-space);
+  }
+
+  .pillar {
+    padding: var(--space-8);
+  }
+}
+
+/* ---- The illustrations (decoration, aria-hidden) ------------------------- */
+
+.pillar__art {
+  position: relative;
+  block-size: 10.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-muted);
+  transition: transform var(--landing-duration-hover) var(--landing-ease-swing);
+}
+
+@media (hover: hover) {
+  .card:hover .pillar__art {
+    transform: translateZ(40px);
+  }
+}
+
+/* Simple: "/" opens the block menu and picks Checklist. */
+.pillar__art--slash {
+  padding: var(--space-5);
+  font-size: var(--landing-text-body);
+}
+
+.slash__line + .slash__line {
+  margin-block-start: var(--space-2);
+}
+
+.slash__key {
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+}
+
+.slash__menu {
+  position: absolute;
+  inset-inline-start: 2rem;
+  inset-block-start: 4.75rem;
+  display: flex;
+  flex-direction: column;
+  inline-size: 11rem;
+  padding: var(--space-1-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--landing-float-shadow);
+  font-size: var(--landing-text-caption);
+  transform-origin: 0 0;
+}
+
+.slash__menu span {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+/* Private AI: a dot orbits a device; "the cloud" is struck out. */
+.pillar__art--orbit {
+  display: grid;
+  place-items: center;
+  background: var(--landing-panel-bg);
+}
+
+.orbit__ring {
+  position: absolute;
+  border-radius: var(--radius-full);
+}
+
+.orbit__ring--outer {
+  inline-size: 14rem;
+  block-size: 14rem;
+  border: var(--border-width) dashed color-mix(in srgb, var(--landing-panel-accent) 35%, transparent);
+}
+
+.orbit__ring--spin {
+  inline-size: 9.5rem;
+  block-size: 9.5rem;
+  border: var(--border-width) solid rgb(255 255 255 / 0.12);
+}
+
+.orbit__ring--inner {
+  inline-size: 6rem;
+  block-size: 6rem;
+}
+
+.orbit__dot {
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-start: calc(50% - 5px);
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: var(--radius-full);
+  background: var(--landing-panel-accent);
+  box-shadow: 0 0 14px var(--landing-panel-accent);
+}
+
+.orbit__dot--small {
+  inset-block: auto -3px;
+  inline-size: 6px;
+  block-size: 6px;
+  background: var(--landing-panel-text);
+  box-shadow: none;
+}
+
+.orbit__device {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 3.6rem;
+  block-size: 5.25rem;
+  border: 2px solid var(--landing-panel-text);
+  border-radius: var(--radius-xl);
+}
+
+.orbit__cloud {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-4);
+  color: var(--landing-panel-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  text-decoration: line-through;
+}
+
+/* You own your data: three Markdown files that fan out on hover. */
+.pillar__art--files {
+  display: grid;
+  place-items: center;
+}
+
+.fan__file {
+  position: absolute;
+  inline-size: 6.9rem;
+  block-size: 8.1rem;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--landing-float-shadow);
+  transition: transform var(--landing-duration-hover) var(--landing-ease-swing);
+}
+
+.fan__file--left {
+  transform: translate(-22px, 4px) rotate(-6deg);
+}
+
+.fan__file--right {
+  transform: translate(22px, 4px) rotate(6deg);
+}
+
+.fan__file--front {
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.fan__file--front i {
+  block-size: 6px;
+  border-radius: 3px;
+  background: var(--color-border);
+}
+
+.fan__file--front i:nth-of-type(1) {
+  inline-size: 70%;
+  margin-block-start: var(--space-1);
+}
+.fan__file--front i:nth-of-type(2) {
+  inline-size: 90%;
+}
+.fan__file--front i:nth-of-type(3) {
+  inline-size: 55%;
+}
+
+@media (hover: hover) {
+  .card:hover .fan__file--left {
+    transform: translate(-46px, 6px) rotate(-12deg);
+  }
+
+  .card:hover .fan__file--right {
+    transform: translate(46px, 6px) rotate(12deg);
+  }
+}

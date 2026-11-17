@@ -1,0 +1,515 @@
+/*
+ * All of the landing page's motion, in one place.
+ *
+ * Every element's resting style (in its own partial) is its final state, so
+ * the page reads the same with motion off: reduced-motion visitors and
+ * browsers without scroll-driven animations simply see everything in place.
+ * Time-based loops run only with `prefers-reduced-motion: no-preference`;
+ * scroll-linked effects additionally need `animation-timeline` support.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ---- Hero entrance ----------------------------------------------------- */
+
+  .hero__word {
+    animation: landing-rise 1s var(--landing-ease-swing) both;
+  }
+
+  .hero__word:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .hero__word:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .hero__word:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .hero__word:nth-child(5) {
+    animation-delay: 240ms;
+  }
+  .hero__word:nth-child(6) {
+    animation-delay: 300ms;
+  }
+  .hero__word:nth-child(7) {
+    animation-delay: 360ms;
+  }
+  .hero__word:nth-child(8) {
+    animation-delay: 420ms;
+  }
+  .hero__word:nth-child(9) {
+    animation-delay: 480ms;
+  }
+
+  /* The highlighted word rises with the others, then the highlighter sweeps under it. */
+  .hero__word--marked {
+    animation:
+      landing-rise 1s 60ms var(--landing-ease-swing) both,
+      landing-sweep 1.1s 1s var(--ease-in-out) both;
+  }
+
+  .hero__lede,
+  .apps,
+  .hero__trust {
+    animation: landing-fade-up 0.9s 0.5s var(--landing-ease-swing) both;
+  }
+
+  .apps {
+    animation-delay: 0.65s;
+  }
+
+  .hero__trust {
+    animation-delay: 0.85s;
+  }
+
+  @keyframes landing-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.45em) rotateX(-55deg);
+    }
+  }
+
+  @keyframes landing-sweep {
+    from {
+      background-size: 0% 34%;
+    }
+  }
+
+  @keyframes landing-fade-up {
+    from {
+      opacity: 0;
+      translate: 0 16px;
+    }
+  }
+
+  /* ---- Paper planes: straight, level flight; trail and plane move as one -- */
+
+  .flyer {
+    animation: landing-fly 18s linear infinite;
+  }
+
+  .flyer--2 {
+    animation-duration: 26s;
+    animation-delay: -15s;
+  }
+
+  .flyer--3 {
+    animation-duration: 34s;
+    animation-delay: -24s;
+  }
+
+  .flyer--1 {
+    animation-delay: -4s;
+  }
+
+  @keyframes landing-fly {
+    from {
+      translate: -12rem 0;
+    }
+    to {
+      translate: calc(100vw + 2rem) 0;
+    }
+  }
+
+  /* Trail and plane bob in step, so the trail stays on the tail. */
+  .flyer > * {
+    animation: landing-bob 3.4s ease-in-out infinite;
+  }
+
+  @keyframes landing-bob {
+    50% {
+      translate: 0 -6px;
+    }
+  }
+
+  /* ---- Loops ------------------------------------------------------------- */
+
+  .caret {
+    animation: landing-blink 1s steps(1) infinite;
+  }
+
+  @keyframes landing-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .answer__dots span {
+    animation: landing-dot 1s ease-in-out infinite;
+  }
+
+  .answer__dots span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .answer__dots span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes landing-dot {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+      translate: 0 -3px;
+    }
+  }
+
+  .answer__cite:not([hidden]) {
+    animation: landing-pop 0.5s var(--ease-spring) both;
+  }
+
+  @keyframes landing-pop {
+    from {
+      scale: 0;
+    }
+  }
+
+  .chip {
+    animation: landing-float 6s ease-in-out infinite;
+  }
+
+  .chip--bytes {
+    animation-delay: -2s;
+  }
+
+  .chip--saved {
+    animation-delay: -4s;
+  }
+
+  @keyframes landing-float {
+    50% {
+      translate: 0 -10px;
+    }
+  }
+
+  .marquee__track {
+    animation: landing-marquee 40s linear infinite;
+  }
+
+  @keyframes landing-marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .slash__menu {
+    animation: landing-menu 5s ease-in-out infinite;
+  }
+
+  .slash__pick {
+    animation: landing-pick 5s steps(1) infinite;
+  }
+
+  @keyframes landing-menu {
+    0%,
+    18%,
+    86%,
+    100% {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.96);
+    }
+    26%,
+    78% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes landing-pick {
+    46%,
+    80% {
+      background: var(--color-bg-muted);
+    }
+  }
+
+  .orbit__ring--spin {
+    animation: landing-spin 7s linear infinite;
+  }
+
+  .orbit__ring--inner {
+    animation: landing-spin 11s linear infinite reverse;
+  }
+
+  @keyframes landing-spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+
+  .board__status--cancelled,
+  .app__rec-dot,
+  .caps__pip-dot,
+  .record__dot {
+    animation: landing-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes landing-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .ai-menu__panel > span:nth-of-type(1) {
+    animation: landing-hover-row 6s steps(1) infinite;
+  }
+
+  .ai-menu__panel > span:nth-of-type(3) {
+    animation: landing-hover-row 6s -3s steps(1) infinite;
+  }
+
+  @keyframes landing-hover-row {
+    0%,
+    49% {
+      background: rgb(64 140 255 / 0.85);
+    }
+    50%,
+    100% {
+      background: transparent;
+    }
+  }
+  /* ---- The Caps preview ---------------------------------------------------- */
+
+  /* The playhead plays the kept clip, over and over. */
+  .caps__playhead {
+    animation: landing-play 9s linear infinite;
+  }
+
+  @keyframes landing-play {
+    from {
+      inset-inline-start: 7%;
+    }
+    to {
+      inset-inline-start: 88%;
+    }
+  }
+
+  /* The padding eases in and out, and its slider follows. */
+  .caps__body,
+  .pillar__art--style {
+    animation: landing-pad 8s var(--ease-in-out) infinite;
+  }
+
+  @keyframes landing-pad {
+    0%,
+    30% {
+      --landing-caps-pad: 7%;
+    }
+    50%,
+    80% {
+      --landing-caps-pad: 11%;
+    }
+  }
+
+  /* A click: the ring pops under the cursor now and then. */
+  .caps__click {
+    animation: landing-click 3s var(--ease-out) infinite;
+  }
+
+  @keyframes landing-click {
+    0%,
+    60% {
+      opacity: 0;
+      scale: 0.4;
+    }
+    65% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      scale: 1.8;
+    }
+  }
+
+  .caps__pip {
+    animation: landing-float 7s -1s ease-in-out infinite;
+  }
+
+  .export__bar > span {
+    animation: landing-export 4s var(--ease-in-out) infinite;
+  }
+
+  @keyframes landing-export {
+    from {
+      transform: scaleX(0);
+    }
+    70%,
+    to {
+      transform: scaleX(1);
+    }
+  }
+}
+
+/* ---- Scroll-linked (Chrome, Edge, Safari 26+) -------------------------------- */
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .header__progress {
+      animation: landing-grow linear both;
+      animation-timeline: scroll(root);
+    }
+
+    @keyframes landing-grow {
+      from {
+        transform: scaleX(0);
+      }
+      to {
+        transform: scaleX(1);
+      }
+    }
+
+    /* Content rises into place as it enters; later siblings a beat behind. */
+    .reveal {
+      animation: landing-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+
+    .reveal--late {
+      animation-range: entry 15% entry 85%;
+    }
+
+    .reveal--later {
+      animation-range: entry 30% cover 35%;
+    }
+
+    @keyframes landing-reveal {
+      from {
+        opacity: 0;
+        translate: 0 56px;
+        scale: 0.97;
+      }
+    }
+
+    /* The app previews start leaning back and square up as they scroll in. */
+    .mock {
+      animation: landing-flatten linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 50%;
+    }
+
+    @keyframes landing-flatten {
+      from {
+        transform: rotateX(28deg) scale(0.9) translateY(-20px);
+      }
+    }
+
+    /* The chips sit at different depths and drift apart. */
+    .chip--near {
+      animation:
+        landing-float 6s ease-in-out infinite,
+        landing-parallax-near linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, cover;
+    }
+
+    .chip--far {
+      animation:
+        landing-float 6s -2s ease-in-out infinite,
+        landing-parallax-far linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, cover;
+    }
+
+    @keyframes landing-parallax-near {
+      from {
+        transform: translate3d(0, 90px, 60px);
+      }
+      to {
+        transform: translate3d(0, -90px, 60px);
+      }
+    }
+
+    @keyframes landing-parallax-far {
+      from {
+        transform: translate3d(0, -40px, 90px);
+      }
+      to {
+        transform: translate3d(0, 120px, 90px);
+      }
+    }
+
+    /* Departure rows flip down like a split-flap board, one after another. */
+    .board__row {
+      animation: landing-flap linear both;
+      animation-timeline: view();
+      animation-range: entry 30% entry 100%;
+    }
+
+    .board__row:nth-child(2) {
+      animation-range: entry 45% cover 55%;
+    }
+    .board__row:nth-child(3) {
+      animation-range: entry 60% cover 60%;
+    }
+    .board__row:nth-child(4) {
+      animation-range: entry 75% cover 65%;
+    }
+    .board__row:nth-child(5) {
+      animation-range: entry 90% cover 70%;
+    }
+
+    @keyframes landing-flap {
+      from {
+        opacity: 0;
+        transform: perspective(600px) rotateX(-95deg);
+      }
+    }
+
+    /* Whole digits only: it ticks 9, 8, … 0 rather than rolling. */
+    .countdown__strip {
+      animation: landing-count steps(10, jump-none) both;
+      animation-timeline: view();
+      animation-range: entry 10% entry 90%;
+    }
+
+    @keyframes landing-count {
+      from {
+        transform: translateY(0);
+      }
+    }
+
+    /* The boarding pass swings up; the stamp lands; the backdrop word drifts. */
+    .ticket-stage {
+      animation: landing-ticket linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
+    }
+
+    @keyframes landing-ticket {
+      from {
+        opacity: 0.3;
+        transform: perspective(1400px) rotateX(38deg) translateY(120px) scale(0.92);
+      }
+    }
+
+    .ticket__stamp {
+      animation: landing-stamp linear both;
+      animation-timeline: view();
+      animation-range: entry 70% cover 50%;
+    }
+
+    @keyframes landing-stamp {
+      from {
+        opacity: 0;
+        scale: 2;
+      }
+    }
+
+    .cta__backdrop {
+      animation: landing-drift linear both;
+      animation-timeline: view();
+      animation-range: cover;
+    }
+
+    @keyframes landing-drift {
+      from {
+        translate: 12% 0;
+      }
+      to {
+        translate: -22% 0;
+      }
+    }
+  }
+}

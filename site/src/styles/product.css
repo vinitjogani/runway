@@ -1,0 +1,129 @@
+/*
+ * An app's section (Flight Notes, Flight Caps): a centred intro with the way
+ * in, the app's preview on its stage (mock.css, caps.css), three cards
+ * (pillars.css) and its Mac app (mac.css).
+ */
+
+.product__intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.product__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.product__eyebrow .app__icon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+}
+
+.product__eyebrow .app__icon svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.product__title {
+  max-inline-size: 16ch;
+  font-size: var(--landing-text-product);
+  letter-spacing: var(--tracking-tightest);
+  line-height: var(--landing-leading-heading);
+  text-wrap: balance;
+}
+
+.product__lede {
+  max-inline-size: var(--landing-heading-measure);
+  text-wrap: balance;
+}
+
+.product__actions {
+  margin-block-start: var(--space-8);
+}
+
+.product .pillars {
+  margin-block-start: var(--landing-block-space);
+}
+
+.product .mac {
+  margin-block-start: var(--space-5);
+}
+
+/* ---- A terminal (the Runway page's commands) and what the Caps app adds ---- */
+
+.terminal {
+  margin-block-start: var(--space-8);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--landing-panel-inset);
+  box-shadow: 0 0 0 var(--border-width) var(--landing-panel-line);
+  font-family: var(--font-mono);
+}
+
+.terminal__bar {
+  padding: var(--space-2) var(--space-4);
+  border-block-end: var(--border-width) solid var(--landing-panel-line);
+  color: var(--landing-panel-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.terminal__body {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: inherit;
+  /* The command fits on one line down to 320px. */
+  font-size: min(var(--landing-text-caption), 3.4vw);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.terminal__prompt {
+  margin-inline-end: 1ch;
+  color: var(--landing-panel-accent);
+  user-select: none;
+}
+
+.mac__list {
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  min-inline-size: 0;
+  padding: 0;
+  border-block-start: var(--border-width) solid var(--landing-panel-line);
+  color: var(--landing-panel-muted);
+  font-size: var(--landing-text-body);
+  list-style: none;
+}
+
+.mac__list li {
+  padding-block: var(--landing-space-3-5);
+  border-block-end: var(--border-width) solid var(--landing-panel-line);
+}
+
+.mac__list strong {
+  color: var(--landing-panel-text);
+  font-weight: var(--weight-semibold);
+}
+
+/* The download button carries its size; on the narrowest phones it wraps. */
+.mac__actions .button {
+  flex-wrap: wrap;
+  white-space: normal;
+  text-align: center;
+}
+
+/* ---- An app's own landing page (notes.html, caps.html): its section leads ---- */
+
+.product--lead {
+  padding-block-start: var(--landing-hero-space);
+}
+
+.product--lead .product__title {
+  font-size: var(--landing-text-hero);
+  font-weight: var(--weight-medium);
+}

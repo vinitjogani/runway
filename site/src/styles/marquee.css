@@ -1,0 +1,44 @@
+/* A tilted ink band of highlights, scrolling sideways forever (motion.css). */
+
+.marquee {
+  /* Enough room above and below for the tilted band's corners (tan 2° × half the width). */
+  padding-block: calc(var(--space-16) + 1.75vw);
+  overflow: clip;
+}
+
+/* The band is the break between sections: the next one needs no extra top space. */
+.marquee + .section {
+  padding-block-start: var(--space-8);
+}
+
+.marquee__band {
+  overflow: hidden;
+  padding-block: var(--space-4);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  rotate: -2deg;
+  /* Wide enough that the rotated band's corners stay off-screen. */
+  margin-inline: -2rem;
+}
+
+.marquee__track {
+  display: flex;
+  inline-size: max-content;
+  font-family: var(--font-mono);
+  font-size: var(--landing-text-body);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.marquee__track span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding-inline-end: var(--space-6);
+  white-space: nowrap;
+}
+
+.marquee__track span::after {
+  color: var(--color-accent);
+  content: '✦' / '';
+}

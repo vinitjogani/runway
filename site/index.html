@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Runway: Build your SwiftUI and AppKit Mac apps for Linux and Windows</title>
+    <meta
+      name="description"
+      content="Runway compiles unmodified SwiftUI and AppKit Mac apps for Linux and Windows with one command. Apple's frameworks, reimplemented under their real names, rendered natively, and made to look like the Mac."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="application-name" content="Runway" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1e1d1b" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- vite-ignore: "/" is the page itself, not an asset for Vite to bundle. -->
+    <link rel="canonical" href="/" vite-ignore />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Runway" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Runway: your Mac app, cleared for Linux and Windows" />
+    <meta
+      property="og:description"
+      content="Point Runway at a SwiftUI or AppKit Mac app and build it for Linux and Windows with one command. No porting code."
+    />
+    <meta property="og:image" content="/images/og/runway.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Runway: your Mac app, cleared for Linux and Windows, next to the Flight note-taking app running on Linux." />
+    <!-- For clients that play animated cards (Discord, Telegram, iMessage, Slack…). -->
+    <meta property="og:video" content="/images/og/runway.mp4" />
+    <meta property="og:video:secure_url" content="/images/og/runway.mp4" />
+    <meta property="og:video:type" content="video/mp4" />
+    <meta property="og:video:width" content="1200" />
+    <meta property="og:video:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Runway: your Mac app, cleared for Linux and Windows" />
+    <meta
+      name="twitter:description"
+      content="Point Runway at a SwiftUI or AppKit Mac app and build it for Linux and Windows with one command. No porting code."
+    />
+    <meta name="twitter:image" content="/images/og/runway.png" />
+    <meta name="twitter:image:alt" content="Runway: your Mac app, cleared for Linux and Windows, next to the Flight note-taking app running on Linux." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "@id": "/#runway",
+        "name": "Runway",
+        "url": "/",
+        "description": "A compiler and build layer that builds unmodified SwiftUI and AppKit macOS apps for Linux and Windows, with Apple's frameworks reimplemented under their real module names and rendered natively.",
+        "programmingLanguage": "Swift",
+        "runtimePlatform": "Linux, Windows",
+        "image": "/images/og/runway.png",
+        "publisher": { "@type": "Organization", "name": "Runway", "url": "/", "logo": "/logo.svg" }
+      }
+    </script>
+    <script>(function(){try{var p=JSON.parse(localStorage.getItem('runway:theme')||'"system"');var d=p==='dark'||(p==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}})();</script>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body class="runway">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="arrow" viewBox="0 0 24 24">
+        <path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="runway-mark" viewBox="0 0 24 24">
+        <path d="M3 5h18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5" /><path d="M10.5 5 6 20M13.5 5 18 20M12 8v1.5M12 12v2M12 16.5v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
+    </svg>
+
+    <header class="header">
+      <div class="container header__bar">
+        <a class="brand" href="/" aria-label="Runway home">
+          <svg class="brand__mark runway-mark" aria-hidden="true"><use href="#runway-mark" /></svg>
+          <span>Runway</span>
+          <span class="runway-badge">Preview</span>
+        </a>
+        <nav class="header__nav" aria-label="Main">
+          <a class="header__link" href="#how">How it works</a>
+          <a class="header__link" href="#frameworks">Frameworks</a>
+          <a class="header__link" href="#status">Status</a>
+          <a class="header__link header__link--app" href="#start">Get started</a>
+        </nav>
+      </div>
+      <div class="header__progress" aria-hidden="true"></div>
+    </header>
+
+    <main id="main">
+      <!-- ============================================================ Hero -->
+      <section class="hero runway-hero" aria-labelledby="hero-title">
+        <div class="container hero__inner">
+          <p class="eyebrow">Mac apps, everywhere</p>
+          <h1 id="hero-title" class="hero__title runway-hero__title">
+            <span class="hero__word">Your</span> <span class="hero__word">Mac</span> <span class="hero__word">app,</span>
+            <span class="hero__word hero__word--marked">cleared</span> <span class="hero__word">for</span>
+            <span class="hero__word">Linux</span> <span class="hero__word">and</span> <span class="hero__word">Windows.</span>
+          </h1>
+          <p class="hero__lede">
+            Runway compiles unmodified SwiftUI and AppKit apps for other desktops. Point it at your Xcode project, run
+            one command, and get a native app that still looks like it was made for the Mac. No porting layer to
+            write, no second codebase to keep.
+          </p>
+
+          <figure class="terminal runway-hero__terminal">
+            <figcaption class="terminal__bar">Terminal · Ubuntu 24.04, Swift 6</figcaption>
+            <pre class="terminal__body"><code><span class="terminal__prompt">$</span>runway run ~/Code/MyMacApp</code></pre>
+          </figure>
+
+          <div class="runway-hero__actions">
+            <a class="button button--primary button--lift" href="#start"
+              >Get started <svg class="button__arrow" aria-hidden="true"><use href="#arrow" /></svg
+            ></a>
+            <a class="button button--secondary button--lift" href="#showcase">See it running</a>
+          </div>
+
+          <ul class="hero__trust" role="list">
+            <li>No app-specific code</li>
+            <li>Apple’s module names</li>
+            <li>Native widgets, Mac look</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============================================================ Showcase -->
+      <section class="section" id="showcase" aria-labelledby="showcase-title">
+        <div class="container">
+          <p class="eyebrow">Running today</p>
+          <h2 id="showcase-title" class="section__title">Same source. Different desktop.</h2>
+          <p class="section__lede">
+            Every screenshot below is a Mac app built from its untouched source on Linux. Not a mock-up, not a web view:
+            real AppKit and SwiftUI code, laid out by Runway and drawn with GTK.
+          </p>
+
+          <div class="runway-shots">
+            <figure class="runway-shot runway-shot--wide card">
+              <img
+                src="/images/runway/notes-linux.webp"
+                width="1100"
+                height="774"
+                loading="lazy"
+                decoding="async"
+                alt="Flight, the note-taking app, on Linux: a sidebar of notes, a Markdown editor with to-dos and headings, and the window buttons in the toolbar row."
+              />
+              <figcaption>
+                <strong>Flight</strong> · AppKit, TextKit, split views, Liquid Glass toolbar groups. Its menu sits on
+                the desktop’s top bar, as on the Mac.
+              </figcaption>
+            </figure>
+            <figure class="runway-shot card">
+              <img
+                src="/images/runway/caps-linux.webp"
+                width="720"
+                height="420"
+                loading="lazy"
+                decoding="async"
+                alt="Flute, the screen recorder, on Linux: a red Start Recording button over a settings card with camera, microphone, system audio and frame rate."
+              />
+              <figcaption><strong>Flute</strong> · SwiftUI forms, pickers, toggles and AVFoundation.</figcaption>
+            </figure>
+            <figure class="runway-shot card">
+              <img
+                src="/images/runway/rectangle-linux.webp"
+                width="376"
+                height="288"
+                loading="lazy"
+                decoding="async"
+                alt="Rectangle, the open-source window manager, showing its Authorize Rectangle window on Linux."
+              />
+              <figcaption>
+                <strong>Rectangle</strong> · an open-source Mac app we didn’t write, built from a fresh clone.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ How it works -->
+      <section class="section" id="how" aria-labelledby="how-title">
+        <div class="container">
+          <p class="eyebrow">How it works</p>
+          <h2 id="how-title" class="section__title">A compiler, not an emulator.</h2>
+          <p class="section__lede">
+            Your app compiles to a native binary with the Swift toolchain for Linux and Windows. Runway supplies
+            everything Apple’s SDK would, and rewrites the few things Swift can’t do off the Mac.
+          </p>
+
+          <ol class="runway-steps" role="list">
+            <li class="runway-step card">
+              <span class="runway-step__n">01</span>
+              <h3 class="runway-step__title">Reads your project</h3>
+              <p class="runway-step__text">
+                Xcode projects and workspaces, Swift packages and XcodeGen specs: targets, build settings, xcconfig,
+                Info.plist, asset catalogs, string catalogs, storyboards and XIBs. Dependencies are fetched at their
+                pinned versions.
+              </p>
+            </li>
+            <li class="runway-step card">
+              <span class="runway-step__n">02</span>
+              <h3 class="runway-step__title">Rewrites what Swift can’t do</h3>
+              <p class="runway-step__text">
+                There’s no Objective-C runtime off the Mac, so <code>@objc</code>, <code>#selector</code>, target–action,
+                KVO and KVC become plain Swift. Line numbers are kept, so errors and stack traces point at your code.
+              </p>
+            </li>
+            <li class="runway-step card">
+              <span class="runway-step__n">03</span>
+              <h3 class="runway-step__title">Links Apple’s frameworks</h3>
+              <p class="runway-step__text">
+                SwiftUI, AppKit, Combine, Core Graphics and dozens more, reimplemented from scratch under their real
+                module names. <code>import AppKit</code> just works, and so does Auto Layout.
+              </p>
+            </li>
+            <li class="runway-step card">
+              <span class="runway-step__n">04</span>
+              <h3 class="runway-step__title">Draws it natively</h3>
+              <p class="runway-step__text">
+                GTK 4 on Linux, Win32 on Windows, styled after macOS: traffic lights, pill buttons, switches and SF Symbols
+                names drawn as matching line art. Menus go on the desktop’s global menu bar when it has one.
+              </p>
+            </li>
+          </ol>
+
+          <div class="pillars">
+            <article class="pillar card">
+              <p class="pillar__label">Zero porting code</p>
+              <h3 class="pillar__title">Point it at any source.</h3>
+              <p class="pillar__text">
+                Runway never contains a line written for one app. If something is missing, it’s added to the frameworks
+                for every app.
+              </p>
+            </article>
+            <article class="pillar card">
+              <p class="pillar__label">Looks like the Mac</p>
+              <h3 class="pillar__title">Not a lowest common denominator.</h3>
+              <p class="pillar__text">
+                SwiftUI keeps its own layout rules and AppKit its own controls, so your app keeps the spacing, type and
+                feel you designed.
+              </p>
+            </article>
+            <article class="pillar card">
+              <p class="pillar__label">Light on memory</p>
+              <h3 class="pillar__title">No browser in the box.</h3>
+              <p class="pillar__text">
+                A native binary on the system toolkit. Flight (notes) runs in about <code>67 MB</code> of memory on Linux.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ Frameworks -->
+      <section class="section" id="frameworks" aria-labelledby="frameworks-title">
+        <div class="container">
+          <p class="eyebrow">Frameworks</p>
+          <h2 id="frameworks-title" class="section__title">The imports you already write.</h2>
+          <p class="section__lede">
+            Each is a Swift module with Apple’s name and API. Where a Mac feature has no counterpart, it reports itself
+            unavailable the way it would on unsupported hardware, so your app’s own fallbacks run.
+          </p>
+          <ul class="runway-chips" role="list" aria-label="Frameworks Runway provides">
+            <li class="runway-chip runway-chip--key">SwiftUI</li>
+            <li class="runway-chip runway-chip--key">AppKit</li>
+            <li class="runway-chip runway-chip--key">Foundation</li>
+            <li class="runway-chip">Combine</li>
+            <li class="runway-chip">Observation</li>
+            <li class="runway-chip">CoreGraphics</li>
+            <li class="runway-chip">CoreText</li>
+            <li class="runway-chip">QuartzCore</li>
+            <li class="runway-chip">CoreImage</li>
+            <li class="runway-chip">ImageIO</li>
+            <li class="runway-chip">AVFoundation</li>
+            <li class="runway-chip">CoreMedia</li>
+            <li class="runway-chip">WebKit</li>
+            <li class="runway-chip">UniformTypeIdentifiers</li>
+            <li class="runway-chip">UserNotifications</li>
+            <li class="runway-chip">os / OSLog</li>
+            <li class="runway-chip">Carbon</li>
+            <li class="runway-chip">CoreServices</li>
+            <li class="runway-chip">IOKit</li>
+            <li class="runway-chip">Network</li>
+            <li class="runway-chip">Security</li>
+            <li class="runway-chip">ServiceManagement</li>
+            <li class="runway-chip">ScreenCaptureKit</li>
+            <li class="runway-chip">SwiftData</li>
+            <li class="runway-chip">Charts</li>
+            <li class="runway-chip">AppIntents</li>
+            <li class="runway-chip">CommonCrypto</li>
+            <li class="runway-chip">Compression</li>
+            <li class="runway-chip">CoreAudio</li>
+            <li class="runway-chip">Cocoa</li>
+          </ul>
+          <p class="runway-note">
+            Plus Interface Builder: storyboards and XIBs load at run time, with outlets, actions, constraints, menus and
+            segues.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================ Status -->
+      <section class="section" id="status" aria-labelledby="status-title">
+        <div class="container">
+          <div class="mac runway-status">
+            <div>
+              <p class="mac__caption">Where it stands</p>
+              <h2 id="status-title" class="mac__title">An early preview, measured in public.</h2>
+              <p class="mac__lede">
+                We test Runway against 16 popular open-source Mac apps, cloned fresh and built with no changes. Every
+                gap we close is closed for all of them.
+              </p>
+              <dl class="runway-stats">
+                <div>
+                  <dt>Linux</dt>
+                  <dd>Working, on GTK 4</dd>
+                </div>
+                <div>
+                  <dt>Windows</dt>
+                  <dd>Win32 backend in progress</dd>
+                </div>
+                <div>
+                  <dt>Framework tests</dt>
+                  <dd>367 passing</dd>
+                </div>
+              </dl>
+            </div>
+            <div class="runway-board">
+              <p class="mac__caption">Corpus scoreboard</p>
+              <ul class="runway-board__list" role="list">
+                <li><span>Flight</span><span class="runway-board__ok">Runs</span></li>
+                <li><span>Flute</span><span class="runway-board__ok">Runs</span></li>
+                <li><span>Rectangle</span><span class="runway-board__ok">Runs</span></li>
+                <li><span>Maccy</span><span class="runway-board__ok">Runs</span></li>
+                <li><span>Hidden Bar</span><span class="runway-board__ok">Runs</span></li>
+                <li>
+                  <span>Stats, MonitorControl, SwiftBar, Gifski, NetNewsWire, CodeEdit and 7 more</span
+                  ><span class="runway-board__wip">Compiling</span>
+                </li>
+              </ul>
+              <p class="mac__note">
+                Objective-C and C dependencies build as inert Swift stand-ins for now, and C++ libraries aren’t supported
+                yet.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ Get started -->
+      <section class="section" id="start" aria-labelledby="start-title">
+        <div class="container runway-start">
+          <div>
+            <p class="eyebrow">Get started</p>
+            <h2 id="start-title" class="section__title">One command per stage.</h2>
+            <p class="section__lede">
+              Runway is on its way to becoming a public Swift package anyone can use. Until it ships, it builds from the
+              Runway repository with Swift 6 and GTK 4.
+            </p>
+            <dl class="runway-commands">
+              <div><dt><code>runway check</code></dt><dd>What your app uses, and what Runway is missing.</dd></div>
+              <div><dt><code>runway plan</code></dt><dd>What it read from your project.</dd></div>
+              <div><dt><code>runway build</code></dt><dd>A native app bundle.</dd></div>
+              <div><dt><code>runway run</code></dt><dd>Build it and open it.</dd></div>
+              <div><dt><code>runway test</code></dt><dd>Run your XCTest suites on Linux.</dd></div>
+            </dl>
+          </div>
+          <figure class="terminal runway-start__terminal">
+            <figcaption class="terminal__bar">Terminal · Linux</figcaption>
+            <pre class="terminal__body"><code><span class="runway-comment"># Build the toolkit</span>
+<span class="terminal__prompt">$</span>cd runway
+<span class="terminal__prompt">$</span>swift build -c release
+
+<span class="runway-comment"># Then any Mac app: Xcode, SwiftPM or XcodeGen</span>
+<span class="terminal__prompt">$</span>.build/release/runway check ~/Code/MyMacApp
+<span class="terminal__prompt">$</span>.build/release/runway run ~/Code/MyMacApp</code></pre>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============================================================ FAQ -->
+      <section class="section" id="faq" aria-labelledby="faq-title">
+        <div class="container faq">
+          <div>
+            <p class="eyebrow">Questions</p>
+            <h2 id="faq-title" class="section__title">Before you take off.</h2>
+          </div>
+          <div class="faq__list">
+            <details class="faq__item" name="faq">
+              <summary class="faq__question">Do I have to change my app’s code?</summary>
+              <p class="faq__answer">
+                No. Runway builds the same source you ship on the Mac, including #if os(macOS) branches. If your app
+                uses something Runway doesn’t have yet, runway check lists it, and the fix goes into Runway, not your
+                app.
+              </p>
+            </details>
+            <details class="faq__item" name="faq">
+              <summary class="faq__question">Is this an emulator or a web view?</summary>
+              <p class="faq__answer">
+                Neither. Your Swift compiles to a native binary for Linux or Windows. Runway reimplements Apple’s
+                frameworks in Swift and draws with the platform’s own toolkit, GTK 4 on Linux and Win32 on Windows.
+              </p>
+            </details>
+            <details class="faq__item" name="faq">
+              <summary class="faq__question">Does Runway contain Apple’s code?</summary>
+              <p class="faq__answer">
+                No. The frameworks are written from scratch against Apple’s public documentation, and SF Symbols names
+                are drawn with Lucide, an open icon set. Your app links Runway’s modules in place of Apple’s.
+              </p>
+            </details>
+            <details class="faq__item" name="faq">
+              <summary class="faq__question">What about features only Macs have?</summary>
+              <p class="faq__answer">
+                They report themselves unavailable, the way they would on a Mac without the hardware or permission: no
+                Apple Intelligence model, no Sparkle updates, no accessibility trust. Apps already handle those cases,
+                so they keep working.
+              </p>
+            </details>
+            <details class="faq__item" name="faq">
+              <summary class="faq__question">When can I use it?</summary>
+              <p class="faq__answer">
+                Now, from source, on Linux. It is an early preview: simple SwiftUI and AppKit apps build today, and the
+                corpus scoreboard tracks how far the larger ones get. A public Swift package and Windows builds come
+                next.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <div class="footer__brand">
+          <svg class="runway-mark runway-mark--small" aria-hidden="true"><use href="#runway-mark" /></svg>
+          <span class="footer__name">Runway</span>
+          <span>Mac apps, cleared for every desktop.</span>
+        </div>
+        <div class="footer__meta">
+          <nav class="footer__nav" aria-label="Footer">
+            <a href="#how">How it works</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <p>© 2026 Runway</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

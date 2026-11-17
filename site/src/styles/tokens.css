@@ -1,0 +1,477 @@
+/*
+ * Flight design tokens: the single source of truth for theming.
+ *
+ * Every component (landing + app) styles itself ONLY through these custom
+ * properties; never hard-code colors, radii, shadows or font stacks in a
+ * component. Themes switch by setting `data-theme="light|dark"` on <html>;
+ * without it, the OS preference decides.
+ *
+ * Naming: --<category>-<role>[-<variant>]
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Brand ------------------------------------------------------------ */
+  --brand-red: #ed213a;
+  --brand-rust: #93291e;
+  --brand-gradient: linear-gradient(135deg, var(--brand-red) 0%, var(--brand-rust) 100%);
+
+  /* ---- Surfaces -------------------------------------------------------- */
+  /* Warm paper neutrals (never cold grey), from the landing page design. */
+  --color-bg: #ffffff; /* the editor and other working surfaces */
+  --color-bg-subtle: #fbfaf8; /* the page canvas (landing), quiet panels */
+  --color-bg-muted: #f2f0ec; /* inputs at rest, code blocks, inline code */
+  --color-bg-elevated: #ffffff; /* menus, dialogs, popovers, cards */
+  --color-bg-hover: rgb(25 24 23 / 0.035);
+  --color-bg-active: rgb(25 24 23 / 0.08);
+  --color-bg-selected: #f2f0ec;
+  --color-overlay: rgb(25 24 23 / 0.36);
+
+  /* Sidebar and phone home: a barely-there warm panel next to the white editor. */
+  --color-sidebar: #fcfbfa;
+  --color-sidebar-hover: rgb(25 24 23 / 0.03);
+  --color-sidebar-selected: #e3ecfb; /* a wash of the accent (the Mac app's); opaque, so its text contrast is tested */
+  --color-sidebar-divider: #f0eee9;
+  --color-sidebar-field: #ffffff; /* a search field set on the sidebar */
+  /*
+   * Glass (the Mac app's Liquid Glass): translucent, blurred surfaces that
+   * float over the page: the docked sidebar, the top bars and their controls.
+   */
+  --color-glass: rgb(245 243 240 / 0.8);
+  --color-glass-bar: rgb(255 255 255 / 0.72); /* top bars over the page */
+  --color-glass-control: rgb(255 255 255 / 0.6); /* capsules of toolbar buttons */
+  --color-glass-border: rgb(25 24 23 / 0.07);
+  --color-glass-highlight: rgb(255 255 255 / 0.7); /* the lit top edge */
+  --shadow-glass: 0 0 0 0.5px rgb(25 24 23 / 0.06), 0 1px 2px rgb(25 24 23 / 0.04), 0 10px 30px -14px rgb(25 24 23 / 0.2);
+  --shadow-glass-control: 0 0 0 0.5px rgb(25 24 23 / 0.08), 0 1px 3px rgb(25 24 23 / 0.06);
+  --blur-glass: blur(24px) saturate(1.8);
+  /*
+   * The docked sidebar is the glassiest surface: thinner tint, stronger blur,
+   * over a soft ambient wash (the "wallpaper") so there is something to frost.
+   */
+  --color-glass-sidebar: rgb(252 251 249 / 0.52);
+  --color-glass-sheen: rgb(255 255 255 / 0.55); /* light catching the upper edge */
+  --color-glass-edge: rgb(255 255 255 / 0.65); /* the bright rim around the pane */
+  --blur-glass-sidebar: blur(36px) saturate(1.9) brightness(1.03);
+  --color-ambient: #f4efe9;
+  --color-ambient-warm: rgb(140 180 255 / 0.45);
+  --color-ambient-rose: rgb(237 33 58 / 0.14);
+  --color-ambient-cool: rgb(150 182 230 / 0.42);
+  /* Folders: the frosted front of a folder card and the papers tucked inside. */
+  --color-folder-back: #ebe6df;
+  --color-folder-front: rgb(250 248 245 / 0.62);
+  --color-folder-tab: #e3ddd5;
+  --color-paper: #ffffff;
+  --color-paper-line: rgb(25 24 23 / 0.08);
+  --shadow-paper: 0 0 0 0.5px rgb(25 24 23 / 0.08), 0 2px 6px -2px rgb(25 24 23 / 0.12);
+  --shadow-card: 0 0 0 1px rgb(25 24 23 / 0.06), 0 1px 2px rgb(25 24 23 / 0.04);
+  --shadow-card-hover: 0 0 0 1px rgb(25 24 23 / 0.07), 0 14px 30px -16px rgb(25 24 23 / 0.28);
+  --color-logo-card: #ffffff; /* the small "app icon" card behind the logo */
+
+  /* ---- Text ------------------------------------------------------------- */
+  --color-text: #191817;
+  /* Body copy in notes and lists: a notch softer than headings. */
+  --color-text-secondary: #4a4843;
+  /* text, text-secondary and text-muted pass WCAG AA (4.5:1) on every surface (tokens.test.ts). */
+  --color-text-muted: #6b6862;
+  /* Icons, dots, mono captions and decoration only, never for text anyone needs to read. */
+  --color-text-faint: #8a867e;
+  --color-text-inverse: #fbfaf8;
+  /* Real input placeholders only (exempt from contrast rules); visible labels use text-muted. */
+  --color-text-placeholder: #a09c94;
+
+  /* ---- Lines ------------------------------------------------------------ */
+  --color-border: #e6e3dd;
+  --color-border-strong: #e1ded8;
+  --color-divider: #f0eee9;
+
+  /* ---- Primary (ink): primary buttons, checked boxes, switches ---------- */
+  --color-primary: #191817;
+  --color-primary-hover: #33312e;
+  --color-on-primary: #fbfaf8;
+
+  /* ---- Accent (runway blue, tuned for AA contrast) ---------------------- */
+  --color-accent: #1d64d8; /* small fills and marks: progress, citations, the caret */
+  --color-accent-hover: #1652b8;
+  --color-accent-text: #1652b8; /* accent-colored text on light surfaces (>= 4.5:1) */
+  --color-accent-soft: rgb(29 100 216 / 0.09);
+  --color-accent-soft-hover: rgb(29 100 216 / 0.15);
+  --color-focus-ring: var(--color-accent); /* opaque: >= 3:1 on every surface (WCAG 1.4.11) */
+  --color-selection: #cfe0ff;
+  --color-highlight: #dbe8ff; /* search hit / mark / answer passage */
+  --color-on-accent: #ffffff; /* text + icons on accent / danger fills */
+
+  /* ---- Status ----------------------------------------------------------- */
+  --color-success: #1f8a4c;
+  --color-success-soft: rgb(31 138 76 / 0.1);
+  --color-warning: #b86e00;
+  --color-warning-soft: rgb(230 150 0 / 0.12);
+  --color-danger: #d4263b;
+  --color-danger-soft: rgb(212 38 59 / 0.1);
+  --color-info: #2f6fdb;
+  --color-info-soft: rgb(47 111 219 / 0.1);
+  /* Status-colored text: >= 4.5:1 at 12px, including on the matching -soft fill. */
+  --color-success-text: #19773f;
+  --color-warning-text: #955900;
+  --color-danger-text: #b81d31;
+  --color-info-text: #2860c8;
+  --color-danger-fill: #d4263b; /* destructive buttons; white text passes AA */
+  --color-danger-fill-hover: #b91f32;
+
+  /* ---- Collaborators: carets, name labels, avatars (white text: >= 4.5:1) - */
+  --color-collab-1: #b4235a;
+  --color-collab-2: #1f63b0;
+  --color-collab-3: #19773f;
+  --color-collab-4: #8034bd;
+  --color-collab-5: #9a4d00;
+  --color-collab-6: #0d7070;
+  --color-on-collab: #ffffff;
+
+  /* ---- Controls (UI kit) ------------------------------------------------ */
+  --color-field: var(--color-bg); /* text-input surface */
+  --color-control-track: #e1ded8; /* switch (off), progress track */
+  --color-control-thumb: #ffffff;
+  --color-control-raised: #ffffff; /* selected segment lifted off its track */
+  --color-tooltip-bg: #191817;
+  --color-tooltip-text: rgb(255 255 255 / 0.92);
+  --color-tooltip-border: transparent; /* hairline that separates it from dark surfaces */
+  --color-skeleton: rgb(25 24 23 / 0.06);
+  --color-skeleton-shine: rgb(255 255 255 / 0.55);
+
+  /* ---- Typography ------------------------------------------------------- */
+  /* Geist everywhere (UI, landing and notes), Geist Mono for code and captions; self-hosted. */
+  --font-ui: 'Geist Variable', 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-brand: var(--font-ui);
+  /* The optional "Serif" note font: the platform's book face, no download. */
+  --font-serif: 'Iowan Old Style', 'Charter', 'Sitka Text', Cambria, Georgia, serif;
+  --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-display: var(--font-ui);
+
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.875rem; /* 14px */
+  --text-md: 1rem; /* 16px: minimum for form controls (prevents iOS zoom) */
+  --text-lg: 1.125rem; /* 18px */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.5rem; /* 24px */
+  --text-3xl: 1.875rem; /* 30px */
+  --text-4xl: 2.5rem; /* 40px */
+  --text-5xl: clamp(2.75rem, 7vw, 5rem); /* landing hero */
+  --text-section: clamp(2rem, 4.5vw, 3rem); /* landing section headings */
+  --text-ui: 0.8125rem; /* 13px app chrome: buttons, menus, lists (15px on touch) */
+  --text-sidebar: 0.84375rem; /* 13.5px sidebar note titles, as in the Mac app (15px on touch) */
+  --text-note: 0.9375rem; /* 15px note body (16px on touch) */
+  --text-note-title: 1.75rem; /* 28px note title on desktop */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.7;
+
+  --tracking-tight: -0.02em;
+  --tracking-tighter: -0.035em; /* section headings, note titles */
+  --tracking-tightest: -0.045em; /* the hero */
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em; /* uppercase mono eyebrows */
+
+  /* ---- Spacing (4px grid) ---------------------------------------------- */
+  --space-0: 0;
+  --space-0-5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* ---- Elevation -------------------------------------------------------- */
+  --shadow-xs: 0 1px 0 rgb(25 24 23 / 0.03);
+  --shadow-sm: 0 1px 0 rgb(25 24 23 / 0.03), 0 6px 14px -10px rgb(25 24 23 / 0.16);
+  --shadow-md: 0 0 0 1px rgb(25 24 23 / 0.07), 0 8px 18px -10px rgb(25 24 23 / 0.16);
+  --shadow-lg: 0 0 0 1px rgb(25 24 23 / 0.07), 0 16px 36px -18px rgb(25 24 23 / 0.22);
+  --shadow-focus: 0 0 0 var(--focus-ring-width) var(--color-focus-ring);
+  --shadow-logo-card: 0 0 0 1px #e6e3dd, 0 1px 2px rgb(25 24 23 / 0.06);
+  --shadow-accent: 0 12px 24px -12px rgb(25 24 23 / 0.35); /* lift under primary fills (the phone + button) */
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Near-instant on purpose: Flight should feel like a fast native tool, not a slideshow. */
+  --duration-instant: 0ms;
+  --duration-fast: 50ms;
+  --duration-base: 80ms;
+  --duration-slow: 120ms;
+  --duration-shimmer: 1.6s;
+  --duration-spin: 0.8s;
+  /*
+   * Spatial motion (things that move, open or travel: folders, cards, the
+   * grid/list switch). Feedback stays near-instant above; only movement
+   * through space gets a little physics, and it never blocks input.
+   */
+  --duration-move: 280ms;
+  --duration-settle: 420ms;
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+  /* A real damped spring (one soft overshoot), sampled for linear(). */
+  --ease-bounce: linear(0, 0.063 2.2%, 0.25 5.1%, 0.567 9%, 0.861 13.4%, 1.016 17%, 1.088 20.6%, 1.1 23.4%, 1.084 27.2%, 1.035 33.4%, 1.001 40.6%, 0.99 47%, 0.995 56%, 1.001 70%, 1);
+  --motion-pop-scale: 1; /* popovers/menus/dialogs scale in from this */
+  --motion-pop-shift: 0; /* …and slide this far from their anchor */
+
+  /* ---- Opacity ---------------------------------------------------------- */
+  --opacity-disabled: 0.45;
+  --opacity-secondary: 0.7; /* de-emphasised text that inherits its color (shortcut hints); keeps >= 4.5:1 */
+  --opacity-track: 0.22; /* faint track behind a spinner arc */
+
+  /* ---- Layers ----------------------------------------------------------- */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-overlay: 40;
+  --z-dialog: 50;
+  --z-popover: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+
+  /* ---- Controls (UI kit) ------------------------------------------------
+   * Compact on precise pointers; grown to touch size under `pointer: coarse`
+   * (see the media block below the dark theme).
+   */
+  --control-sm: 1.5rem; /* 24px */
+  --control-md: 1.75rem; /* 28px */
+  --control-lg: 2.125rem; /* 34px */
+  --field-height: 1.875rem; /* 30px text inputs */
+  --border-width: 1px;
+  --border-width-control: 1.5px; /* checkbox outline */
+  --focus-ring-width: 2px;
+  --icon-sm: 0.875rem; /* 14px */
+  --icon-md: 1rem; /* 16px */
+  --icon-lg: 1.125rem; /* 18px */
+  --icon-xl: 1.25rem; /* 20px */
+  --icon-stroke: 1.5;
+  --icon-stroke-bold: 3; /* tiny glyphs such as the checkbox tick */
+  --spinner-stroke: 2.5;
+  --switch-width: 1.875rem;
+  --switch-height: 1.125rem;
+  --checkbox-size: 1rem;
+  --progress-height: 0.375rem;
+  --avatar-sm: 1.5rem;
+  --avatar-md: 2rem;
+  --avatar-lg: 2.75rem;
+  --logo-sm: 1.25rem;
+  --logo-md: 1.75rem;
+  --logo-lg: 2.5rem;
+  --logo-xl: 4rem;
+  --avatar-text-ratio: 0.4; /* initials size relative to the avatar */
+  --logo-gap-ratio: 0.3; /* mark-to-wordmark gap relative to the mark */
+  --logo-wordmark-ratio: 0.72; /* wordmark size relative to the mark */
+  --skeleton-text-height: 0.75lh; /* a text-line placeholder bar, relative to the line height */
+
+  /* ---- Overlays (UI kit) ------------------------------------------------ */
+  --dialog-width-sm: 25rem; /* 400px */
+  --dialog-width-md: 32.5rem; /* 520px */
+  --dialog-width-lg: 42.5rem; /* 680px */
+  --dialog-top: 12dvh; /* top-aligned dialogs (command palette) */
+  --sheet-width: min(19rem, 86vw);
+  --sheet-max-height: 90dvh; /* phone bottom sheets */
+  --sheet-handle-width: 2.25rem;
+  --sheet-handle-height: 0.25rem;
+  --menu-min-width: 12rem;
+  --menu-max-height: 26rem; /* further capped by the space available on screen */
+  --popover-width: 18rem;
+  --command-input-height: 2.75rem; /* 44px palette search row */
+  --command-list-max-height: min(25rem, 60dvh);
+  --tooltip-max-width: 16rem;
+  --toast-offset: var(--space-6);
+  --toast-offset-mobile: var(--space-3);
+  --toast-offset-bottom-mobile: calc(var(--safe-bottom) + var(--space-3));
+
+  /* ---- Layout ----------------------------------------------------------- */
+  --sidebar-width: 260px; /* the default; the docked sidebar's edge resizes it */
+  --sidebar-inset: 0.5rem; /* the docked sidebar floats this far inside the window */
+  --topbar-height: 2.75rem;
+  --sidebar-row-height: 1.875rem; /* 30px note rows with a mouse (the Mac app's) */
+  --sidebar-group-height: 2.125rem; /* 34px group headings, room above them */
+  --tabbar-height: 3.5rem;
+  --logo-card-size: 1.5rem; /* the logo's small "app icon" card (sidebar, phone home) */
+  --content-width: 45rem; /* ~720px reading measure */
+  --content-width-wide: 72rem;
+  --page-width-wide: 63.75rem; /* ~1020px "Wide" page width (the Mac app's) */
+  --ask-panel-width: 23.75rem; /* 380px docked Ask panel (>= 1200px); the shell sizes its column with it */
+  --tap-target: 2.75rem; /* 44px minimum touch target */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  /*
+   * Installed app with Window Controls Overlay: the window's own buttons sit over
+   * our top bars (left on macOS, right on Windows/Linux). These are 0 elsewhere.
+   */
+  --titlebar-inset-left: env(titlebar-area-x, 0px);
+  --titlebar-inset-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  /* The title bar's height when its buttons sit on the left (macOS), else 0: content under them moves down. */
+  --titlebar-left-height: min(env(titlebar-area-height, 0px), env(titlebar-area-x, 0px) * 100);
+
+  /* ---- Breakpoints (reference only; CSS vars can't be used in @media) ----
+   *   phone  : < 640px
+   *   tablet : 640px – 1023px
+   *   desktop: >= 1024px   (docked sidebar)
+   *   wide   : >= 1200px   (docked Ask panel)
+   * Script uses the matching MediaQuery objects in `$lib/ui/media.ts`.
+   */
+}
+
+/*
+ * ---- Dark theme ---------------------------------------------------------
+ * `data-theme` is resolved before first paint by the inline theme script in
+ * each HTML entry (stored preference, else OS preference), so a single block
+ * suffices.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /* Warm near-black ink, the landing's code-card colour. */
+  --color-bg: #191817;
+  --color-bg-subtle: #1e1d1b;
+  --color-bg-muted: #2a2826;
+  --color-bg-elevated: #232220;
+  --color-bg-hover: rgb(251 250 248 / 0.05);
+  --color-bg-active: rgb(251 250 248 / 0.09);
+  --color-bg-selected: #2e2c2a;
+  --color-overlay: rgb(0 0 0 / 0.6);
+
+  --color-sidebar: #1e1d1b;
+  --color-sidebar-hover: rgb(251 250 248 / 0.05);
+  --color-sidebar-selected: #44302a;
+  --color-sidebar-divider: #2e2c2a;
+  --color-sidebar-field: #262422;
+  --color-glass: rgb(36 35 33 / 0.66);
+  --color-glass-bar: rgb(25 24 23 / 0.7);
+  --color-glass-control: rgb(255 255 255 / 0.06);
+  --color-glass-border: rgb(255 255 255 / 0.08);
+  --color-glass-highlight: rgb(255 255 255 / 0.06);
+  --shadow-glass: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -14px rgb(0 0 0 / 0.6);
+  --shadow-glass-control: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 1px 3px rgb(0 0 0 / 0.3);
+  --color-glass-sidebar: rgb(34 33 31 / 0.5);
+  --color-glass-sheen: rgb(255 255 255 / 0.07);
+  --color-glass-edge: rgb(255 255 255 / 0.1);
+  --blur-glass-sidebar: blur(36px) saturate(1.6);
+  --color-ambient: #141312;
+  --color-ambient-warm: rgb(90 156 255 / 0.3);
+  --color-ambient-rose: rgb(237 33 58 / 0.14);
+  --color-ambient-cool: rgb(90 120 190 / 0.3);
+  --color-folder-back: #2c2a27;
+  --color-folder-front: rgb(52 50 47 / 0.62);
+  --color-folder-tab: #33302d;
+  --color-paper: #2a2826;
+  --color-paper-line: rgb(251 250 248 / 0.1);
+  --shadow-paper: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 0 0 1px rgb(251 250 248 / 0.07), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card-hover: 0 0 0 1px rgb(251 250 248 / 0.1), 0 14px 30px -14px rgb(0 0 0 / 0.7);
+  --color-logo-card: #fbfaf8; /* stays a light "app icon", as on a home screen */
+
+  --color-text: #e8e5df;
+  --color-text-secondary: #cfcbc4;
+  --color-text-muted: #a09c94;
+  --color-text-faint: #7a766f;
+  --color-text-inverse: #191817;
+  --color-text-placeholder: #6b6862;
+
+  --color-border: #34322f;
+  --color-border-strong: #403d3a;
+  --color-divider: #2e2c2a;
+
+  --color-primary: #e8e5df;
+  --color-primary-hover: #ffffff;
+  --color-on-primary: #191817;
+
+  --color-accent: #5a9cff;
+  --color-accent-hover: #86b6ff;
+  --color-accent-text: #86b6ff;
+  --color-accent-soft: rgb(90 156 255 / 0.14);
+  --color-accent-soft-hover: rgb(90 156 255 / 0.22);
+  --color-focus-ring: #86b6ff;
+  --color-selection: rgb(90 156 255 / 0.32);
+  --color-highlight: rgb(90 156 255 / 0.26);
+
+  --color-success: #4cc27f;
+  --color-success-soft: rgb(76 194 127 / 0.14);
+  --color-warning: #f0a53a;
+  --color-warning-soft: rgb(240 165 58 / 0.14);
+  --color-danger: #ff6474;
+  --color-danger-soft: rgb(255 100 116 / 0.14);
+  --color-info: #6ea2ff;
+  --color-info-soft: rgb(110 162 255 / 0.14);
+  --color-success-text: var(--color-success);
+  --color-warning-text: var(--color-warning);
+  --color-danger-text: #ff7a88;
+  --color-info-text: var(--color-info);
+  --color-danger-fill: #d9364a;
+  --color-danger-fill-hover: #e44b5e;
+
+  --color-field: rgb(255 255 255 / 0.035);
+  --color-control-track: rgb(255 255 255 / 0.16);
+  --color-control-thumb: #ffffff;
+  --color-control-raised: #3a3835;
+  --color-tooltip-bg: #34322f;
+  --color-tooltip-text: rgb(255 255 255 / 0.92);
+  --color-tooltip-border: rgb(255 255 255 / 0.12);
+  --color-skeleton: rgb(255 255 255 / 0.06);
+  --color-skeleton-shine: rgb(255 255 255 / 0.07);
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 0 0 1px rgb(255 255 255 / 0.07), 0 3px 6px rgb(0 0 0 / 0.3), 0 9px 24px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 0 0 1px rgb(255 255 255 / 0.08), 0 5px 10px rgb(0 0 0 / 0.35), 0 15px 40px rgb(0 0 0 / 0.5);
+  --shadow-logo-card: 0 0 0 1px rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-accent: 0 12px 24px -12px rgb(0 0 0 / 0.6);
+}
+
+/*
+ * ---- Touch sizing -------------------------------------------------------
+ * On coarse pointers every control grows to a comfortable touch target and
+ * UI text steps up a notch; components only reference the tokens.
+ */
+@media (pointer: coarse) {
+  :root {
+    --text-ui: 0.9375rem; /* 15px */
+    --text-note: 1rem; /* 16px */
+    --text-note-title: 2rem; /* 32px */
+    --icon-sm: 1rem;
+    --icon-md: 1.125rem;
+    --icon-lg: 1.25rem;
+    --icon-xl: 1.5rem;
+    --topbar-height: 2.75rem;
+    --sidebar-row-height: var(--tap-target);
+    --text-sidebar: 0.9375rem;
+    --command-input-height: 3.25rem;
+    --control-sm: 2.25rem; /* 36px, hit area extended to --tap-target */
+    --control-md: var(--tap-target);
+    --control-lg: 3rem;
+    --field-height: var(--tap-target);
+    --switch-width: 2.625rem;
+    --switch-height: 1.5rem;
+    --checkbox-size: 1.25rem;
+  }
+}

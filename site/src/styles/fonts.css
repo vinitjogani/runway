@@ -1,0 +1,52 @@
+/*
+ * Self-hosted fonts (bundled by Vite), so the page never calls a font CDN.
+ * Geist and Geist Mono are variable fonts: one small file per script covers
+ * every weight, and each subset's unicode-range means browsers download only
+ * what the page uses. The Latin Geist file is preloaded from index.html.
+ */
+@import '@fontsource-variable/geist/wght.css';
+@import '@fontsource-variable/geist-mono/wght.css';
+
+/*
+ * Metric-matched fallback for Geist.
+ *
+ * Until Geist arrives (it is preloaded from index.html), the page renders in
+ * Arial (or its metric twin, Liberation Sans) scaled to Geist's widths and
+ * vertical metrics, so the swap barely reflows the hero. Arial has no medium,
+ * so regular and medium get their own width factor. Values measured from the
+ * fonts over the hero copy: size-adjust = Geist width / Arial width,
+ * overrides = Geist metric / size-adjust.
+ */
+
+@font-face {
+  font-family: 'Geist Fallback';
+  font-style: normal;
+  font-weight: 100 450;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans');
+  size-adjust: 102.8%;
+  ascent-override: 98.2%;
+  descent-override: 29.2%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Geist Fallback';
+  font-style: normal;
+  font-weight: 451 550;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans');
+  size-adjust: 105.4%;
+  ascent-override: 95.8%;
+  descent-override: 28.5%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Geist Fallback';
+  font-style: normal;
+  font-weight: 551 900;
+  src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold');
+  size-adjust: 99.4%;
+  ascent-override: 101.6%;
+  descent-override: 30.2%;
+  line-gap-override: 0%;
+}

@@ -1,0 +1,417 @@
+/*
+ * The app preview under the hero: a browser window with the sidebar, a note
+ * and an Ask answer. A picture (role="img"), so nothing in it is interactive.
+ * It sits on a 3D stage: tilted toward the pointer (tilt.ts sets the two
+ * --landing-tilt-* angles on the stage) and flattened as it scrolls in.
+ */
+
+.stage {
+  max-inline-size: var(--landing-mock-width);
+  margin: var(--space-16) auto 0;
+  perspective: var(--landing-perspective);
+}
+
+.stage__tilt {
+  transform: rotateX(var(--landing-tilt-x)) rotateY(var(--landing-tilt-y));
+  transform-style: preserve-3d;
+  transition: transform var(--landing-duration-hover) var(--landing-ease-swing);
+}
+
+.mock {
+  position: relative;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--landing-radius-window);
+  background: var(--color-bg);
+  box-shadow: var(--landing-mock-shadow);
+  text-align: start;
+  user-select: none;
+  transform-origin: 50% 0;
+  transform-style: preserve-3d;
+}
+
+.mock__chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-3) var(--space-4);
+  border-block-end: var(--border-width) solid var(--color-divider);
+}
+
+.mock__dots {
+  display: flex;
+  gap: var(--space-1-5);
+}
+
+.mock__dots span {
+  inline-size: var(--landing-mock-dot-size);
+  block-size: var(--landing-mock-dot-size);
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.mock__url {
+  margin-inline: auto;
+  /* Optically centred: offset the dots on the left. */
+  padding-inline-end: calc(3 * var(--landing-mock-dot-size) + 2 * var(--space-1-5));
+  color: var(--color-text-placeholder);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.mock__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---- Sidebar (tablet and up) --------------------------------------------- */
+
+.mock__sidebar {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  padding: var(--space-4) var(--space-3);
+  border-inline-end: var(--border-width) solid var(--color-divider);
+  border-end-start-radius: var(--landing-radius-window);
+  background: var(--color-sidebar);
+  font-size: var(--landing-text-caption);
+}
+
+.mock__workspace {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-3);
+  font-weight: var(--weight-semibold);
+}
+
+.mock__workspace img {
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+}
+
+.mock__command {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-1-5) var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.mock__command--active {
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.mock__command kbd {
+  color: var(--color-text-placeholder);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.mock__group {
+  padding: var(--space-4) var(--space-2) var(--space-1-5);
+  color: var(--color-text-placeholder);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--landing-tracking-caption);
+  text-transform: uppercase;
+}
+
+.mock__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition:
+    background-color var(--duration-slow) var(--ease-out),
+    color var(--duration-slow) var(--ease-out);
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock__note--active {
+  background: var(--color-sidebar-selected);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+.mock__swatch {
+  flex: none;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 2px;
+}
+
+.mock__swatch--1 {
+  background: var(--color-danger);
+}
+.mock__swatch--2 {
+  background: var(--color-success);
+}
+.mock__swatch--3 {
+  background: var(--color-warning);
+}
+.mock__swatch--4 {
+  background: var(--color-info);
+}
+.mock__swatch--5 {
+  background: var(--color-collab-5);
+}
+.mock__swatch--6 {
+  background: var(--color-collab-4);
+}
+
+.mock__sync {
+  margin-block-start: auto;
+  padding: var(--space-3) var(--space-2) 0;
+  color: var(--color-text-placeholder);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* ---- Editor -------------------------------------------------------------- */
+
+.mock__editor {
+  min-inline-size: 0;
+  padding: var(--space-6) var(--space-5);
+}
+
+.mock__edited {
+  color: var(--color-text-placeholder);
+  font-size: var(--text-xs);
+}
+
+.mock__title {
+  margin: var(--landing-space-2-5) 0 var(--space-4);
+  font-size: var(--landing-text-mock-title);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+}
+
+.mock__text {
+  max-inline-size: var(--landing-mock-text-measure);
+  color: var(--color-text-secondary);
+}
+
+.mock__mark {
+  padding-inline: var(--space-0-5);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  transition: background-color 0.5s var(--ease-out);
+}
+
+/* Lit while Ask cites it. */
+.mock__mark--on {
+  background: var(--color-highlight);
+  color: var(--color-text);
+}
+
+.mock__heading {
+  margin: var(--space-6) 0 var(--space-2);
+  font-weight: var(--weight-medium);
+}
+
+.mock__todos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  color: var(--color-text-secondary);
+  font-size: var(--landing-text-body);
+}
+
+/* ---- Ask answer card ----------------------------------------------------- */
+
+.answer {
+  max-inline-size: var(--landing-answer-width);
+  margin-block-start: var(--space-8);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--landing-radius-answer);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--landing-float-shadow);
+  transform: translateZ(40px);
+}
+
+.answer__question {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 2.5rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.answer__spark {
+  flex: none;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.answer__text {
+  /* Room for the longest answer, so the card never jumps while it types. */
+  min-block-size: 4.6em;
+  margin-block-start: var(--space-3);
+  font-size: var(--landing-text-body);
+}
+
+.answer__thinking {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.answer__thinking[hidden] {
+  display: none;
+}
+
+.answer__dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-inline-end: var(--space-1);
+}
+
+.answer__dots span {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.answer__text strong {
+  font-weight: var(--weight-semibold);
+}
+
+.answer__cite {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin-inline-start: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.answer__cite[hidden] {
+  display: none;
+}
+
+.answer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-block-start: var(--landing-space-3-5);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-divider);
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+}
+
+.answer__private {
+  color: var(--color-success-text);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+/* ---- Floating chips, at different depths (they drift apart as you scroll) ---- */
+
+.chip {
+  position: absolute;
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--landing-space-2-5) var(--landing-space-3-5);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--landing-float-shadow);
+  font-size: var(--landing-text-caption);
+  white-space: nowrap;
+}
+
+.chip kbd {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.chip__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+}
+
+.chip__slash {
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+}
+
+.chip--ask {
+  inset-inline-start: -2.5rem;
+  inset-block-start: 7.5rem;
+}
+
+.chip--bytes {
+  inset-inline-end: -2.25rem;
+  inset-block-start: 4rem;
+  font-family: var(--font-mono);
+}
+
+.chip--saved {
+  inset-inline-start: 4rem;
+  inset-block-end: -2rem;
+}
+
+/* Only where there is room beside the window. */
+@media (min-width: 1100px) {
+  .chip {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 640px) {
+  .stage {
+    margin-block-start: var(--space-20);
+  }
+
+  .mock__body {
+    grid-template-columns: minmax(0, var(--landing-mock-sidebar)) minmax(0, 1fr);
+    min-block-size: var(--landing-mock-height);
+  }
+
+  .mock__sidebar {
+    display: flex;
+  }
+
+  .answer__footer {
+    flex-wrap: nowrap;
+  }
+
+  .mock__editor {
+    padding: var(--space-10) var(--space-12);
+  }
+}
+
+@media (min-width: 640px) and (max-width: 799px) {
+  .mock__editor {
+    padding: var(--space-8);
+  }
+}

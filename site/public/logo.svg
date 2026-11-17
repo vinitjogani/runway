@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Runway">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1f4d"/>
+      <stop offset="1" stop-color="#1d64d8"/>
+    </linearGradient>
+    <linearGradient id="strip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#sky)"/>
+  <!-- the horizon, and the runway running into it -->
+  <path d="M96 168h320" stroke="#86b6ff" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+  <path d="M232 168h48l84 260H148z" fill="url(#strip)"/>
+  <path d="M232 168 148 428M280 168l84 260" stroke="#ffffff" stroke-width="22" stroke-linecap="round"/>
+  <path d="M256 196v26M256 256v36M256 330v48" stroke="#ffffff" stroke-width="18" stroke-linecap="round"/>
+  <!-- approach lights -->
+  <circle cx="176" cy="456" r="9" fill="#86b6ff"/>
+  <circle cx="256" cy="456" r="9" fill="#86b6ff"/>
+  <circle cx="336" cy="456" r="9" fill="#86b6ff"/>
+</svg>
