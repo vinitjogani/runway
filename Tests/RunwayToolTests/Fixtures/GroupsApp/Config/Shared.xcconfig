@@ -1,0 +1,4 @@
+// Shared settings
+VERSION = 2.1
+SWIFT_VERSION = 5.0
+BUNDLE_PREFIX = com.example // trailing comment

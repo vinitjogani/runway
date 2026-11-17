@@ -1,0 +1,15 @@
+{
+  "originHash" : "0000",
+  "pins" : [
+    {
+      "identity" : "remote",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/example/Remote.git",
+      "state" : {
+        "revision" : "0123456789abcdef0123456789abcdef01234567",
+        "version" : "1.4.2"
+      }
+    }
+  ],
+  "version" : 3
+}

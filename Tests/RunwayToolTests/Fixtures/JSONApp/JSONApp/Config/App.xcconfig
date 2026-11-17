@@ -1,0 +1,2 @@
+#include "Main.xcconfig"
+PRODUCT_BUNDLE_IDENTIFIER = $(APP_ID_PREFIX)JSONApp

@@ -1,0 +1,4 @@
+#include "Shared.xcconfig"
+#include? "Missing.xcconfig"
+OTHER_SWIFT_FLAGS = -DFROM_XCCONFIG
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = $(inherited) DEBUG_EXTRA

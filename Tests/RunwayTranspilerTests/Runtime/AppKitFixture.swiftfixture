@@ -1,0 +1,101 @@
+// stub: import XCTest
+// stub: @MainActor func runAppKitFixture() throws -> [String] { throw XCTSkip("Runway's AppKit still declares its own Selector; this runs once it re-exports RunwayObjC") }
+//
+// AppKit-style code: menu items with #selector targets, a button's
+// target/action, a nil-targeted action through the responder chain, menu
+// validation, a Timer with a selector and KVO on an @objc dynamic property.
+// Compiled after RunwayTranspiler (see the plugin) against Runway's AppKit.
+import AppKit
+
+/// A control with target/action (Runway's AppKit has no NSButton yet).
+final class ActionButton: NSObject {
+    weak var target: AnyObject?
+    var action: Selector?
+}
+
+@MainActor
+final class DocumentController: NSResponder {
+    var log: [String] = []
+    let fileMenu = NSMenu(title: "File")
+    let button = ActionButton()
+    var autosaveTimer: Timer?
+    @objc dynamic var isDirty = false
+    private var dirtyObservation: NSKeyValueObservation?
+
+    func buildMenu() {
+        let save = NSMenuItem(title: "Save", action: #selector(save(_:)), keyEquivalent: "s")
+        save.target = self
+        fileMenu.addItem(save)
+        fileMenu.addItem(withTitle: "Revert", action: #selector(revert(_:)), keyEquivalent: "").target = self
+        // Nil target: goes up the responder chain.
+        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+
+        button.target = self
+        button.action = #selector(buttonClicked(_:))
+
+        dirtyObservation = observe(\.isDirty, options: [.old, .new]) { [unowned self] _, change in
+            self.log.append("dirty \(change.oldValue!) -> \(change.newValue!)")
+        }
+        autosaveTimer = Timer(timeInterval: 0.01, target: self, selector: #selector(autosave(_:)), userInfo: "draft", repeats: false)
+        RunLoop.current.add(autosaveTimer!, forMode: .default)
+    }
+
+    @IBAction func save(_ sender: Any?) {
+        log.append("save from \((sender as? NSMenuItem)?.title ?? "?")")
+        isDirty = false
+    }
+
+    @objc func revert(_ sender: NSMenuItem) { log.append("revert") }
+
+    @IBAction private func buttonClicked(_ sender: ActionButton) {
+        log.append("button clicked")
+        isDirty = true
+    }
+
+    @objc func autosave(_ timer: Timer) { log.append("autosave \(timer.userInfo as? String ?? "-")") }
+
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(revert(_:)) { return isDirty }
+        return super.validateMenuItem(item)
+    }
+}
+
+/// Stands in for the key window at the end of the responder chain.
+final class WindowStandIn: NSResponder {
+    var closed = false
+    @objc func performClose(_ sender: Any?) { closed = true }
+}
+
+// MARK: The harness (what AppKit's controls and menus do with these)
+
+@MainActor func runAppKitFixture() throws -> [String] {
+    let doc = DocumentController()
+    let window = WindowStandIn()
+    doc.buildMenu()
+    RunwayObjC.ObjCRuntime.responderChain = { _ in [doc, window] }
+    defer { RunwayObjC.ObjCRuntime.responderChain = nil }
+
+    func enabled(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action, let target = RunwayObjC.target(forAction: action, to: item.target, from: item) else { return false }
+        if RunwayObjC.responds(target, to: "validateMenuItem:") {
+            return RunwayObjC.perform(target, "validateMenuItem:", [item]) as? Bool ?? true
+        }
+        return true
+    }
+    var log: [String] = []
+    log.append("enabled " + doc.fileMenu.items.map { "\($0.title)=\(enabled($0))" }.joined(separator: " "))
+    let save = doc.fileMenu.items[0]
+    log.append("sent save: \(RunwayObjC.sendAction(save.action!, to: save.target, from: save))")
+    log.append("sent click: \(RunwayObjC.sendAction(doc.button.action!, to: doc.button.target, from: doc.button))")
+    log.append("enabled " + doc.fileMenu.items.map { "\($0.title)=\(enabled($0))" }.joined(separator: " "))
+    let revert = doc.fileMenu.items[1]
+    log.append("sent revert: \(RunwayObjC.sendAction(revert.action!, to: revert.target, from: revert))")
+    let close = doc.fileMenu.items[2]
+    log.append("sent close: \(RunwayObjC.sendAction(close.action!, to: close.target, from: close)) closed=\(window.closed)")
+    log.append("unknown: \(RunwayObjC.sendAction(Selector("noSuchAction:"), to: nil, from: nil))")
+    let deadline = Date().addingTimeInterval(2)
+    while !doc.log.contains(where: { $0.hasPrefix("autosave") }) && Date() < deadline {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    }
+    return log + doc.log
+}

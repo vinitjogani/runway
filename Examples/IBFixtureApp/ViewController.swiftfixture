@@ -1,0 +1,90 @@
+import Cocoa
+
+class MainWindowController: NSWindowController, NSWindowDelegate {
+    override func windowDidLoad() {
+        super.windowDidLoad()
+        print("MainWindowController.windowDidLoad: \(window?.title ?? "nil"), content: \(contentViewController.map { "\(type(of: $0))" } ?? "nil")")
+    }
+}
+
+class ViewController: NSViewController {
+    @IBOutlet weak var countLabel: NSTextField!
+    @IBOutlet weak var statusLabel: NSTextField!
+    @IBOutlet weak var badge: BadgeView!
+    @IBOutlet weak var colorPopUp: NSPopUpButton!
+    @IBOutlet weak var statusHeight: NSLayoutConstraint!
+    @IBOutlet var counterButtons: [NSButton]!
+
+    var count = 0 { didSet { countLabel.stringValue = "Count: \(count)"; badge.text = "\(count)" } }
+    var step = 1
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        print("ViewController.awakeFromNib (view loaded: \(isViewLoaded))")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        print("ViewController.viewDidLoad: label=\(countLabel.stringValue) popup=\(colorPopUp.titleOfSelectedItem ?? "nil") "
+              + "buttons=\(counterButtons.map(\.title)) statusHeight=\(statusHeight.constant) badge=\(type(of: badge!))")
+        badge.text = "0"
+    }
+
+    @IBAction func increment(_ sender: Any?) {
+        count += step
+        status("increment: from \(senderName(sender))")
+    }
+
+    @IBAction func reset(_ sender: Any?) {
+        count = 0
+        status("reset: from \(senderName(sender))")
+    }
+
+    @IBAction func toggleStep(_ sender: NSButton) {
+        step = sender.state == .on ? 10 : 1
+        status("toggleStep: step \(step)")
+    }
+
+    @IBAction func colorChanged(_ sender: NSPopUpButton) {
+        let colors: [Int: NSColor] = [1: .systemBlue, 2: .systemOrange, 3: .systemGreen]
+        badge.fillColor = colors[sender.selectedTag()] ?? .gray
+        status("colorChanged: \(sender.titleOfSelectedItem ?? "")")
+    }
+
+    @IBAction func sliderMoved(_ sender: NSSlider) {
+        badge.alphaValue = CGFloat(0.3 + sender.doubleValue / 100 * 0.7)
+        status("sliderMoved: \(Int(sender.doubleValue))")
+    }
+
+    override func prepare(for segue: NSStoryboardSegue, sender: Any?) {
+        print("prepare(for: \(segue.identifier ?? "nil")) → \(type(of: segue.destinationController))")
+        (segue.destinationController as? DetailViewController)?.message = "The count is \(count)."
+    }
+
+    private func status(_ s: String) {
+        print("action \(s); count=\(count)")
+        statusLabel.stringValue = s
+    }
+
+    private func senderName(_ sender: Any?) -> String {
+        if let b = sender as? NSButton { return "button \(b.title)" }
+        if let m = sender as? NSMenuItem { return "menu \(m.title)" }
+        return "\(String(describing: sender))"
+    }
+}
+
+class DetailViewController: NSViewController {
+    @IBOutlet weak var messageLabel: NSTextField!
+    var message = ""
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        messageLabel.stringValue = message
+        print("DetailViewController.viewDidLoad: \(message)")
+    }
+
+    @IBAction func close(_ sender: Any?) {
+        print("DetailViewController.close")
+        dismiss(self)
+    }
+}

@@ -1,0 +1,215 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXCopyFilesBuildPhase section */
+		COPY_APP /* Copy Tools */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+			);
+			name = "Copy Tools";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		P_APP = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SyncApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		P_WIDGET = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		P_TESTS = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SyncAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EX_APP /* Exceptions for "SyncApp" folder in "SyncApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				ExtensionOnly.swift,
+			);
+			target = APP /* SyncApp */;
+		};
+		EX_APP_WIDGET /* Exceptions for "SyncApp" folder in "Widget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ExtensionOnly.swift,
+			);
+			target = WIDGET /* Widget */;
+		};
+		EX_WIDGET_APP /* Exceptions for "Widget" folder in "SyncApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SharedWithApp.swift,
+			);
+			target = APP /* SyncApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		EX_PHASE = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = COPY_APP /* Copy Tools */;
+			membershipExceptions = (
+				Embedded/tool.sh,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		G_APP /* SyncApp */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (EX_APP /* Exceptions for "SyncApp" folder in "SyncApp" target */, EX_APP_WIDGET, EX_PHASE, ); explicitFileTypes = {}; explicitFolders = (); path = SyncApp; sourceTree = "<group>"; };
+		G_WIDGET /* Widget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (EX_WIDGET_APP, ); explicitFileTypes = {}; explicitFolders = (); path = Widget; sourceTree = "<group>"; };
+		G_TESTS /* SyncAppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SyncAppTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXGroup section */
+		MAIN = {
+			isa = PBXGroup;
+			children = (
+				G_APP,
+				G_WIDGET,
+				G_TESTS,
+				PRODUCTS,
+			);
+			sourceTree = "<group>";
+		};
+		PRODUCTS = {
+			isa = PBXGroup;
+			children = (
+				P_APP,
+				P_WIDGET,
+				P_TESTS,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		APP /* SyncApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_APP;
+			buildPhases = (
+				SRC_APP,
+				RES_APP,
+				COPY_APP,
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				G_APP /* SyncApp */,
+			);
+			name = SyncApp;
+			productName = SyncApp;
+			productReference = P_APP;
+			productType = "com.apple.product-type.application";
+		};
+		WIDGET /* Widget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_OTHER;
+			buildPhases = (
+			);
+			fileSystemSynchronizedGroups = (
+				G_WIDGET,
+			);
+			name = Widget;
+			productReference = P_WIDGET;
+			productType = "com.apple.product-type.app-extension";
+		};
+		TESTS = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_OTHER;
+			buildPhases = (
+			);
+			dependencies = (
+				TD_APP,
+			);
+			fileSystemSynchronizedGroups = (
+				G_TESTS,
+			);
+			name = SyncAppTests;
+			productReference = P_TESTS;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		ROOT = {
+			isa = PBXProject;
+			buildConfigurationList = PCL;
+			developmentRegion = en;
+			mainGroup = MAIN;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				APP,
+				WIDGET,
+				TESTS,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RES_APP = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SRC_APP = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		TD_APP = {
+			isa = PBXTargetDependency;
+			target = APP /* SyncApp */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		PDEBUG = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; }; name = Debug; };
+		PRELEASE = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; }; name = Release; };
+		ADEBUG = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = G_APP /* SyncApp */;
+			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SyncApp/Info.plist;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				INFOPLIST_KEY_LSUIElement = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.SyncApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ARELEASE = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = G_APP /* SyncApp */;
+			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SyncApp/Info.plist;
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				INFOPLIST_KEY_LSUIElement = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.SyncApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		ODEBUG = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_NAME = "$(TARGET_NAME)"; }; name = Debug; };
+		ORELEASE = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_NAME = "$(TARGET_NAME)"; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		PCL = {isa = XCConfigurationList; buildConfigurations = (PDEBUG, PRELEASE, ); defaultConfigurationName = Release; };
+		TCL_APP = {isa = XCConfigurationList; buildConfigurations = (ADEBUG, ARELEASE, ); defaultConfigurationName = Release; };
+		TCL_OTHER = {isa = XCConfigurationList; buildConfigurations = (ODEBUG, ORELEASE, ); defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = ROOT;
+}

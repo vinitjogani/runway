@@ -1,0 +1,31 @@
+// An AppKit app as Xcode makes it: `@main` app delegate, Info.plist's
+// NSMainStoryboardFile = Main, everything else from Main.storyboard.
+// (A .swiftfixture: the RunwayTranspileFixtures plugin transpiles it, as
+// `runway` does an app's sources when staging.)
+
+import Cocoa
+
+@main
+class AppDelegate: NSObject, NSApplicationDelegate {
+    @IBOutlet weak var counterMenu: NSMenu!
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        print("AppDelegate.awakeFromNib (counter menu: \(counterMenu?.title ?? "nil"))")
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        print("applicationWillFinishLaunching; main menu: \(NSApp.mainMenu?.items.map(\.title) ?? [])")
+    }
+
+    func applicationDidFinishLaunching(_ aNotification: Notification) {
+        let w = NSApp.windows.first
+        print("applicationDidFinishLaunching; window: \(w?.title ?? "none"), controller: \(w?.windowController.map { "\(type(of: $0))" } ?? "none")")
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    @IBAction func sayHello(_ sender: Any?) {
+        print("AppDelegate.sayHello from \(String(describing: (sender as? NSMenuItem)?.title))")
+    }
+}

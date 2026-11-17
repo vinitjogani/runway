@@ -1,0 +1,277 @@
+{
+  "about": "Runway's measuring-stick corpus: popular, permissively licensed, open-source macOS apps written in Swift. Clones live outside the repo (RUNWAY_CORPUS_DIR); `analyze.py fetch` clones them, `analyze.py` refreshes commit/project_type/swift_loc here. Excluded after checking: Ice, AltTab, Loop (GPL-3.0), Pearcleaner (Apache-2.0 + Commons Clause), Itsycal (Objective-C), Plash (source removed from the repo).",
+  "apps": [
+    {
+      "name": "Maccy",
+      "url": "https://github.com/p0deje/Maccy",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "clipboard manager, menu bar",
+      "source": {
+        "kind": "git",
+        "dir": "Maccy"
+      },
+      "commit": "f0b571e32e4031d7b91ba811f50d0f33e8e5548b",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 8070,
+      "swift_files": 119,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "Rectangle",
+      "url": "https://github.com/rxhanson/Rectangle",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "window manager, Accessibility API",
+      "source": {
+        "kind": "git",
+        "dir": "Rectangle"
+      },
+      "commit": "451ab711b5c669dd49e14212c23b60db884f7a00",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 25041,
+      "swift_files": 215,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "Stats",
+      "url": "https://github.com/exelban/stats",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "system monitor, IOKit/SMC, many framework targets",
+      "source": {
+        "kind": "git",
+        "dir": "Stats"
+      },
+      "commit": "95ff9fb0c0bbb45e035f01b4f553d6d9afe37344",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 39035,
+      "swift_files": 118,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "HiddenBar",
+      "url": "https://github.com/dwarvesf/hidden",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "menu bar organizer, storyboards",
+      "source": {
+        "kind": "git",
+        "dir": "HiddenBar"
+      },
+      "commit": "47937b9d8aede0325ca87a7880af13433e7c5cf8",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 2192,
+      "swift_files": 31,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "CodeEdit",
+      "url": "https://github.com/CodeEditApp/CodeEdit",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "code editor, large, Xcode 16 synchronized folders",
+      "source": {
+        "kind": "git",
+        "dir": "CodeEdit"
+      },
+      "commit": "fa2aebd86373211c78626074b53ab75010767575",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 49017,
+      "swift_files": 631,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "NetNewsWire",
+      "url": "https://github.com/Ranchero-Software/NetNewsWire",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "RSS reader, Mac + iOS targets, local SwiftPM modules",
+      "source": {
+        "kind": "git",
+        "dir": "NetNewsWire"
+      },
+      "commit": "466a6cb8ff7c9e0895692e70b98c6659c63f39d3",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj+local-packages",
+      "swift_loc": 64377,
+      "swift_files": 523,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "LinearMouse",
+      "url": "https://github.com/linearmouse/linearmouse",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "mouse/trackpad utility, IOKit HID",
+      "source": {
+        "kind": "git",
+        "dir": "LinearMouse"
+      },
+      "commit": "93d38f1981427fde98ceca105c794dae32c58b7e",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj+local-packages",
+      "swift_loc": 43773,
+      "swift_files": 242,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "MonitorControl",
+      "url": "https://github.com/MonitorControl/MonitorControl",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "external display brightness (DDC), private APIs",
+      "source": {
+        "kind": "git",
+        "dir": "MonitorControl"
+      },
+      "commit": "7cfe64500d19cbbcbf82121a91c826f658a403bd",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 5943,
+      "swift_files": 29,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "Clipy",
+      "url": "https://github.com/Clipy/Clipy",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "clipboard manager, xibs, Realm",
+      "source": {
+        "kind": "git",
+        "dir": "Clipy"
+      },
+      "commit": "1f571c24bf228098b2e84739404e1a0d0acfcc3f",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj+local-packages",
+      "swift_loc": 6870,
+      "swift_files": 75,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "SwiftBar",
+      "url": "https://github.com/swiftbar/SwiftBar",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "menu bar scripts, SwiftUI settings",
+      "source": {
+        "kind": "git",
+        "dir": "SwiftBar"
+      },
+      "commit": "97f4f87dc90e668c7829f1ee4a6fb7988c47bc73",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 11524,
+      "swift_files": 65,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "AeroSpace",
+      "url": "https://github.com/nikitabobko/AeroSpace",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "tiling window manager, SwiftPM + XcodeGen",
+      "source": {
+        "kind": "git",
+        "dir": "AeroSpace"
+      },
+      "commit": "0921fb810de260b89f7c53abc00b249e47e1fc1d",
+      "license_detected": "MIT",
+      "project_type": "swiftpm+xcodegen+xcodeproj",
+      "swift_loc": 14403,
+      "swift_files": 243,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "Amethyst",
+      "url": "https://github.com/ianyh/Amethyst",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "tiling window manager",
+      "source": {
+        "kind": "git",
+        "dir": "Amethyst"
+      },
+      "commit": "d39e0277fe898cc19e3bb40f9fd89c7dea181795",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj+xcworkspace",
+      "swift_loc": 8064,
+      "swift_files": 58,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "Gifski",
+      "url": "https://github.com/sindresorhus/Gifski",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "video to GIF, AVFoundation + Rust core",
+      "source": {
+        "kind": "git",
+        "dir": "Gifski"
+      },
+      "commit": "e184b284886929b9401e2442629a57650d3231f4",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj",
+      "swift_loc": 13847,
+      "swift_files": 39,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "FSNotes",
+      "url": "https://github.com/glushchenko/fsnotes",
+      "license": "MIT",
+      "ui": "AppKit-first",
+      "notes": "Markdown notes, Mac + iOS, NSTextView",
+      "source": {
+        "kind": "git",
+        "dir": "FSNotes"
+      },
+      "commit": "c8a6aee44d4f497112dac21aa930cfd576492172",
+      "license_detected": "MIT",
+      "project_type": "xcodeproj+xcworkspace",
+      "swift_loc": 36368,
+      "swift_files": 229,
+      "ui_detected": "AppKit-first"
+    },
+    {
+      "name": "KeyboardCowboy",
+      "url": "https://github.com/zenangst/KeyboardCowboy",
+      "license": "MIT",
+      "ui": "SwiftUI-first",
+      "notes": "keyboard automation, Tuist + many local packages",
+      "source": {
+        "kind": "git",
+        "dir": "KeyboardCowboy"
+      },
+      "commit": "0975ba7d68d44b97a09cddc56ca6e7e7cc96c6f7",
+      "license_detected": "MIT",
+      "project_type": "tuist+local-packages",
+      "swift_loc": 50916,
+      "swift_files": 673,
+      "ui_detected": "SwiftUI-first"
+    },
+    {
+      "name": "VirtualBuddy",
+      "url": "https://github.com/insidegui/VirtualBuddy",
+      "license": "BSD-2-Clause",
+      "ui": "SwiftUI-first",
+      "notes": "macOS VMs, Virtualization.framework",
+      "source": {
+        "kind": "git",
+        "dir": "VirtualBuddy"
+      },
+      "commit": "c316f26deaf58175b4926a99f6a0199b3c305579",
+      "license_detected": "BSD-2-Clause",
+      "project_type": "xcodeproj+xcproj-json",
+      "swift_loc": 33946,
+      "swift_files": 299,
+      "ui_detected": "SwiftUI-first"
+    }
+  ]
+}

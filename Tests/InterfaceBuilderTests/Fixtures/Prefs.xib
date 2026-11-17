@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="22505" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
+    <dependencies>
+        <deployment identifier="macosx"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="22505"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <objects>
+        <customObject id="-2" userLabel="File's Owner" customClass="PrefsOwner" customModule="InterfaceBuilderTests" customModuleProvider="target">
+            <connections>
+                <outlet property="window" destination="QvC-M9-y7g" id="o01"/>
+                <outlet property="nameField" destination="Fld-01" id="o02"/>
+                <outlet property="saveButton" destination="Btn-01" id="o03"/>
+                <outlet property="helper" destination="Hlp-01" id="o04"/>
+                <outlet property="widthConstraint" destination="Cst-W1" id="o05"/>
+                <outletCollection property="checkboxes" destination="Chk-01" collectionClass="NSMutableArray" id="o06"/>
+                <outletCollection property="checkboxes" destination="Chk-02" collectionClass="NSMutableArray" id="o07"/>
+            </connections>
+        </customObject>
+        <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
+        <customObject id="-3" userLabel="Application" customClass="NSObject"/>
+        <customObject id="Hlp-01" customClass="PrefsHelper" customModule="InterfaceBuilderTests" customModuleProvider="target">
+            <connections>
+                <outlet property="owner" destination="-2" id="o08"/>
+            </connections>
+        </customObject>
+        <userDefaultsController representsSharedInstance="YES" id="UDC-01"/>
+        <window title="Preferences &amp; Settings" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" visibleAtLaunch="NO" animationBehavior="default" frameAutosaveName="PrefsWindow" id="QvC-M9-y7g">
+            <windowStyleMask key="styleMask" titled="YES" closable="YES"/>
+            <rect key="contentRect" x="196" y="240" width="400" height="220"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1440" height="900"/>
+            <value key="minSize" type="size" width="300" height="200"/>
+            <view key="contentView" id="EiT-Mj-1SZ">
+                <rect key="frame" x="0.0" y="0.0" width="400" height="220"/>
+                <autoresizingMask key="autoresizingMask"/>
+                <subviews>
+                    <textField verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Fld-01">
+                        <rect key="frame" x="20" y="178" width="200" height="22"/>
+                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" borderStyle="bezel" placeholderString="Your name" drawsBackground="YES" id="Fld-C1">
+                            <font key="font" metaFont="system"/>
+                            <color key="textColor" name="controlTextColor" catalog="System" colorSpace="catalog"/>
+                            <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                        </textFieldCell>
+                    </textField>
+                    <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Lbl-01">
+                        <rect key="frame" x="228" y="181" width="80" height="16"/>
+                        <textFieldCell key="cell" lineBreakMode="clipping" alignment="right" title="&lt;Label&gt;" id="Lbl-C1">
+                            <font key="font" metaFont="smallSystem"/>
+                            <color key="textColor" red="0.5" green="0.25" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                        </textFieldCell>
+                    </textField>
+                    <button translatesAutoresizingMaskIntoConstraints="NO" id="Chk-01">
+                        <rect key="frame" x="18" y="150" width="100" height="18"/>
+                        <buttonCell key="cell" type="check" title="First" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="Chk-C1">
+                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                            <font key="font" metaFont="system"/>
+                        </buttonCell>
+                        <connections>
+                            <binding destination="UDC-01" name="value" keyPath="values.IBTestsFirst" id="Bnd-01"/>
+                        </connections>
+                    </button>
+                    <button translatesAutoresizingMaskIntoConstraints="NO" id="Chk-02">
+                        <rect key="frame" x="18" y="128" width="100" height="18"/>
+                        <buttonCell key="cell" type="radio" title="Second" bezelStyle="regularSquare" imagePosition="left" inset="2" id="Chk-C2">
+                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                            <font key="font" metaFont="system"/>
+                        </buttonCell>
+                        <connections>
+                            <action selector="toggled:" target="-1" id="Act-03"/>
+                        </connections>
+                    </button>
+                    <popUpButton verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Pop-01">
+                        <rect key="frame" x="17" y="90" width="120" height="25"/>
+                        <popUpButtonCell key="cell" type="push" title="Two" bezelStyle="rounded" alignment="left" lineBreakMode="truncatingTail" state="on" borderStyle="borderAndBezel" imageScaling="proportionallyDown" inset="2" selectedItem="Itm-02" id="Pop-C1">
+                            <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
+                            <font key="font" metaFont="menu"/>
+                            <menu key="menu" id="Pop-M1">
+                                <items>
+                                    <menuItem title="One" tag="1" id="Itm-01"/>
+                                    <menuItem title="Two" state="on" tag="2" id="Itm-02"/>
+                                    <menuItem isSeparatorItem="YES" id="Itm-03"/>
+                                    <menuItem title="Three" tag="3" id="Itm-04"/>
+                                </items>
+                            </menu>
+                        </popUpButtonCell>
+                    </popUpButton>
+                    <segmentedControl verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Seg-01">
+                        <rect key="frame" x="150" y="90" width="150" height="24"/>
+                        <segmentedCell key="cell" borderStyle="border" alignment="left" style="rounded" trackingMode="selectOne" id="Seg-C1">
+                            <font key="font" metaFont="system"/>
+                            <segments>
+                                <segment label="A" width="45"/>
+                                <segment label="B" width="45" selected="YES" tag="1"/>
+                                <segment image="gear" catalog="system" width="45" tag="2"/>
+                            </segments>
+                        </segmentedCell>
+                    </segmentedControl>
+                    <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Sld-01">
+                        <rect key="frame" x="18" y="60" width="200" height="20"/>
+                        <sliderCell key="cell" continuous="YES" state="on" alignment="left" minValue="10" maxValue="20" doubleValue="15" tickMarkPosition="above" numberOfTickMarks="3" sliderType="linear" id="Sld-C1"/>
+                    </slider>
+                    <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Btn-01">
+                        <rect key="frame" x="300" y="13" width="87" height="32"/>
+                        <buttonCell key="cell" type="push" title="Save" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="Btn-C1">
+                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                            <font key="font" metaFont="system"/>
+                            <string key="keyEquivalent" base64-UTF8="YES">DQ</string>
+                        </buttonCell>
+                        <connections>
+                            <action selector="save:" target="-2" id="Act-01"/>
+                        </connections>
+                    </button>
+                    <button toolTip="Help!" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Hlp-Bt">
+                        <rect key="frame" x="20" y="17" width="25" height="25"/>
+                        <buttonCell key="cell" type="help" bezelStyle="helpButton" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="Hlp-C1">
+                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                            <font key="font" metaFont="system"/>
+                        </buttonCell>
+                        <connections>
+                            <action selector="help:" target="Hlp-01" id="Act-02"/>
+                        </connections>
+                    </button>
+                    <customView translatesAutoresizingMaskIntoConstraints="NO" id="Cst-V1" customClass="PrefsSwatch" customModule="InterfaceBuilderTests" customModuleProvider="target">
+                        <rect key="frame" x="320" y="150" width="60" height="50"/>
+                        <userDefinedRuntimeAttributes>
+                            <userDefinedRuntimeAttribute type="string" keyPath="label" value="swatch"/>
+                            <userDefinedRuntimeAttribute type="number" keyPath="radius">
+                                <real key="value" value="6.5"/>
+                            </userDefinedRuntimeAttribute>
+                            <userDefinedRuntimeAttribute type="boolean" keyPath="layer.masksToBounds" value="YES"/>
+                        </userDefinedRuntimeAttributes>
+                    </customView>
+                </subviews>
+                <constraints>
+                    <constraint firstItem="Fld-01" firstAttribute="leading" secondItem="EiT-Mj-1SZ" secondAttribute="leading" constant="20" id="C01"/>
+                    <constraint firstItem="Fld-01" firstAttribute="top" secondItem="EiT-Mj-1SZ" secondAttribute="top" constant="20" id="C02"/>
+                    <constraint firstItem="Fld-01" firstAttribute="width" constant="200" identifier="nameWidth" id="Cst-W1"/>
+                    <constraint firstItem="Lbl-01" firstAttribute="leading" secondItem="Fld-01" secondAttribute="trailing" constant="8" id="C03"/>
+                    <constraint firstItem="Lbl-01" firstAttribute="firstBaseline" secondItem="Fld-01" secondAttribute="firstBaseline" id="C04"/>
+                    <constraint firstAttribute="trailing" secondItem="Btn-01" secondAttribute="trailing" constant="20" id="C05"/>
+                    <constraint firstAttribute="bottom" secondItem="Btn-01" secondAttribute="bottom" constant="20" id="C06"/>
+                    <constraint firstItem="Cst-V1" firstAttribute="trailing" secondItem="EiT-Mj-1SZ" secondAttribute="trailingMargin" id="C07"/>
+                    <constraint firstItem="Cst-V1" firstAttribute="top" secondItem="EiT-Mj-1SZ" secondAttribute="top" constant="20" id="C08"/>
+                    <constraint firstItem="Cst-V1" firstAttribute="width" secondItem="Cst-V1" secondAttribute="height" multiplier="6:5" id="C09"/>
+                    <constraint firstItem="Cst-V1" firstAttribute="width" constant="60" priority="750" id="C10"/>
+                </constraints>
+            </view>
+            <connections>
+                <outlet property="initialFirstResponder" destination="Fld-01" id="o09"/>
+            </connections>
+        </window>
+        <menu title="Context" autoenablesItems="NO" id="Ctx-M1">
+            <items>
+                <menuItem title="Copy Name" keyEquivalent="c" id="Ctx-I1">
+                    <modifierMask key="keyEquivalentModifierMask" option="YES" command="YES"/>
+                    <connections>
+                        <action selector="copyName:" target="-2" id="Act-04"/>
+                    </connections>
+                </menuItem>
+                <menuItem title="Hidden" hidden="YES" enabled="NO" id="Ctx-I2"/>
+            </items>
+        </menu>
+    </objects>
+    <resources>
+        <image name="gear" catalog="system" width="15" height="15"/>
+    </resources>
+</document>

@@ -1,0 +1,523 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BF_APP /* GroupsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F_APP /* GroupsApp.swift */; };
+		BF_HELPER = {isa = PBXBuildFile; fileRef = F_HELPER; };
+		BF_LEGACY = {isa = PBXBuildFile; fileRef = F_LEGACY; };
+		BF_SHARED = {isa = PBXBuildFile; fileRef = F_SHARED; };
+		BF_MAIN = {isa = PBXBuildFile; fileRef = VG_MAIN; };
+		BF_LOC = {isa = PBXBuildFile; fileRef = VG_LOC; };
+		BF_ASSETS = {isa = PBXBuildFile; fileRef = F_ASSETS; };
+		BF_THEMES = {isa = PBXBuildFile; fileRef = F_THEMES; };
+		BF_DING = {isa = PBXBuildFile; fileRef = F_DING; };
+		BF_KITLINK = {isa = PBXBuildFile; fileRef = P_KIT; };
+		BF_KITEMBED = {isa = PBXBuildFile; fileRef = P_KIT; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		BF_SDK = {isa = PBXBuildFile; fileRef = F_SDK; };
+		BF_PKG = {isa = PBXBuildFile; productRef = PD_REMOTE; };
+		BF_KITSRC = {isa = PBXBuildFile; fileRef = F_KIT; };
+		BF_TESTS = {isa = PBXBuildFile; fileRef = F_TESTS; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		PROXY_KIT = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ROOT /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = KIT;
+			remoteInfo = Kit;
+		};
+		PROXY_APP = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ROOT;
+			proxyType = 1;
+			remoteGlobalIDString = APP;
+			remoteInfo = "Groups App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		COPY_APP /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				BF_KITEMBED,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		F_APP /* GroupsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsApp.swift; sourceTree = "<group>"; };
+		F_HELPER = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Helper.swift; sourceTree = "<group>"; };
+		F_LEGACY = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Legacy.m; sourceTree = "<group>"; };
+		F_SHARED = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Shared.swift; path = Shared/Shared.swift; sourceTree = SOURCE_ROOT; };
+		F_MAIN_BASE = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		F_MAIN_EN = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Main.strings; sourceTree = "<group>"; };
+		F_LOC_EN = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		F_ASSETS = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F_THEMES = {isa = PBXFileReference; lastKnownFileType = folder; path = Themes; sourceTree = "<group>"; };
+		F_DING = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = ding.aiff; sourceTree = "<group>"; };
+		F_BASECFG = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		F_KIT = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kit.swift; sourceTree = "<group>"; };
+		F_TESTS = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsAppTests.swift; sourceTree = "<group>"; };
+		F_SDK = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		P_APP = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Groups App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		P_KIT = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Kit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		P_TESTS = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GroupsAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		P_WIDGET = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FW_APP = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF_KITLINK,
+				BF_SDK,
+				BF_PKG,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		MAIN = {
+			isa = PBXGroup;
+			children = (
+				GAPP /* App */,
+				GCONF,
+				GKIT,
+				GTESTS,
+				F_SHARED,
+				F_SDK,
+				PRODUCTS,
+			);
+			sourceTree = "<group>";
+		};
+		GAPP /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F_APP,
+				F_HELPER,
+				F_LEGACY,
+				VG_MAIN,
+				VG_LOC,
+				F_ASSETS,
+				F_THEMES,
+				F_DING,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		GCONF = {
+			isa = PBXGroup;
+			children = (
+				F_BASECFG,
+			);
+			name = Configuration;
+			path = Config;
+			sourceTree = "<group>";
+		};
+		GKIT = {
+			isa = PBXGroup;
+			children = (
+				F_KIT,
+			);
+			path = Kit;
+			sourceTree = "<group>";
+		};
+		GTESTS = {
+			isa = PBXGroup;
+			children = (
+				F_TESTS,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		PRODUCTS = {
+			isa = PBXGroup;
+			children = (
+				P_APP,
+				P_KIT,
+				P_TESTS,
+				P_WIDGET,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		APP /* Groups App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_APP;
+			buildPhases = (
+				SRC_APP,
+				FW_APP,
+				RES_APP,
+				COPY_APP,
+				SCRIPT_APP,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				TD_KIT,
+			);
+			name = "Groups App";
+			packageProductDependencies = (
+				PD_REMOTE,
+				PD_LOCAL,
+				PD_PLUGIN,
+			);
+			productName = "Groups App";
+			productReference = P_APP;
+			productType = "com.apple.product-type.application";
+		};
+		KIT = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_KIT;
+			buildPhases = (
+				SRC_KIT,
+			);
+			dependencies = (
+			);
+			name = Kit;
+			productName = Kit;
+			productReference = P_KIT;
+			productType = "com.apple.product-type.framework";
+		};
+		TESTS = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_TESTS;
+			buildPhases = (
+				SRC_TESTS,
+			);
+			dependencies = (
+				TD_APP,
+			);
+			name = GroupsAppTests;
+			productName = GroupsAppTests;
+			productReference = P_TESTS;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		WIDGET = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = TCL_KIT;
+			buildPhases = (
+			);
+			dependencies = (
+			);
+			name = Widget;
+			productName = Widget;
+			productReference = P_WIDGET;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		ROOT /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = PCL;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = MAIN;
+			packageReferences = (
+				REMOTE1 /* XCRemoteSwiftPackageReference "Remote" */,
+				LOCAL1,
+			);
+			productRefGroup = PRODUCTS;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				APP,
+				KIT,
+				TESTS,
+				WIDGET,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RES_APP = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF_MAIN,
+				BF_LOC,
+				BF_ASSETS,
+				BF_THEMES,
+				BF_DING,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		SCRIPT_APP = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			shellPath = /bin/sh;
+			shellScript = "echo \"Building $PRODUCT_NAME\"\nexit 0\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SRC_APP = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF_APP /* GroupsApp.swift in Sources */,
+				BF_HELPER,
+				BF_LEGACY,
+				BF_SHARED,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRC_KIT = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF_KITSRC,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRC_TESTS = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF_TESTS,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		TD_KIT = {
+			isa = PBXTargetDependency;
+			target = KIT;
+			targetProxy = PROXY_KIT;
+		};
+		TD_APP = {
+			isa = PBXTargetDependency;
+			targetProxy = PROXY_APP;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		VG_MAIN /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				F_MAIN_BASE,
+				F_MAIN_EN,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		VG_LOC = {
+			isa = PBXVariantGroup;
+			children = (
+				F_LOC_EN,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		PDEBUG = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F_BASECFG /* Base.xcconfig */;
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Debug;
+		};
+		PRELEASE = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F_BASECFG;
+			buildSettings = {
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		TDEBUG = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "\U00A9 Example";
+				MARKETING_VERSION = "$(VERSION)";
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-DFOO",
+					"-enable-upcoming-feature",
+					ExistentialAny,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_PREFIX).$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited) APPCOND";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+			};
+			name = Debug;
+		};
+		TRELEASE = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "\U00A9 Example";
+				MARKETING_VERSION = "$(VERSION)";
+				OTHER_SWIFT_FLAGS = (
+					"$(inherited)",
+					"-DFOO",
+					"-enable-upcoming-feature",
+					ExistentialAny,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_PREFIX).$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) APPCOND";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+			};
+			name = Release;
+		};
+		KDEBUG = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_GLOBAL_CONCURRENCY = YES;
+			};
+			name = Debug;
+		};
+		KRELEASE = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_GLOBAL_CONCURRENCY = YES;
+			};
+			name = Release;
+		};
+		XDEBUG = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Groups App.app/Contents/MacOS/Groups App";
+			};
+			name = Debug;
+		};
+		XRELEASE = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Groups App.app/Contents/MacOS/Groups App";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		PCL = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				PDEBUG,
+				PRELEASE,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		TCL_APP = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				TDEBUG,
+				TRELEASE,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		TCL_KIT = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KDEBUG,
+				KRELEASE,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		TCL_TESTS = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XDEBUG,
+				XRELEASE,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		LOCAL1 = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LocalKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		REMOTE1 /* XCRemoteSwiftPackageReference "Remote" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/example/Remote.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		PD_REMOTE = {
+			isa = XCSwiftPackageProductDependency;
+			package = REMOTE1 /* XCRemoteSwiftPackageReference "Remote" */;
+			productName = Remote;
+		};
+		PD_LOCAL = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LocalKit;
+		};
+		PD_PLUGIN = {
+			isa = XCSwiftPackageProductDependency;
+			package = REMOTE1;
+			productName = "plugin:Lint";
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = ROOT /* Project object */;
+}

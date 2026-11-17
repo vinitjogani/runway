@@ -1,0 +1,13 @@
+// `import CoreImage.CIFilterBuiltins` names a Clang submodule on Apple
+// platforms. This module map gives the name a home: the clang module
+// `CoreImage` (empty) with the explicit submodule, next to Runway's Swift
+// `CoreImage`, which is the one `import CoreImage` loads. The typed filter
+// API itself lives in the Swift module.
+module CoreImage {
+    header "CoreImage_Runway.h"
+    export *
+    explicit module CIFilterBuiltins {
+        header "CIFilterBuiltins.h"
+        export *
+    }
+}

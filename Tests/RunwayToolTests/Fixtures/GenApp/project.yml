@@ -1,0 +1,42 @@
+# An XcodeGen spec (no generated .xcodeproj next to it).
+name: GenApp
+
+options:
+  developmentLanguage: en
+
+packages:
+  Yams:
+    url: https://github.com/jpsim/Yams
+    from: 5.0.0
+  LocalThing:
+    path: ../GroupsApp/Packages/LocalKit
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: 1.0  # comment after a value
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GEN_DEBUG
+
+targets:
+  GenApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/App
+        excludes:
+          - "Generated/**"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.genapp
+        GENERATE_INFOPLIST_FILE: YES
+    info:
+      properties:
+        LSUIElement: true
+        CFBundleDisplayName: "Gen App"
+    dependencies:
+      - package: Yams
+      - package: LocalThing
+        product: LocalKit
+      - sdk: Cocoa.framework

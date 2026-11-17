@@ -1,0 +1,81 @@
+{
+  "default-configuration": "Release",
+  "configurations": [
+    { "name": "Debug", "file": { "anchor": "JSONApp", "relative-path": "Config/Main.xcconfig" } },
+    { "name": "Release", "file": { "anchor": "JSONApp", "relative-path": "Config/Main.xcconfig" } },
+  ],
+  "localizations": {
+    "development": "en",
+  },
+  "packages": [
+    {
+      "kind": "remote",
+      "repository": "https://github.com/example/Helpers.git",
+      "version": {
+        "up-to-next-minor-version": "2.3.0",
+      },
+    },
+  ],
+  "files": [
+    {
+      "kind": "folder",
+      "path": "JSONApp",
+      "target-membership": [
+        "JSONApp",
+      ],
+      "membership-exceptions": [
+        {
+          "target": "JSONApp",
+          "exclusions": [
+            "Skipped.swift",
+          ],
+        },
+      ],
+    }, {
+      "kind": "folder",
+      "path": "Core",
+      "target-membership": [
+        "Core",
+      ],
+    }, {
+      "kind": "group",
+      "name": "Products",
+      "children": [
+        { "path": "<PRODUCTS>/JSONApp.app", "type": "wrapper.application" },
+        { "path": "<PRODUCTS>/Core.framework", "type": "wrapper.framework", "target-membership": ["JSONApp/frameworks", { "build-phase": "JSONApp/copy/Embed Frameworks" }] },
+      ],
+    },
+  ],
+  "targets": [
+    {
+      "name": "JSONApp",
+      "product": "Products/JSONApp.app",
+      "product-type": "application",
+      "specialized-configurations": [
+        { "name": "Debug", "file": { "anchor": "JSONApp", "relative-path": "Config/App.xcconfig" } },
+        { "name": "Release", "file": { "anchor": "JSONApp", "relative-path": "Config/App.xcconfig" } },
+      ],
+      "package-product-members": [
+        { "package": "Helpers", "product-name": "Helpers", "build-phase": { "build-phase": "frameworks" } },
+      ],
+      "build-settings": {
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_KEY_LSUIElement": "YES",
+        "PRODUCT_NAME": "$(TARGET_NAME)",
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug]": "DEBUG JSON_DEBUG",
+      },
+    },
+    {
+      "name": "Core",
+      "product": "Products/Core.framework",
+      "product-type": "framework",
+      "build-settings": {
+        "PRODUCT_NAME": "$(TARGET_NAME:c99extidentifier)",
+      },
+    },
+  ],
+  "build-settings": {
+    "SDKROOT": "macosx",
+    "MARKETING_VERSION": "4.5",
+  },
+}

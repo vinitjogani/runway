@@ -1,0 +1,25 @@
+// Canvas's overrides (the class is in ViewFixture.swiftfixture), declared
+// in an extension: fine on the Mac, rejected by Swift without the
+// Objective-C runtime until the transpiler moves them into the class body.
+import AppKit
+
+private let label = "canvas"
+
+extension Canvas {
+    override func mouseDown(with event: NSEvent) {
+        strokes += 1
+        log.append(describe(event) + " at \((#filePath as NSString).lastPathComponent):\(#line)")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.red.setFill()
+        dirtyRect.fill()
+        log.append("draw \(label) \(Int(dirtyRect.width))x\(Int(dirtyRect.height)) strokes=\(strokes)")
+    }
+
+#if os(macOS)
+    override var isFlipped: Bool { true }
+#endif
+
+    private func describe(_ e: NSEvent) -> String { "\(label) down \(e.clickCount)" }
+}

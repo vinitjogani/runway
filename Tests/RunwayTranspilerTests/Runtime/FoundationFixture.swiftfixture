@@ -1,0 +1,113 @@
+// Mac-style Foundation code using the Objective-C runtime: selectors,
+// perform, timers and notifications with target/selector, KVC/KVO, @objc
+// optional protocols. Compiled after RunwayTranspiler (see the plugin).
+import Foundation
+
+@objc protocol JobDelegate {
+    @objc optional func jobDidFinish(_ job: Job)
+    @objc optional func jobShouldRetry(_ job: Job) -> Bool
+}
+
+final class Job: NSObject {
+    weak var delegate: JobDelegate?
+    @objc dynamic var progress: Double = 0
+    @objc dynamic var owner: Owner?
+    @objc var label = "job"
+
+    func finish() -> [String] {
+        var log: [String] = []
+        delegate?.jobDidFinish?(self)
+        log.append("retry=\(delegate?.jobShouldRetry?(self).description ?? "unimplemented")")
+        return log
+    }
+}
+
+final class Owner: NSObject {
+    @objc dynamic var name = "ann"
+}
+
+final class Listener: NSObject, JobDelegate {
+    var log: [String] = []
+    var observations: [NSKeyValueObservation] = []
+    var ticks = 0
+    var timer: Timer?
+
+    func jobDidFinish(_ job: Job) { log.append("delegate: finished \(job.label)") }
+
+    @objc func ping() { log.append("ping") }
+    @objc func greet(_ name: String) { log.append("hello \(name)") }
+    @objc func add(_ a: NSNumber, to b: NSNumber) -> NSNumber { NSNumber(value: a.intValue + b.intValue) }
+    @objc func later(_ s: String) { log.append("later \(s)") }
+    @objc func tick(_ t: Timer) {
+        ticks += 1
+        log.append("tick \(ticks) \(t.userInfo as? String ?? "-")")
+        if ticks == 2 { t.invalidate() }
+    }
+    @objc private func didPost(_ n: Notification) { log.append("note \(n.name.rawValue) \(n.object as? String ?? "")") }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == #keyPath(Job.progress) {
+            log.append("kvo \(keyPath!) \(change?[.oldKey] ?? "?") -> \(change?[.newKey] ?? "?")")
+        } else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+        }
+    }
+
+    func run(_ job: Job) -> [String] {
+        // perform / responds
+        perform(#selector(ping))
+        perform(#selector(greet(_:)), with: "bob")
+        let sum = perform(#selector(add(_:to:)), with: NSNumber(value: 2), with: NSNumber(value: 3))?.takeUnretainedValue() as? NSNumber
+        log.append("sum \(sum?.intValue ?? -1)")
+        log.append("responds ping=\(responds(to: #selector(ping))) nope=\(responds(to: Selector("nope")))")
+        log.append("job responds jobDidFinish=\(responds(to: #selector(JobDelegate.jobDidFinish(_:)))) jobShouldRetry=\(responds(to: #selector(JobDelegate.jobShouldRetry(_:))))")
+
+        // Optional protocol requirements.
+        job.delegate = self
+        log += job.finish()
+
+        // Notifications with a selector.
+        NotificationCenter.default.addObserver(self, selector: #selector(didPost(_:)), name: Notification.Name("JobNote"), object: nil)
+        NotificationCenter.default.post(name: Notification.Name("JobNote"), object: "first")
+        NotificationCenter.default.removeObserver(self)
+        NotificationCenter.default.post(name: Notification.Name("JobNote"), object: "after removal")
+
+        // KVO, both styles.
+        observations.append(job.observe(\.progress, options: [.old, .new]) { [unowned self] _, change in
+            self.log.append("observe progress \(change.oldValue ?? -1) -> \(change.newValue ?? -1)")
+        })
+        observations.append(job.observe(\.owner?.name, options: [.new]) { [unowned self] _, change in
+            self.log.append("observe owner.name \(String(describing: change.newValue ?? nil))")
+        })
+        job.addObserver(self, forKeyPath: #keyPath(Job.progress), options: [.old, .new], context: nil)
+        job.progress = 0.5
+        let owner = Owner()
+        job.owner = owner
+        owner.name = "cy"
+        job.removeObserver(self, forKeyPath: #keyPath(Job.progress))
+        job.progress = 1
+
+        // KVC.
+        job.setValue("renamed", forKey: "label")
+        log.append("kvc label=\(job.value(forKey: "label") as? String ?? "?") owner.name=\(job.value(forKeyPath: "owner.name") as? String ?? "?")")
+        job.setValue(0.25, forKey: #keyPath(Job.progress))
+        observations.removeAll()
+        job.progress = 0
+
+        // Timers and delayed performs on the run loop.
+        timer = Timer.scheduledTimer(timeInterval: 0.01, target: self, selector: #selector(tick(_:)), userInfo: "info", repeats: true)
+        perform(#selector(later(_:)), with: "kept", afterDelay: 0.02)
+        perform(#selector(later(_:)), with: "cancelled", afterDelay: 0.02)
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(later(_:)), object: "cancelled")
+        let deadline = Date().addingTimeInterval(2)
+        while (ticks < 2 || !log.contains("later kept")) && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        return log
+    }
+}
+
+func runFoundationFixture() -> [String] {
+    Listener().run(Job())
+}

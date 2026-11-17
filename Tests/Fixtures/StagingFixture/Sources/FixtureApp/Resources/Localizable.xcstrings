@@ -1,0 +1,4 @@
+{ "sourceLanguage" : "en", "version" : "1.0", "strings" : {
+  "Hello" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Hello from the catalog" } }, "de" : { "stringUnit" : { "state" : "translated", "value" : "Hallo" } } } },
+  "Untranslated" : { },
+  "%lld notes" : { "localizations" : { "en" : { "variations" : { "plural" : { "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld note" } }, "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld notes" } } } } } } } } }

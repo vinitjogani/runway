@@ -1,0 +1,8 @@
+__pycache__/
+
+# Generated corpus results can include local build paths.
+/report.json
+/report.md
+/scoreboard.json
+/scoreboard.md
+/scoreboard.baseline.json
