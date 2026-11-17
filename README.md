@@ -379,4 +379,6 @@ npm run dev     # http://localhost:5173
 npm run build   # site/dist, deploy anywhere static
 ```
 
+In production it runs from [`docker-compose.yml`](docker-compose.yml) (Vite build served by nginx on port 80), deployed on Dokploy at runway.vj.ms.
+
 The logo and colours are in [`brand/`](brand).

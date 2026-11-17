@@ -1,0 +1,12 @@
+# Runway's website (site/) on Docker Compose, e.g. Dokploy: route your domain
+# to service `site`, port 80.
+name: runway
+
+services:
+  site:
+    build:
+      context: ./site
+    image: runway-site:latest
+    restart: unless-stopped
+    expose:
+      - "80"
