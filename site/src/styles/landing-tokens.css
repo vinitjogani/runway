@@ -84,7 +84,7 @@
   --landing-code-text: #e8e5df;
   --landing-code-muted: #8a867e;
   --landing-code-border: #2e2c2a;
-  --landing-code-accent: #86b6ff; /* runway blue, dark */
+  --landing-code-accent: #f79e75; /* oklch(0.78 0.12 45) */
   --landing-code-ring: transparent;
 
   /* ---- Dark panels (departures board, Mac app): dark in both themes -------- */

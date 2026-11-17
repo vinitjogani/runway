@@ -1,7 +1,7 @@
 # Runway brand
 
-- `logo.svg`: the mark, one shape: a runway in perspective sweeping up and to the right, its centre-line dashes cut through, in a bright-to-deep blue gradient (`#3D8BFF` → `#16307A`).
+- `logo.svg`: the mark, one flat shape like Flight's paper plane: the horizon and a runway running up to it in perspective, its centre-line dashes cut through, in Flight's red-to-rust gradient (`#ED213A` → `#93291E`).
 - `app-icon.svg`: the mark on a white rounded tile (avatars, touch icons); `logo-512.png` is it at 512 px.
-- Accent: `#1d64d8` on light, `#5a9cff` on dark (text: `#1652b8` / `#86b6ff`).
+- The site uses Flight's palette: accent `#c4530f` on light, `#e57f4f` on dark.
 - Type: Geist and Geist Mono.
 - In running text the name is always "Runway".

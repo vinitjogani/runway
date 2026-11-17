@@ -31,7 +31,7 @@
   /* Sidebar and phone home: a barely-there warm panel next to the white editor. */
   --color-sidebar: #fcfbfa;
   --color-sidebar-hover: rgb(25 24 23 / 0.03);
-  --color-sidebar-selected: #e3ecfb; /* a wash of the accent (the Mac app's); opaque, so its text contrast is tested */
+  --color-sidebar-selected: #f8eae1; /* a wash of the accent (the Mac app's); opaque, so its text contrast is tested */
   --color-sidebar-divider: #f0eee9;
   --color-sidebar-field: #ffffff; /* a search field set on the sidebar */
   /*
@@ -55,7 +55,7 @@
   --color-glass-edge: rgb(255 255 255 / 0.65); /* the bright rim around the pane */
   --blur-glass-sidebar: blur(36px) saturate(1.9) brightness(1.03);
   --color-ambient: #f4efe9;
-  --color-ambient-warm: rgb(140 180 255 / 0.45);
+  --color-ambient-warm: rgb(255 176 128 / 0.5);
   --color-ambient-rose: rgb(237 33 58 / 0.14);
   --color-ambient-cool: rgb(150 182 230 / 0.42);
   /* Folders: the frosted front of a folder card and the papers tucked inside. */
@@ -91,15 +91,15 @@
   --color-primary-hover: #33312e;
   --color-on-primary: #fbfaf8;
 
-  /* ---- Accent (runway blue, tuned for AA contrast) ---------------------- */
-  --color-accent: #1d64d8; /* small fills and marks: progress, citations, the caret */
-  --color-accent-hover: #1652b8;
-  --color-accent-text: #1652b8; /* accent-colored text on light surfaces (>= 4.5:1) */
-  --color-accent-soft: rgb(29 100 216 / 0.09);
-  --color-accent-soft-hover: rgb(29 100 216 / 0.15);
+  /* ---- Accent (warm orange, tuned for AA contrast) ---------------------- */
+  --color-accent: #c4530f; /* small fills and marks: progress, citations, the caret */
+  --color-accent-hover: #ab4400;
+  --color-accent-text: #ab4400; /* accent-colored text on light surfaces (>= 4.5:1) */
+  --color-accent-soft: rgb(196 83 15 / 0.09);
+  --color-accent-soft-hover: rgb(196 83 15 / 0.15);
   --color-focus-ring: var(--color-accent); /* opaque: >= 3:1 on every surface (WCAG 1.4.11) */
-  --color-selection: #cfe0ff;
-  --color-highlight: #dbe8ff; /* search hit / mark / answer passage */
+  --color-selection: #ffd8c4;
+  --color-highlight: #ffe2d0; /* search hit / mark / answer passage */
   --color-on-accent: #ffffff; /* text + icons on accent / danger fills */
 
   /* ---- Status ----------------------------------------------------------- */
@@ -378,7 +378,7 @@
   --color-glass-edge: rgb(255 255 255 / 0.1);
   --blur-glass-sidebar: blur(36px) saturate(1.6);
   --color-ambient: #141312;
-  --color-ambient-warm: rgb(90 156 255 / 0.3);
+  --color-ambient-warm: rgb(229 127 79 / 0.3);
   --color-ambient-rose: rgb(237 33 58 / 0.14);
   --color-ambient-cool: rgb(90 120 190 / 0.3);
   --color-folder-back: #2c2a27;
@@ -406,14 +406,14 @@
   --color-primary-hover: #ffffff;
   --color-on-primary: #191817;
 
-  --color-accent: #5a9cff;
-  --color-accent-hover: #86b6ff;
-  --color-accent-text: #86b6ff;
-  --color-accent-soft: rgb(90 156 255 / 0.14);
-  --color-accent-soft-hover: rgb(90 156 255 / 0.22);
-  --color-focus-ring: #86b6ff;
-  --color-selection: rgb(90 156 255 / 0.32);
-  --color-highlight: rgb(90 156 255 / 0.26);
+  --color-accent: #e57f4f;
+  --color-accent-hover: #f79e75;
+  --color-accent-text: #f79e75;
+  --color-accent-soft: rgb(229 127 79 / 0.14);
+  --color-accent-soft-hover: rgb(229 127 79 / 0.22);
+  --color-focus-ring: #f79e75;
+  --color-selection: rgb(229 127 79 / 0.32);
+  --color-highlight: rgb(229 127 79 / 0.26);
 
   --color-success: #4cc27f;
   --color-success-soft: rgb(76 194 127 / 0.14);

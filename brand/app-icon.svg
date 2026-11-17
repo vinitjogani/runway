@@ -2,10 +2,10 @@
   <!-- The mark (logo.svg) on a white rounded tile: avatars, touch icons, logo-512.png. -->
   <defs>
     <linearGradient id="runway-gradient" gradientUnits="userSpaceOnUse" x1="60" y1="20" x2="240" y2="280">
-      <stop offset="0" stop-color="#3D8BFF"/>
-      <stop offset="1" stop-color="#16307A"/>
+      <stop offset="0" stop-color="#ED213A"/>
+      <stop offset="1" stop-color="#93291E"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="114" fill="#ffffff"/>
-  <path transform="translate(96 96) scale(1.0667)" fill="url(#runway-gradient)" fill-rule="evenodd" d="M226 10 292 34 136 292 8 226Z M228 50l13 5-18 32-13-5Z M190 114l18 7-25 44-18-7Z M142 194l25 9-33 58-25-9Z"/>
+  <path transform="translate(96 96) scale(1.0667)" fill="url(#runway-gradient)" fill-rule="evenodd" d="M30 46H270L262 66H38Z M126 82H174L276 286H24Z M145 106h10v30h-10Z M142 160h16v42h-16Z M138 224h24v48h-24Z"/>
 </svg>
