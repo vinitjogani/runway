@@ -158,7 +158,8 @@ extension View {
             let extra = ctx.with { $0._stackAxis = nil }.resolve(other, "layer")
             guard !ns.isEmpty else { return [] }
             let primary: LayoutNode = ns.count == 1 ? ns[0] : StackNode(axis: ctx.env._stackAxis ?? .vertical, alignment: .center, spacing: nil, children: ns)
-            return [LayerNode(primary: primary, secondary: extra, alignment: alignment, behind: behind)]
+            let layer = LayerNode(primary: primary, secondary: extra, alignment: alignment, behind: behind)
+            return [navigationBackdrop(layer, background: other, in: ctx)]
         }
     }
 
@@ -256,17 +257,22 @@ extension View {
     // MARK: Gestures
 
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> some View {
+        tapArea(action: action)
+    }
+    /// The preview backends deliver the position in the tapped view's local coordinates.
+    public func onTapGesture(count: Int = 1, coordinateSpace: CoordinateSpace = .local, perform action: @escaping (CGPoint) -> Void) -> some View {
+        tapArea(spatialAction: action)
+    }
+    private func tapArea(action: (() -> Void)? = nil, spatialAction: ((CGPoint) -> Void)? = nil) -> some View {
         nodes("tap") { ns, ctx in
             let w = ctx.widget(.tapArea, "tap")
             var events = WidgetEvents()
             events.onTap = action
+            events.onTapLocation = spatialAction
             if let w { ctx.host.backend.update(w, props: ctx.baseProps(), events: events) }
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
             return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
         }
-    }
-    public func onTapGesture(count: Int = 1, coordinateSpace: CoordinateSpace = .local, perform action: @escaping (CGPoint) -> Void) -> some View {
-        onTapGesture(count: count) { action(.zero) }
     }
     public func onLongPressGesture(minimumDuration: Double = 0.5, perform action: @escaping () -> Void) -> some View { self }
     public func onHover(perform action: @escaping (Bool) -> Void) -> some View { self }
@@ -450,7 +456,11 @@ extension View {
     public func blendMode(_ mode: BlendMode) -> some View { self }
     public func compositingGroup() -> some View { self }
     public func drawingGroup(opaque: Bool = false) -> some View { self }
-    public func rotationEffect(_ angle: Angle, anchor: UnitPoint = .center) -> some View { self }
+    public func rotationEffect(_ angle: Angle, anchor: UnitPoint = .center) -> some View {
+        eachNode("rotation") { node, _ in
+            DrawingRotationNode(child: node, rotation: ShapeRotation(angle: angle, anchor: anchor))
+        }
+    }
     public func rotation3DEffect(_ angle: Angle, axis: (x: CGFloat, y: CGFloat, z: CGFloat), anchor: UnitPoint = .center) -> some View { self }
     public func scaleEffect(_ s: CGFloat, anchor: UnitPoint = .center) -> some View { self }
     public func scaleEffect(_ s: CGSize, anchor: UnitPoint = .center) -> some View { self }
@@ -475,21 +485,26 @@ extension View {
     public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> some View { self }
     public func accessibilitySortPriority(_ p: Double) -> some View { self }
     public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { self }
-    public func textContentType(_ type: Any?) -> some View { self }
+    @_disfavoredOverload public func textContentType(_ type: Any?) -> some View { self }
     public func autocorrectionDisabled(_ disabled: Bool = true) -> some View { self }
     public func privacySensitive(_ sensitive: Bool = true) -> some View { self }
     public func redacted(reason: RedactionReasons) -> some View { self }
     public func badge(_ count: Int) -> some View { self }
     public func badge(_ label: Text?) -> some View { self }
-    public func listRowInsets(_ insets: EdgeInsets?) -> some View { self }
-    public func listRowBackground<V: View>(_ view: V?) -> some View { self }
-    public func listRowSeparator(_ visibility: Visibility, edges: VerticalEdge.Set = .all) -> some View { self }
+    public func listRowInsets(_ insets: EdgeInsets?) -> some View {
+        listRowDecoration("listRowInsets", .insets(insets))
+    }
+    public func listRowBackground<V: View>(_ view: V?) -> some View {
+        listRowDecoration("listRowBackground", .background(view.map { AnyView($0) }))
+    }
+    public func listRowSeparator(_ visibility: Visibility, edges: VerticalEdge.Set = .all) -> some View {
+        listRowDecoration("listRowSeparator", .separator(visibility, edges))
+    }
     public func listSectionSeparator(_ visibility: Visibility, edges: VerticalEdge.Set = .all) -> some View { self }
     public func interactiveDismissDisabled(_ disabled: Bool = true) -> some View { self }
-    public func presentationDetents<S>(_ detents: S) -> some View { self }
+    @_disfavoredOverload public func presentationDetents<S>(_ detents: S) -> some View { self }
     public func presentationSizing<S>(_ sizing: S) -> some View { self }
     public func presentationBackground<S: ShapeStyle>(_ style: S) -> some View { self }
-    public func dynamicTypeSize<T>(_ size: T) -> some View { self }
     public func coordinateSpace(name: AnyHashable) -> some View { self }
     public func coordinateSpace<N>(_ name: N) -> some View { self }
     public func defaultFocus<V: Hashable>(_ binding: FocusState<V>.Binding, _ value: V) -> some View { self }
@@ -514,6 +529,8 @@ extension VerticalEdge {
 
 public struct SearchFieldPlacement: Sendable {
     public static let automatic = SearchFieldPlacement(), toolbar = SearchFieldPlacement(), sidebar = SearchFieldPlacement()
+    public enum NavigationBarDrawerDisplayMode: Sendable { case automatic, always }
+    public static func navigationBarDrawer(displayMode: NavigationBarDrawerDisplayMode = .automatic) -> Self { .automatic }
 }
 
 public struct RedactionReasons: OptionSet, Sendable {

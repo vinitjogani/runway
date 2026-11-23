@@ -25,8 +25,7 @@ func transformSource(_ text: String, path: String, index: PackageIndex? = nil) -
 ///
 /// `main.swift` keeps its name and gets no directive: the compiler warns when
 /// a directive gives a file the same `#fileID` as its physical name.
-func stagedSourceText(origin: URL, index: PackageIndex? = nil) throws -> String {
-    let text = try readSource(origin)
+func stagedSourceText(origin: URL, text: String, index: PackageIndex? = nil) -> String {
     let transformed = rewriteApplicationMain(flattenSubmoduleImports(transformSource(text, path: index == nil ? origin.path : origin.standardizedFileURL.path, index: index)))
     if origin.lastPathComponent == "main.swift" || transformed.hasPrefix("#!") { return transformed }
     return "#sourceLocation(file: \(lit(origin.path)), line: 1)\n" + transformed + (transformed.hasSuffix("\n") ? "" : "\n") + "#sourceLocation()\n"
@@ -114,11 +113,11 @@ typealias DependencyPaths = [String: String]
 /// to a scratch directory first and then synchronised into `dir`, so files
 /// whose content didn't change keep their timestamps (incremental builds)
 /// and SwiftPM's `.build` stays.
-func stagePlan(_ plan: Plan, at dir: URL, root: URL, dependencies: DependencyPaths = [:], extraFiles: (URL) throws -> Void = { _ in }) throws -> Staged {
+func stagePlan(_ plan: Plan, at dir: URL, root: URL, dependencies: DependencyPaths = [:], iosPreview: IOSPreview? = nil, extraFiles: (URL) throws -> Void = { _ in }) throws -> Staged {
     let scratch = dir.deletingLastPathComponent().appendingPathComponent("." + dir.lastPathComponent + ".staging")
     try? fm.removeItem(at: scratch)
     ensureDir(scratch)
-    try writeStagedPackage(plan, into: scratch, root: root, dependencies: dependencies)
+    try writeStagedPackage(plan, into: scratch, root: root, dependencies: dependencies, iosPreview: iosPreview)
     try extraFiles(scratch)
     ensureDir(dir)
     syncTree(from: scratch, to: dir, keep: [".build", ".swiftpm", "Package.resolved", "Dependencies"])
@@ -156,22 +155,21 @@ func syncTree(from src: URL, to dst: URL, keep: Set<String>) {
 
 /// The package-wide transpiler index for a plan whose files don't sit in a
 /// SwiftPM layout (Xcode projects).
-func transpilerIndex(_ plan: Plan) -> PackageIndex? {
-    guard plan.origin != .swiftPM else { return nil }
-    var files: [(path: String, source: String)] = []
-    for t in plan.targets where t.kind != .macro {
-        for f in t.sources { if let s = try? readSource(f.origin) { files.append((f.origin.standardizedFileURL.path, s)) } }
-    }
-    return PackageIndex(files: files, root: plan.root.path)
-}
-
-private func writeStagedPackage(_ plan: Plan, into dir: URL, root: URL, dependencies: DependencyPaths) throws {
+private func writeStagedPackage(_ plan: Plan, into dir: URL, root: URL, dependencies: DependencyPaths, iosPreview: IOSPreview?) throws {
     let staged = plan.targets.filter { [.executable, .library, .test, .system, .macro].contains($0.kind) }
     let localNames = Set(staged.map(\.name))
     for t in plan.targets where !localNames.contains(t.name) {
         log("note: \(t.name) (\(t.kind.rawValue)) left out: \(t.notes.first ?? "not buildable here")")
     }
-    let index = transpilerIndex(plan)
+    let sources = try staged.map { target -> [(path: String, source: String)] in
+        guard target.kind != .macro else { return [] }
+        return try target.sources.map { file in
+            let text = try readSource(file.origin)
+            return (file.origin.standardizedFileURL.path, iosPreview?.rewriteConditions(in: text) ?? text)
+        }
+    }
+    let index = plan.origin == .swiftPM && iosPreview == nil ? nil :
+        PackageIndex(files: sources.flatMap { $0 }, root: plan.root.path)
     // `package:` arguments name a dependency by identity or by an alias.
     var identityOf: [String: String] = [:]
     for d in plan.dependencies {
@@ -181,7 +179,7 @@ private func writeStagedPackage(_ plan: Plan, into dir: URL, root: URL, dependen
     var needsLocalization = false
     var usesMacros = false
     var decls: [String] = []
-    for t in staged {
+    for (t, originals) in zip(staged, sources) {
         let base = "Targets/\(t.name)"
         let tdir = dir.appendingPathComponent(base)
         for n in t.notes { log("note: \(t.name): \(n)") }
@@ -202,8 +200,8 @@ private func writeStagedPackage(_ plan: Plan, into dir: URL, root: URL, dependen
         }
 
         var needed = Set<String>()
-        for f in t.sources {
-            let text = try stagedSourceText(origin: f.origin, index: index)
+        for (f, original) in zip(t.sources, originals) {
+            let text = stagedSourceText(origin: f.origin, text: original.source, index: index)
             try write(text, to: tdir.appendingPathComponent(stagedSourceName(f.staged)))
             needed.formUnion(runwayImports(in: text, local: localNames))
         }
@@ -220,7 +218,6 @@ private func writeStagedPackage(_ plan: Plan, into dir: URL, root: URL, dependen
         // documents' customClass, NSClassFromString): from the original
         // sources, under the module's name and the Xcode module name if it differs.
         if !t.sources.isEmpty {
-            let originals = t.sources.compactMap { f in (try? readSource(f.origin)).map { (path: f.origin.path, source: $0) } }
             if let registry = RunwayTranspiler.classRegistrySource(module: t.name, aliases: t.moduleAliases, files: originals) {
                 try write(registry, to: tdir.appendingPathComponent("_RunwayClassRegistry.swift"))
             }

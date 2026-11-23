@@ -30,6 +30,7 @@ let package = Package(
     products: [
         .library(name: "SwiftUI", targets: ["SwiftUI"]),
         .library(name: "AppKit", targets: ["AppKit"]),
+        .library(name: "UIKit", targets: ["UIKit"]),
         .library(name: "RunwayCore", targets: ["RunwayCore"]),
         .library(name: "RunwayFoundation", targets: ["RunwayFoundation"]),
         .library(name: "CoreGraphics", targets: ["CoreGraphics"]),
@@ -73,7 +74,8 @@ let package = Package(
 
         // The UI layer.
         .target(name: "AppKit", dependencies: ["RunwayCore", "RunwayPlatform", "CoreGraphics", "QuartzCore", "UniformTypeIdentifiers", "RunwayFoundation", "CoreText"]),
-        .target(name: "SwiftUI", dependencies: ["RunwayCore", "RunwayPlatform", "AppKit", "CoreGraphics"]),
+        .target(name: "UIKit", dependencies: ["AppKit", "CoreGraphics", "CoreText", "RunwayCore"]),
+        .target(name: "SwiftUI", dependencies: ["RunwayCore", "RunwayPlatform", "AppKit", "UIKit", "CoreGraphics"]),
 
         // Apple framework shims, each mapped to the platform's native API.
         .systemLibrary(name: "CRunwayZlib", providers: [.apt(["zlib1g-dev"])]),
@@ -231,8 +233,8 @@ package.targets.first { $0.name == "AppKit" }?.dependencies.append("ImageIO")
 // Combine, os/OSLog, UserNotifications, CoreServices (FSEvents), Carbon hot
 // keys, ApplicationServices (Accessibility, CGEvent), IOKit power, Network,
 // StoreKit, CloudKit, LocalAuthentication, EventKit, Contacts, CoreLocation,
-// WidgetKit, AppIntents: Apple's API surface, native where the platform has
-// an equivalent, otherwise answering through the API's own availability,
+// WidgetKit, ActivityKit, BackgroundTasks, AppIntents: Apple's API surface,
+// native where there is an equivalent, otherwise using the API's own availability,
 // authorization and error paths. Each is a library with Apple's module name.
 let systemFrameworks: [(name: String, dependencies: [Target.Dependency])] = [
     ("Combine", []),
@@ -252,6 +254,8 @@ let systemFrameworks: [(name: String, dependencies: [Target.Dependency])] = [
     ("Contacts", []),
     ("WidgetKit", ["SwiftUI"]),
     ("CloudKit", []),
+    ("ActivityKit", []),
+    ("BackgroundTasks", []),
 ]
 // Spelled out (tools read the product list from this file).
 package.products += [
@@ -272,6 +276,8 @@ package.products += [
     .library(name: "Contacts", targets: ["Contacts"]),
     .library(name: "WidgetKit", targets: ["WidgetKit"]),
     .library(name: "CloudKit", targets: ["CloudKit"]),
+    .library(name: "ActivityKit", targets: ["ActivityKit"]),
+    .library(name: "BackgroundTasks", targets: ["BackgroundTasks"]),
 ]
 assert(package.products.count == Set(package.products.map(\.name)).count, "a framework is missing from the products list")
 package.targets += systemFrameworks.map { .target(name: $0.name, dependencies: $0.dependencies) }

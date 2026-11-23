@@ -70,20 +70,20 @@ public enum ProjectLocator {
     /// The project in `dir` (or `dir` itself when it is an .xcodeproj,
     /// .xcworkspace, project.yml or Package.swift). `project` picks one by
     /// name or path when several are there.
-    public static func locate(_ dir: URL, project: String? = nil) throws -> LocatedProject {
+    public static func locate(_ dir: URL, project: String? = nil, platform: XcodePlatform? = nil) throws -> LocatedProject {
         let fm = FileManager.default
         if let p = project {
             let u = p.hasPrefix("/") ? URL(fileURLWithPath: p) : dir.appendingPathComponent(p)
-            if exists(u) { return try locate(u.standardizedFileURL) }
+            if exists(u) { return try locate(u.standardizedFileURL, platform: platform) }
             // A name: Foo, Foo.xcodeproj, Foo.xcworkspace.
             for candidate in [p, p + ".xcworkspace", p + ".xcodeproj"] where exists(dir.appendingPathComponent(candidate)) {
-                return try locate(dir.appendingPathComponent(candidate))
+                return try locate(dir.appendingPathComponent(candidate), platform: platform)
             }
             throw ImportError("no project \(p) in \(dir.path)")
         }
         switch dir.pathExtension {
         case "xcodeproj": return .xcode(project: dir, workspace: nil)
-        case "xcworkspace": return .xcode(project: try projectInWorkspace(Workspace(dir)), workspace: dir)
+        case "xcworkspace": return .xcode(project: try projectInWorkspace(Workspace(dir), platform: platform), workspace: dir)
         default: break
         }
         if dir.lastPathComponent == "Package.swift" { return .swiftPM(dir.deletingLastPathComponent()) }
@@ -95,11 +95,13 @@ public enum ProjectLocator {
         let projects = entries.filter { $0.hasSuffix(".xcodeproj") }.map { dir.appendingPathComponent($0) }
         // A workspace that isn't just CocoaPods' wrapper around the project.
         for w in prefer(workspaces, named: dir.lastPathComponent) {
-            if let ws = try? Workspace(w), !ws.projects.isEmpty, let p = try? projectInWorkspace(ws) { return .xcode(project: p, workspace: w) }
+            if let ws = try? Workspace(w), !ws.projects.isEmpty, let p = try? projectInWorkspace(ws, platform: platform) { return .xcode(project: p, workspace: w) }
         }
         if !projects.isEmpty {
             let readable = projects.filter { exists($0.appendingPathComponent("project.pbxproj")) || exists($0.appendingPathComponent("project.xcproj")) }
-            if let p = prefer(readable, named: dir.lastPathComponent).first { return .xcode(project: p, workspace: nil) }
+            let ordered = prefer(readable, named: dir.lastPathComponent)
+            let matching = platform.flatMap { platform in ordered.first { projectSupports($0, platform: platform) } }
+            if let p = matching ?? ordered.first { return .xcode(project: p, workspace: nil) }
         }
         if entries.contains("project.yml") { return try xcodeGenOrProject(dir.appendingPathComponent("project.yml")) }
         if entries.contains("Package.swift") { return .swiftPM(dir) }
@@ -111,7 +113,7 @@ public enum ProjectLocator {
             let sub = dir.appendingPathComponent(e)
             let names = (try? fm.contentsOfDirectory(atPath: sub.path)) ?? []
             if names.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) || names.contains("project.yml") {
-                if let found = try? locate(sub) { return found }
+                if let found = try? locate(sub, platform: platform) { return found }
             }
         }
         throw ImportError("no Package.swift, .xcodeproj, .xcworkspace or XcodeGen project.yml in \(dir.path)")
@@ -134,18 +136,34 @@ public enum ProjectLocator {
         }
     }
 
-    /// The workspace's project with a macOS app (the largest one; Pods
-    /// projects last).
-    public static func projectInWorkspace(_ ws: Workspace) throws -> URL {
+    private static func projectSupports(_ url: URL, platform: XcodePlatform) -> Bool {
+        guard let project = try? readXcodeProject(url) else { return false }
+        let importer = XcodeImporter(project)
+        return project.targets.contains { $0.role == .app && importer.supports($0, on: platform) }
+    }
+
+    /// The workspace's largest app project for the requested platform.
+    public static func projectInWorkspace(_ ws: Workspace, platform: XcodePlatform? = nil) throws -> URL {
         let candidates = ws.projects.filter { $0.lastPathComponent != "Pods.xcodeproj" && exists($0) }
         guard !candidates.isEmpty else { throw ImportError("\(ws.url.lastPathComponent) lists no Xcode project") }
-        var best: (URL, Int)?
+        var best: (project: URL, rank: Int, score: Int)?
         for p in candidates {
             guard let xp = try? readXcodeProject(p) else { continue }
-            let score = xp.targets.filter { $0.role == .app }.map { $0.sources.count + 1000 }.max() ?? xp.targets.count
-            if best == nil || score > best!.1 { best = (p, score) }
+            let importer = XcodeImporter(xp)
+            let apps = xp.targets.filter { $0.role == .app }
+            let preferences = platform.map { [$0] } ?? [.macOS, .iOS]
+            var score = apps.map(\.sources.count).max().map { $0 + 1000 } ?? xp.targets.count
+            var rank = 0
+            for (index, preference) in preferences.enumerated() {
+                if let largest = apps.filter({ importer.supports($0, on: preference) }).map(\.sources.count).max() {
+                    score = largest
+                    rank = preferences.count - index
+                    break
+                }
+            }
+            if best == nil || (rank, score) > (best!.rank, best!.score) { best = (p, rank, score) }
         }
-        return best?.0 ?? candidates[0]
+        return best?.project ?? candidates[0]
     }
 }
 

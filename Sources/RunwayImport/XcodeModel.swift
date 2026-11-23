@@ -4,6 +4,28 @@
 
 import Foundation
 
+public enum XcodePlatform: String {
+    case macOS = "macos"
+    case iOS = "ios"
+
+    public var name: String {
+        switch self {
+        case .macOS: return "macOS"
+        case .iOS: return "iOS"
+        }
+    }
+
+    var sdk: String { self == .macOS ? "macosx" : "iphonesimulator" }
+
+    func matchesSDK(_ sdk: String) -> Bool {
+        let name = (sdk.lowercased() as NSString).lastPathComponent
+        switch self {
+        case .macOS: return name.hasPrefix("macosx")
+        case .iOS: return name.hasPrefix("iphoneos") || name.hasPrefix("iphonesimulator")
+        }
+    }
+}
+
 public struct XcodeProject {
     public enum Format: String { case pbxproj = "project.pbxproj", xcproj = "project.xcproj (JSON)", xcodegen = "XcodeGen project.yml" }
     public var name: String

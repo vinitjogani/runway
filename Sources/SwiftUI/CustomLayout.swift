@@ -283,7 +283,6 @@ extension View {
     public func submitLabel(_ submitLabel: SubmitLabel) -> some View { self }
     public func toolbarBackgroundVisibility(_ visibility: Visibility, for bars: ToolbarPlacement...) -> some View { self }
     public func onModifierKeysChanged(mask: EventModifiers = .all, initial: Bool = true, _ action: @escaping (EventModifiers, EventModifiers) -> Void) -> some View { self }
-    public func navigationBarBackButtonHidden(_ hidesBackButton: Bool = true) -> some View { self }
     public func accessibilityRepresentation<V: View>(@ViewBuilder representation: () -> V) -> some View { self }
     public func onGeometryChange<T: Equatable>(for type: T.Type, of transform: @escaping (GeometryProxy) -> T, action: @escaping (T) -> Void) -> some View { self }
     public func onGeometryChange<T: Equatable>(for type: T.Type, of transform: @escaping (GeometryProxy) -> T, action: @escaping (T, T) -> Void) -> some View { self }

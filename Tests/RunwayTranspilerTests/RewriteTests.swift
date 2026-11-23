@@ -156,6 +156,53 @@ final class RewriteTests: XCTestCase {
         """)
     }
 
+    func testIOSPreviewSelectsMobileBranchesAndOptsIntoSimulatorCode() {
+        let source = """
+        #if os(macOS) || os(OSX)
+        let platform = "Mac"
+        #elseif DEBUG && (os(iOS) || targetEnvironment(simulator))
+        let platform = "iPhone"
+        #elseif os(Linux) && !targetEnvironment(macCatalyst)
+        let platform = "Linux"
+        #endif
+        let literal = "os(iOS)"
+        """
+        let expected = """
+        #if false || false
+        let platform = "Mac"
+        #elseif DEBUG && (true || targetEnvironment(simulator))
+        let platform = "iPhone"
+        #elseif os(Linux) && !targetEnvironment(macCatalyst)
+        let platform = "Linux"
+        #endif
+        let literal = "os(iOS)"
+        """
+        XCTAssertEqual(IOSPreview().rewriteConditions(in: source), expected)
+        XCTAssertEqual(IOSPreview(includingSimulatorCode: true).rewriteConditions(in: source),
+                       expected.replacingOccurrences(of: "true || targetEnvironment(simulator)", with: "true || true"))
+    }
+
+    func testIOSPreviewPreservesMultilineCompoundConditions() {
+        let source = """
+        #if os(
+            iOS
+        ) || os(macOS)
+        let platform = "iPhone"
+        #endif
+        """
+        let expected = """
+        #if (true
+
+        ) || false
+        let platform = "iPhone"
+        #endif
+        """
+        for ending in ["\n", "\r\n"] {
+            XCTAssertEqual(IOSPreview().rewriteConditions(in: source.replacingOccurrences(of: "\n", with: ending)),
+                           expected.replacingOccurrences(of: "\n", with: ending))
+        }
+    }
+
     // MARK: KVO
 
     func testDynamicPropertyGetsObservers() {

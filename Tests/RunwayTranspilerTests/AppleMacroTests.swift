@@ -36,11 +36,15 @@ final class AppleMacroTests: XCTestCase {
         @main struct A: App {
             @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
             @NSApplicationDelegateAdaptor var other: OtherDelegate
+            @UIApplicationDelegateAdaptor(MobileDelegate.self) private var mobileDelegate
+            @SwiftUI.UIApplicationDelegateAdaptor var otherMobile: OtherMobileDelegate
             var body: some Scene { WindowGroup { Text("x") } }
         }
         """)
         assertContains(out, "@NSApplicationDelegateAdaptor(AppDelegate.self, { AppDelegate() }) private var appDelegate",
-                       "@NSApplicationDelegateAdaptor(OtherDelegate.self, { OtherDelegate() }) var other")
+                       "@NSApplicationDelegateAdaptor(OtherDelegate.self, { OtherDelegate() }) var other",
+                       "@UIApplicationDelegateAdaptor(MobileDelegate.self, { MobileDelegate() }) private var mobileDelegate",
+                       "@SwiftUI.UIApplicationDelegateAdaptor(OtherMobileDelegate.self, { OtherMobileDelegate() }) var otherMobile")
     }
 
     func testModelBecomesObservablePersistentModel() {

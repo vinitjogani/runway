@@ -1,6 +1,7 @@
 // Text, fonts and LocalizedStringKey.
 
 import Foundation
+@_spi(Runway) import UIKit
 import RunwayCore
 
 public struct LocalizedStringKey: Hashable, Sendable, ExpressibleByStringInterpolation {
@@ -36,7 +37,15 @@ public struct LocalizedStringKey: Hashable, Sendable, ExpressibleByStringInterpo
 
 public struct Font: Hashable, Sendable {
     var spec: FontSpec
-    init(_ spec: FontSpec) { self.spec = spec }
+    private enum Sizing: Hashable, Sendable { case fixed, system(TextStyle), custom(TextStyle) }
+    private let sizing: Sizing
+    private var usesDefaultWeight: Bool
+
+    private init(_ spec: FontSpec, sizing: Sizing = .fixed, usesDefaultWeight: Bool = true) {
+        self.spec = spec
+        self.sizing = sizing
+        self.usesDefaultWeight = usesDefaultWeight
+    }
 
     public enum Weight: Hashable, Sendable {
         case ultraLight, thin, light, regular, medium, semibold, bold, heavy, black
@@ -90,17 +99,17 @@ public struct Font: Hashable, Sendable {
         }
     }
 
-    public static let largeTitle = Font(style(.largeTitle))
-    public static let title = Font(style(.title))
-    public static let title2 = Font(style(.title2))
-    public static let title3 = Font(style(.title3))
-    public static let headline = Font(style(.headline))
-    public static let subheadline = Font(style(.subheadline))
-    public static let body = Font(style(.body))
-    public static let callout = Font(style(.callout))
-    public static let footnote = Font(style(.footnote))
-    public static let caption = Font(style(.caption))
-    public static let caption2 = Font(style(.caption2))
+    public static let largeTitle = system(.largeTitle)
+    public static let title = system(.title)
+    public static let title2 = system(.title2)
+    public static let title3 = system(.title3)
+    public static let headline = system(.headline)
+    public static let subheadline = system(.subheadline)
+    public static let body = system(.body)
+    public static let callout = system(.callout)
+    public static let footnote = system(.footnote)
+    public static let caption = system(.caption)
+    public static let caption2 = system(.caption2)
 
     public static func system(size: CGFloat, weight: Weight? = nil, design: Design? = nil) -> Font {
         Font(FontSpec(size: size, weight: weight?.value ?? .regular, design: design?.value ?? .default))
@@ -109,13 +118,46 @@ public struct Font: Hashable, Sendable {
         var s = Self.style(style)
         if let d = design { s.design = d.value }
         if let w = weight { s.weight = w.value }
-        return Font(s)
+        return Font(s, sizing: .system(style), usesDefaultWeight: weight == nil)
     }
-    public static func custom(_ name: String, size: CGFloat) -> Font { Font(FontSpec(size: size, family: name)) }
-    public static func custom(_ name: String, size: CGFloat, relativeTo: TextStyle) -> Font { custom(name, size: size) }
-    public static func custom(_ name: String, fixedSize: CGFloat) -> Font { custom(name, size: fixedSize) }
+    public static func custom(_ name: String, size: CGFloat) -> Font {
+        custom(name, size: size, relativeTo: .body)
+    }
+    public static func custom(_ name: String, size: CGFloat, relativeTo textStyle: TextStyle) -> Font {
+        Font(customSpec(name, size: size), sizing: .custom(textStyle))
+    }
+    public static func custom(_ name: String, fixedSize: CGFloat) -> Font {
+        Font(customSpec(name, size: fixedSize))
+    }
 
-    public func weight(_ w: Weight) -> Font { var f = self; f.spec.weight = w.value; return f }
+    private static func customSpec(_ name: String, size: CGFloat) -> FontSpec {
+        UIKitRuntime.registeredFont(named: name, size: size) ?? FontSpec(size: size, family: name)
+    }
+
+    func resolved(in environment: EnvironmentValues) -> FontSpec {
+        guard environment._mobilePreview else { return spec }
+        var resolved = spec
+        switch sizing {
+        case .fixed:
+            break
+        case .system(let textStyle):
+            resolved.size = environment.dynamicTypeSize.mobilePointSize(for: textStyle)
+            if textStyle == .headline, usesDefaultWeight { resolved.weight = .semibold }
+        case .custom(let textStyle):
+            resolved.size *= environment.dynamicTypeSize.mobileScale(for: textStyle)
+        }
+        if resolved.family == nil, resolved.design == .default {
+            resolved.family = environment._mobileSystemFontFamily
+        }
+        return resolved
+    }
+
+    public func weight(_ w: Weight) -> Font {
+        var font = self
+        font.spec.weight = w.value
+        font.usesDefaultWeight = false
+        return font
+    }
     public func bold() -> Font { weight(.bold) }
     public func italic() -> Font { var f = self; f.spec.italic = true; return f }
     public func monospacedDigit() -> Font { var f = self; f.spec.monospacedDigit = true; return f }
@@ -138,8 +180,33 @@ public struct Text: View, PrimitiveView, Equatable {
         var monoDigit = false
         var underline = false
         var strikethrough = false
+        var tracking: CGFloat?
+        var timer: IntervalTimer?
+
+        func content(at date: Date) -> String { timer?.text(at: date) ?? string }
     }
     var segments: [Segment]
+
+    struct IntervalTimer: Hashable, Sendable {
+        let interval: ClosedRange<Date>
+        let pauseTime: Date?
+        let countsDown: Bool
+        let showsHours: Bool
+
+        func text(at date: Date) -> String {
+            let current = min(max(pauseTime ?? date, interval.lowerBound), interval.upperBound)
+            let remaining = interval.upperBound.timeIntervalSince(current)
+            let elapsed = current.timeIntervalSince(interval.lowerBound)
+            let duration = countsDown ? remaining.rounded(.up) : elapsed.rounded(.down)
+            let seconds = Int(clamping: Int64(exactly: duration) ?? Int64.max)
+            let remainder = String(format: "%02d", seconds % 60)
+            let minutes = seconds / 60
+            if showsHours, minutes >= 60 {
+                return "\(minutes / 60):\(String(format: "%02d", minutes % 60)):\(remainder)"
+            }
+            return "\(minutes):\(remainder)"
+        }
+    }
 
     public init(_ key: LocalizedStringKey, tableName: String? = nil, bundle: Bundle? = nil, comment: StaticString? = nil) {
         segments = Text.markdown(Text.localized(key.string, table: tableName, bundle: bundle))
@@ -168,13 +235,18 @@ public struct Text: View, PrimitiveView, Equatable {
         segments = [Segment(string: interp.output)]
     }
     public init(_ range: ClosedRange<Date>) { segments = [Segment(string: "\(range.lowerBound) – \(range.upperBound)")] }
+    public init(timerInterval: ClosedRange<Date>, pauseTime: Date? = nil, countsDown: Bool = true, showsHours: Bool = true) {
+        segments = [Segment(string: "", timer: IntervalTimer(interval: timerInterval, pauseTime: pauseTime,
+                                                             countsDown: countsDown, showsHours: showsHours))]
+    }
     init(segments: [Segment]) { self.segments = segments }
 
     public enum DateStyle: Sendable { case time, date, relative, offset, timer }
     public enum TruncationMode: Hashable, Sendable { case head, middle, tail }
     public enum Case: Sendable { case uppercase, lowercase }
 
-    var plainText: String { segments.map(\.string).joined() }
+    var plainText: String { plainText(at: Date()) }
+    private func plainText(at date: Date) -> String { segments.map { $0.content(at: date) }.joined() }
 
     /// `**bold**`, `*italic*` and `` `code` `` in literals, as SwiftUI renders them.
     static func markdown(_ s: String) -> [Segment] {
@@ -220,7 +292,7 @@ public struct Text: View, PrimitiveView, Equatable {
     public func underline(_ active: Bool = true, color: Color? = nil) -> Text { map { $0.underline = active } }
     public func strikethrough(_ active: Bool = true, color: Color? = nil) -> Text { map { $0.strikethrough = active } }
     public func kerning(_ k: CGFloat) -> Text { self }
-    public func tracking(_ t: CGFloat) -> Text { self }
+    public func tracking(_ t: CGFloat) -> Text { map { $0.tracking = t } }
     public func baselineOffset(_ o: CGFloat) -> Text { self }
     public func textCase(_ c: Case?) -> Text {
         guard let c else { return self }
@@ -230,16 +302,23 @@ public struct Text: View, PrimitiveView, Equatable {
     public static func + (a: Text, b: Text) -> Text { Text(segments: a.segments + b.segments) }
 
     /// The text's runs with the environment applied.
-    func styled(_ env: EnvironmentValues) -> StyledText {
-        let base = (env.font ?? .body).spec
+    func styled(_ env: EnvironmentValues, at date: Date = Date()) -> StyledText {
+        let base = (env.font ?? .body).resolved(in: env)
         let fg = env._foreground?.resolvePaint(env, role: .foreground).averageColor ?? Color.primary.resolve(env)
         let runs = segments.map { s -> TextRun in
-            var f = s.font?.spec ?? base
+            var f = s.font?.resolved(in: env) ?? base
             if let w = s.weight ?? env._fontWeight { f.weight = w.value }
             if s.italic || env._italic { f.italic = true }
             if s.monoDigit || env._monospacedDigit { f.monospacedDigit = true }
             let color = (s.color?.resolve(env) ?? fg).multiplyingAlpha(env.isEnabled ? 1 : 0.5)
-            return TextRun(string: s.string, font: f, color: color, underline: s.underline, strikethrough: s.strikethrough)
+            let content = s.content(at: date)
+            let string: String = switch env.textCase {
+            case .uppercase: content.uppercased(with: env.locale)
+            case .lowercase: content.lowercased(with: env.locale)
+            case nil: content
+            }
+            return TextRun(string: string, font: f, color: color, underline: s.underline,
+                           strikethrough: s.strikethrough, tracking: s.tracking ?? env._textTracking)
         }
         let align: TextAlignmentValue = switch env.multilineTextAlignment {
         case .leading: .leading
@@ -255,16 +334,49 @@ public struct Text: View, PrimitiveView, Equatable {
     }
 
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        let now = Date()
+        if !ctx.dryRun {
+            let timers = segments.compactMap(\.timer).filter { $0.pauseTime == nil && now < $0.interval.upperBound }
+            if let end = timers.map(\.interval.upperBound).max() {
+                ctx.host.task(ctx.path + "/timer", id: AnyHashable(timers), priority: .userInitiated) { [weak host = ctx.host, weak scope = ctx.scope] in
+                    while Date() < end {
+                        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                        guard let host else { return }
+                        host.invalidate(scope: scope)
+                    }
+                }
+            }
+        }
         let w = ctx.widget(.text)
         if let w {
             var p = WidgetProps()
-            p.text = styled(ctx.env)
+            p.text = styled(ctx.env, at: now)
             p.tooltip = ctx.env._help
             p.opacity = ctx.env._opacity
             ctx.host.backend.update(w, props: p, events: WidgetEvents())
         }
-        return [WidgetNode(w, backend: ctx.host.backend, text: plainText)]
+        return [WidgetNode(w, backend: ctx.host.backend, text: plainText(at: now))]
     }
+}
+
+private struct TextCaseKey: EnvironmentKey { static let defaultValue: Text.Case? = nil }
+private struct TextTrackingKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+
+extension EnvironmentValues {
+    public var textCase: Text.Case? {
+        get { self[TextCaseKey.self] }
+        set { self[TextCaseKey.self] = newValue }
+    }
+
+    fileprivate var _textTracking: CGFloat {
+        get { self[TextTrackingKey.self] }
+        set { self[TextTrackingKey.self] = newValue }
+    }
+}
+
+extension View {
+    public func textCase(_ textCase: Text.Case?) -> some View { environment(\.textCase, textCase) }
+    public func tracking(_ tracking: CGFloat) -> some View { environment { $0._textTracking = tracking } }
 }
 
 extension Text {

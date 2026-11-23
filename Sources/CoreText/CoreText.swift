@@ -252,6 +252,12 @@ public func CTFontDescriptorCreateMatchingFontDescriptors(_ d: CTFontDescriptor,
 
 public func CTFontManagerCopyAvailableFontFamilyNames() -> CFArray { Pango.families as NSArray }
 public func CTFontManagerCopyAvailablePostScriptNames() -> CFArray { Pango.families.map { $0.replacingOccurrences(of: " ", with: "") } as NSArray }
+/// Pango selects a font by family and style. Preserve those values when a
+/// SwiftUI app asks for a registered font's PostScript name.
+@_spi(Runway) public func runwayRegisteredFont(named name: String, size: CGFloat) -> FontSpec? {
+    Pango.registeredFont(named: name, size: size)
+}
+
 /// Adds a font file for this process (fontconfig's application fonts).
 public func CTFontManagerRegisterFontsForURL(_ fontURL: CFURL, _ scope: CTFontManagerScope, _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Bool {
     Pango.register((fontURL as URL).path)
@@ -531,6 +537,30 @@ enum Pango {
         return ok
     }
 
+    static func registeredFont(named name: String, size: CGFloat) -> FontSpec? {
+        lock.lock(); defer { lock.unlock() }
+        guard let set = FcConfigGetFonts(FcConfigGetCurrent(), FcSetApplication),
+              let fonts = set.pointee.fonts else { return nil }
+        for index in 0..<Int(set.pointee.nfont) {
+            guard let pattern = fonts[index] else { continue }
+            var postScriptName: UnsafeMutablePointer<FcChar8>?
+            guard FcPatternGetString(pattern, "postscriptname", 0, &postScriptName) == FcResultMatch,
+                  let postScriptName,
+                  String(cString: postScriptName).caseInsensitiveCompare(name) == .orderedSame else { continue }
+            var family: UnsafeMutablePointer<FcChar8>?
+            guard FcPatternGetString(pattern, "family", 0, &family) == FcResultMatch,
+                  let family else { return nil }
+            var weight: Int32 = FC_WEIGHT_REGULAR
+            var slant: Int32 = FC_SLANT_ROMAN
+            _ = FcPatternGetInteger(pattern, "weight", 0, &weight)
+            _ = FcPatternGetInteger(pattern, "slant", 0, &slant)
+            let openTypeWeight = Int(FcWeightToOpenType(weight))
+            let mappedWeight = FontWeightValue(rawValue: openTypeWeight) ?? .regular
+            return FontSpec(size: size, weight: mappedWeight, italic: slant != FC_SLANT_ROMAN, family: String(cString: family))
+        }
+        return nil
+    }
+
     /// The layout drawn with Cairo at `scale` pixels per point: its image
     /// (top-left at the box's) and the box's size in points. Bitmap contexts
     /// draw text with this (CGTextRasterizer); native targets lay out themselves.
@@ -578,6 +608,7 @@ enum Pango {
     static func metrics(_ f: CTFont) -> (ascent: CGFloat, descent: CGFloat, leading: CGFloat) { (f.size * 0.95, f.size * 0.25, 0) }
     static var families: [String] { [] }
     static func register(_ path: String) -> Bool { false }
+    static func registeredFont(named name: String, size: CGFloat) -> FontSpec? { nil }
     static func rasterize(_ t: StyledText, width: CGFloat?, scale: CGFloat, fill: [CGFloat]) -> (image: CGImage, size: CGSize)? { nil }
     #endif
 

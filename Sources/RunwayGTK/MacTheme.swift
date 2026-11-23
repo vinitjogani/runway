@@ -18,8 +18,6 @@ enum MacTheme {
     static let fontFamilies = ["SF Pro Text", "SF Pro", ".AppleSystemUIFont", "Inter Variable", "Inter", "Cantarell",
                                "Noto Sans", "Helvetica Neue", "Helvetica", "Liberation Sans", "Arial", "sans-serif"]
 
-    /// For GtkSettings' gtk-font-name (a Pango description): widgets not
-    /// in a window (measuring labels) resolve their family from it.
     static var pangoFamilies: String { fontFamilies.joined(separator: ",") }
 
     struct Palette {
@@ -146,11 +144,52 @@ enum MacTheme {
 
     private static func f(_ v: Double) -> String { String(format: "%.2f", v) }
 
+    static func mobileControlCSS(dark isDark: Bool) -> String {
+        let p = isDark ? dark : light
+        let menuBackground = isDark ? "#2c2c2e" : "#fafafa"
+        let highlight = isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.065)"
+        return """
+
+        box.rw-mobile-segmented { border-radius: 9px; padding: 2px; box-shadow: none; }
+        box.rw-mobile-segmented > button { border-radius: 7px; min-height: 28px; padding: 0 6px; font-size: 13px; }
+        menubutton.rw-mobile-menu > button, dropdown.rw-mobile-dropdown > button {
+          border-radius: 999px; min-height: 0; padding: 0 10px; box-shadow: none;
+        }
+        menubutton.rw-mobile-menu > button.flat { padding: 0 10px; }
+        dropdown.rw-mobile-dropdown > button { min-height: 30px; font-size: 15px; }
+        menubutton.rw-mobile-menu > button:checked, dropdown.rw-mobile-dropdown > button:checked { background-color: \(highlight); }
+        menubutton.rw-mobile-menu popover.menu > contents, dropdown.rw-mobile-dropdown popover.background > contents {
+          background-color: \(menuBackground); border-radius: 14px; min-width: 160px; padding: 4px 0;
+        }
+        menubutton.rw-mobile-menu popover.menu modelbutton, dropdown.rw-mobile-dropdown popover listview row {
+          min-height: 44px; padding: 0 12px; margin: 0 4px; border-radius: 8px; font-size: 16px;
+        }
+        menubutton.rw-mobile-menu popover.menu modelbutton:hover,
+        menubutton.rw-mobile-menu popover.menu modelbutton:selected,
+        menubutton.rw-mobile-menu popover.menu modelbutton:focus-visible {
+          background-color: \(highlight); color: \(p.text);
+        }
+        menubutton.rw-mobile-menu popover.menu modelbutton:hover > check:checked,
+        menubutton.rw-mobile-menu popover.menu modelbutton:hover > radio:checked {
+          background-image: \(checkmark(p.glyph, width: 1.6));
+        }
+        menubutton.rw-mobile-menu popover.menu modelbutton:hover > arrow { background-image: \(chevronRight(p.secondary)); }
+        """
+    }
+
     // MARK: The stylesheet
 
-    static func css(dark isDark: Bool, nativeFont: Bool) -> String {
+    static func fontFamilyCSS(_ families: [String]) -> String {
+        families.map { family in
+            if family == "sans-serif" { return family }
+            let escaped = family.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            return "\"\(escaped)\""
+        }.joined(separator: ", ")
+    }
+
+    static func css(dark isDark: Bool, nativeFont: Bool, families: [String]? = nil) -> String {
         let p = isDark ? dark : light
-        let fonts = fontFamilies.map { $0 == "sans-serif" ? $0 : "\"\($0)\"" }.joined(separator: ", ")
+        let fonts = fontFamilyCSS(families ?? fontFamilies)
         let font = nativeFont ? "" : "font-family: \(fonts); font-size: 13px;"
         let accentGloss = "linear-gradient(to bottom, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0))"
         let white = "#ffffff"
@@ -205,6 +244,7 @@ enum MacTheme {
         button.rw-content { min-height: 0; padding: 3px 8px; }
         button.rw-content.rw-small { padding: 2px 6px; }
         button.rw-content.rw-large { padding: 6px 12px; }
+        button.rw-capsule-button { border-radius: 999px; }
 
         /* Borderless: no bezel; the content darkens while pressed. */
         button.flat { background: none; box-shadow: none; padding: 0 4px; }
@@ -631,6 +671,7 @@ enum MacTheme {
         .rw-titlebar-title { font-weight: bold; padding: 0 12px; }
         .rw-container { background: none; }
         button.rw-content { padding: 3px 10px; min-height: 0; }
+        button.rw-capsule-button { border-radius: 999px; }
         button.rw-small { padding: 1px 6px; min-height: 18px; font-size: 11px; }
         button.rw-large { padding: 5px 14px; min-height: 26px; }
         .rw-segmented > button { padding: 2px 10px; min-height: 0; }

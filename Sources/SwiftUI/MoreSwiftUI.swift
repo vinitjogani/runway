@@ -97,7 +97,6 @@ extension View {
     /// The deprecated spelling of `autocorrectionDisabled(_:)` (no autocorrection here).
     public func disableAutocorrection(_ disable: Bool?) -> some View { self }
     public func help(_ textKey: LocalizedStringKey) -> some View { help(textKey.string) }
-    public func textInputAutocapitalization(_ autocapitalization: Any?) -> some View { self }
     public func textSelectionAffinity(_ affinity: Any?) -> some View { self }
     public func writingToolsBehavior(_ behavior: Any?) -> some View { self }
     public func speechAdjustedPitch(_ value: Double) -> some View { self }

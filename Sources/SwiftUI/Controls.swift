@@ -86,6 +86,7 @@ public struct Button<Label: View>: View, PrimitiveView {
         p.isCancel = env._shortcut == .cancelAction || role == .cancel
         p.isDestructive = role == .destructive
         p.prominent = env._buttonStyle == .borderedProminent || p.isDefault
+        p.capsuleButton = env._mobilePreview && env[ButtonBorderShapeKey.self].isCapsule
 
         // A custom ButtonStyle decorates the label in a tap area.
         if let style = env._customButtonStyle {
@@ -105,7 +106,7 @@ public struct Button<Label: View>: View, PrimitiveView {
             return [WidgetNode(w, backend: backend, text: title, item: item)]
         }
         let chromeless = style == .plain || style == .borderless || style == .link || style == .accessoryBar
-        if let title, !chromeless {
+        if let title, !chromeless, !env._mobilePreview {
             let w = ctx.widget(.button)
             p.title = title
             if let w { backend.update(w, props: p, events: events) }
@@ -117,11 +118,22 @@ public struct Button<Label: View>: View, PrimitiveView {
                 env._foreground = AnyShapeStyle(role == .destructive ? Color.red : Color.secondary)
             }
             if role == .destructive, env._foreground == nil { env._foreground = AnyShapeStyle(Color.red) }
+            if env._mobilePreview, env._foreground == nil {
+                let tint = env._tint ?? .accentColor
+                if p.prominent {
+                    let color = tint.resolve(env)
+                    let luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+                    env._foreground = AnyShapeStyle(luminance > 0.55 ? Color.black : Color.white)
+                } else if style == .automatic {
+                    env._foreground = AnyShapeStyle(tint)
+                }
+            }
         }
         let content = labelCtx.resolve(label, "label")
         if chromeless { return [tapArea(ctx, content: content, events: events, props: p, item: item)] }
         let w = ctx.widget(.button)
         p.hasContent = true
+        if env._mobilePreview, style == .automatic, !p.prominent { p.bordered = false }
         if let w { backend.update(w, props: p, events: events) }
         let inner: LayoutNode = content.count == 1 ? content[0] : StackNode(axis: .horizontal, alignment: 0.5, spacing: 4, children: content)
         let node = ContainerNode(widget: w, backend: backend, content: inner, sizing: .hug, insets: w.map { backend.contentInsets($0) } ?? .zero)
@@ -141,6 +153,10 @@ public struct Button<Label: View>: View, PrimitiveView {
         if let w { ctx.host.backend.update(w, props: props, events: events) }
         let inner: LayoutNode = content.count == 1 ? content[0] : StackNode(axis: .horizontal, alignment: 0.5, spacing: 4, children: content)
         let node = ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)
+        if ctx.env._mobileToolbarItem {
+            let height = (ctx.env._mobilePreviewProfile ?? .iphonePro).toolbarHeight
+            node.minSize = CGSize(width: height, height: height)
+        }
         node.item = item
         return node
     }
@@ -268,7 +284,8 @@ public struct TextField<Label: View>: View, PrimitiveView {
         p.string = text.wrappedValue
         let title = ctx.labelText(label)
         p.placeholder = prompt?.plainText ?? title
-        p.bordered = env._textFieldStyle != .plain
+        p.bordered = env._textFieldStyle != .plain && (!env._mobilePreview || env._textFieldStyle != .automatic)
+        if env._mobilePreview || env.font != nil { p.text = Text(verbatim: "").styled(env) }
         let w = ctx.widget(.textField(secure: secure))
         if let w { backend.update(w, props: p, events: events) }
         let field = WidgetNode(w, backend: backend)
@@ -486,8 +503,12 @@ public struct Picker<Label: View, SelectionValue: Hashable, Content: View>: View
         let title = ctx.labelText(label)
         p.title = title
         if env._inMenu {
+            guard !opts.isEmpty else { return [] }
             let children = opts.enumerated().map { i, o in
                 MenuItemSpec(title: o.title, enabled: env.isEnabled, checked: i == p.selected) { events.onSelect?(i) }
+            }
+            if env._mobilePreview, env._pickerStyle != .menu {
+                return children.map { WidgetNode(nil, backend: backend, text: $0.title, item: $0) }
             }
             let item = MenuItemSpec(title: title, children: children)
             return [WidgetNode(nil, backend: backend, text: title, item: item)]
@@ -499,6 +520,13 @@ public struct Picker<Label: View, SelectionValue: Hashable, Content: View>: View
         let w = ctx.widget(segmented ? .segmented : .dropdown)
         if let w { backend.update(w, props: p, events: events) }
         let control = WidgetNode(w, backend: backend)
+        if env._mobilePreview, segmented {
+            control.flexibleWidth = true
+            control.flexibleHeight = true
+            let frame = FrameNode(child: control, alignment: .center)
+            frame.height = 32
+            return [frame]
+        }
         let lbl = title.isEmpty ? [] : ctx.resolve(label, "label")
         return ctx.formRow(label: lbl, control: [control])
     }
@@ -572,13 +600,27 @@ public struct Menu<Label: View, Content: View>: View, PrimitiveView {
         }
         var p = ctx.baseProps()
         p.title = title
-        p.bordered = ctx.env._buttonStyle != .borderless && ctx.env._buttonStyle != .plain
-        if case let .symbol(s)? = ctx.plainTitle(label) == nil ? firstSymbol(ctx) : nil { p.image = .symbol(s) }
+        p.bordered = !ctx.env._mobileToolbarItem && ctx.env._buttonStyle != .borderless && ctx.env._buttonStyle != .plain
+        p.hasContent = ctx.env._mobilePreview
+        if !p.hasContent, case let .symbol(s)? = ctx.plainTitle(label) == nil ? firstSymbol(ctx) : nil { p.image = .symbol(s) }
         var events = WidgetEvents()
         events.menu = menu
         events.onTap = primaryAction
         let w = ctx.widget(.menuButton)
         if let w { ctx.host.backend.update(w, props: p, events: events) }
+        if p.hasContent {
+            let labelContext = ctx.with { env in
+                if env._foreground == nil { env._foreground = AnyShapeStyle(env._tint ?? .accentColor) }
+            }
+            let children = labelContext.resolve(label, "label")
+            let content = children.count == 1 ? children[0] : StackNode(axis: .horizontal, alignment: 0.5, spacing: 4, children: children)
+            let backend = ctx.host.backend
+            let node = ContainerNode(widget: w, backend: backend, content: content, sizing: .hug,
+                                     insets: w.map { backend.contentInsets($0) } ?? .zero)
+            let minimum = ctx.env._mobileToolbarItem ? (ctx.env._mobilePreviewProfile ?? .iphonePro).toolbarHeight : 36
+            node.minSize = CGSize(width: minimum, height: minimum)
+            return [node]
+        }
         return [WidgetNode(w, backend: ctx.host.backend, text: title)]
     }
 
@@ -620,7 +662,7 @@ public struct Link<Label: View>: View, PrimitiveView {
         let item = MenuItemSpec(title: ctx.labelText(label)) { open(url) }
         if let title = ctx.plainTitle(label) {
             p.title = title
-            if let font = ctx.env.font { p.text = StyledText(runs: [TextRun(string: title, font: font.spec, color: nil)]) }
+            if let font = ctx.env.font { p.text = StyledText(runs: [TextRun(string: title, font: font.resolved(in: ctx.env), color: nil)]) }
             let w = ctx.widget(.link)
             if let w { ctx.host.backend.update(w, props: p, events: events) }
             return [WidgetNode(w, backend: ctx.host.backend, text: title, item: item)]

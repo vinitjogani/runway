@@ -90,11 +90,16 @@ public struct ScrollView<Content: View>: View, PrimitiveView {
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let h = axes.contains(.horizontal), v = axes.contains(.vertical)
         let enabled = ctx.env.isScrollEnabled
-        let kids = ctx.with { $0._stackAxis = h && !v ? .horizontal : .vertical }.resolve(content, "s")
+        let clearance = v && enabled ? ctx.env._mobileTabBarInset : 0
+        let kids = ctx.with { env in
+            env._stackAxis = h && !v ? .horizontal : .vertical
+            if clearance > 0 { env._mobileTabBarInset = 0 }
+        }.resolve(content, "s")
         let inner: LayoutNode = kids.count == 1 ? kids[0] : StackNode(axis: h && !v ? .horizontal : .vertical, alignment: .center, spacing: nil, children: kids)
+        let scrollContent = clearance > 0 ? PaddingNode(EdgeInsets(bottom: clearance), inner) : inner
         let widget = ctx.widget(enabled ? .scroll(horizontal: h, vertical: v) : .container)
         if let widget { ctx.host.backend.update(widget, props: WidgetProps(), events: WidgetEvents()) }
-        return [ContainerNode(widget: widget, backend: ctx.host.backend, content: inner, sizing: .scroll(horizontal: h, vertical: v, enabled: enabled))]
+        return [ContainerNode(widget: widget, backend: ctx.host.backend, content: scrollContent, sizing: .scroll(horizontal: h, vertical: v, enabled: enabled))]
     }
 }
 

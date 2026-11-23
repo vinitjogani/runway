@@ -47,17 +47,19 @@ BASE = {
     "clock.arrow.circlepath": "history", "calendar": "calendar", "bell": "bell", "bell.badge": "bell-dot",
     "star": "star", "heart": "heart", "bookmark": "bookmark", "tag": "tag", "flag": "flag",
     "face.smiling": "smile", "theatermask.and.paintbrush": "drama", "paintpalette": "palette", "memories": "images",
+    "lightbulb": "lightbulb", "rosette": "badge", "book.closed": "book",
     "ant": "bug", "bolt": "zap", "moon": "moon", "sun.max": "sun", "globe": "globe", "network": "network",
     "safari": "compass", "house": "house", "gift": "gift", "music.note": "music", "shippingbox": "package",
     "vault": "vault", "newspaper": "newspaper", "apple.logo": "apple", "cpu": "cpu", "memorychip": "memory-stick",
     "gear": "settings", "gearshape": "settings", "gearshape.2": "settings-2",
     # Arrows
     "arrow.up": "arrow-up", "arrow.down": "arrow-down", "arrow.left": "arrow-left", "arrow.right": "arrow-right",
-    "arrow.up.right": "arrow-up-right", "arrow.left.arrow.right": "arrow-left-right", "arrow.up.arrow.down": "arrow-up-down",
+    "arrow.up.right": "arrow-up-right", "arrow.down.right": "arrow-down-right",
+    "arrow.left.arrow.right": "arrow-left-right", "arrow.up.arrow.down": "arrow-up-down",
     "arrow.clockwise": "rotate-cw", "arrow.counterclockwise": "rotate-ccw", "arrow.2.squarepath": "repeat-2",
     "arrow.triangle.2.circlepath": "refresh-cw", "arrow.triangle.pull": "git-pull-request",
     "arrow.uturn.backward": "undo-2", "arrow.uturn.left": "undo-2", "arrow.uturn.forward": "redo-2",
-    "arrowshape.turn.up.backward": "reply", "arrowtriangle.up": "triangle",
+    "arrowshape.turn.up.backward": "reply", "arrowtriangle.up": "triangle", "arrowtriangle.down": "triangle-down",
     "arrow.up.left.and.arrow.down.right": "maximize-2", "arrow.up.backward.and.arrow.down.forward": "maximize-2",
     "arrow.down.right.and.arrow.up.left": "minimize-2", "arrow.down.forward.and.arrow.up.backward": "minimize-2",
     "chevron.up": "chevron-up", "chevron.down": "chevron-down", "chevron.left": "chevron-left", "chevron.right": "chevron-right",
@@ -71,6 +73,12 @@ BASE = {
     "mic": "mic", "mic.slash": "mic-off", "speaker": "volume", "speaker.wave.1": "volume-1", "speaker.wave.2": "volume-2",
     "speaker.wave.3": "volume-2", "speaker.slash": "volume-x", "waveform": "audio-waveform", "viewfinder": "scan",
     "text.viewfinder": "scan-text", "crop": "crop", "cursorarrow": "mouse-pointer-2", "magicmouse": "mouse",
+    "wave.3.right": "radio", "waveform.path.ecg": "activity",
+    # Charts and activity
+    "chart.bar": "chart-no-axes-column", "chart.bar.xaxis": "chart-column",
+    "chart.line.uptrend.xyaxis": "chart-line-arrow", "point.3.connected.trianglepath.dotted": "chart-network",
+    "figure.run": "footprints", "figure.walk": "footprints", "figure.mixed.cardio": "activity",
+    "dumbbell": "dumbbell", "leaf": "leaf",
     # Files and storage
     "doc": "file", "document": "file", "doc.text": "file-text", "doc.plaintext": "file-text", "doc.richtext": "file-type",
     "folder": "folder", "folder.badge.plus": "folder-plus", "folder.badge.minus": "folder-minus",
@@ -80,7 +88,7 @@ BASE = {
     "icloud": "cloud", "checkmark.icloud": "cloud-upload", "xmark.icloud": "cloud-off", "icloud.and.arrow.down": "cloud-download",
     "cable.connector": "cable", "cable.connector.slash": "unplug",
     # People
-    "person": "user", "person.2": "users", "person.crop": "user",
+    "person": "user", "person.2": "users", "person.crop": "user-round",
     # Windows and layout
     "sidebar.left": "panel-left", "sidebar.leading": "panel-left", "sidebar.right": "panel-right", "sidebar.trailing": "panel-right",
     "macwindow": "app-window", "macwindow.on.rectangle": "app-window", "appwindow.swipe.rectangle": "app-window",
@@ -107,7 +115,8 @@ BASE = {
 # come from the bare icon; these Lucide-only helpers exist to give SF names
 # without an outline of their own something sensible.
 HELPERS = {"help-circle-inner": ("circle-help", "inner"), "alert-inner": ("circle-alert", "inner"),
-           "square-stop-inner": ("square", "fill"), "record-inner": ("circle", "fill")}
+           "square-stop-inner": ("square", "fill"), "record-inner": ("circle", "fill"),
+           "triangle-down": ("triangle", "rotate"), "chart-line-arrow": ("chart-line", "arrowhead")}
 
 def body(svg):
     m = re.search(r'<svg[^>]*>\s*(.*)</svg>', svg, re.S)
@@ -124,6 +133,10 @@ def main(icons):
             b = body(open(os.path.join(icons, src + '.svg')).read())
             if mode == "inner":  # drop the outer circle: just the glyph
                 b = re.sub(r'<circle cx="12" cy="12" r="10"\s*/>\s*', '', b)
+            elif mode == "rotate":
+                b = f'<g transform="rotate(180 12 12)">{b}</g>'
+            elif mode == "arrowhead":
+                b += ' <path d="M14.5 9H19v4.5"/>'
             else:
                 b = b.replace('<rect', '<rect data-fill="1"').replace('<circle', '<circle data-fill="1"')
                 b = re.sub(r'r="10"', 'r="7"', b) if src == "circle" else b

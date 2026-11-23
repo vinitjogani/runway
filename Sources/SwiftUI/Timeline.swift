@@ -65,12 +65,7 @@ extension TimelineSchedule {
 
 /// Content rebuilt at each of the schedule's dates.
 public struct TimelineView<Schedule: TimelineSchedule, Content: View>: View {
-    public struct Context {
-        public enum Cadence: Comparable, Sendable { case live, seconds, minutes }
-        public let date: Date
-        public let cadence: Cadence
-        public func invalidateTimelineContent() {}
-    }
+    public typealias Context = TimelineViewContext
     let schedule: Schedule
     let content: (Context) -> Content
     @State private var date = Date()
@@ -98,7 +93,16 @@ public struct TimelineView<Schedule: TimelineSchedule, Content: View>: View {
 }
 private struct UncheckedSchedule<S: TimelineSchedule>: @unchecked Sendable { let schedule: S }
 
-public typealias TimelineViewDefaultContext = TimelineView<EveryMinuteTimelineSchedule, Never>.Context
+/// A common context lets Swift infer a timeline's content independently of the
+/// closure parameter, including when the closure starts with local bindings.
+public struct TimelineViewContext {
+    public enum Cadence: Comparable, Sendable { case live, seconds, minutes }
+    public let date: Date
+    public let cadence: Cadence
+    public func invalidateTimelineContent() {}
+}
+
+public typealias TimelineViewDefaultContext = TimelineViewContext
 
 // MARK: onReceive
 

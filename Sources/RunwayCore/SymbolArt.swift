@@ -15,6 +15,27 @@
 import Foundation
 
 public enum SymbolArt {
+    /// A standalone SVG keyed by the exact symbol name in the GTK preview's
+    /// local artwork directory. The preview paints its silhouette in the icon tint.
+    public static func overrideSVG(_ name: String) -> String? {
+        #if os(Linux)
+        guard let path = ProcessInfo.processInfo.environment["RUNWAY_SYMBOLS_PATH"], !path.isEmpty else { return nil }
+        return overrideSVG(name, in: URL(fileURLWithPath: path, isDirectory: true))
+        #else
+        return nil
+        #endif
+    }
+
+    private static let overrideNameCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+
+    static func overrideSVG(_ name: String, in directory: URL) -> String? {
+        guard let first = name.first, first.isLetter || first.isNumber,
+              name.unicodeScalars.allSatisfy(overrideNameCharacters.contains) else { return nil }
+        let file = directory.appendingPathComponent("\(name).svg")
+        guard let svg = try? String(contentsOf: file, encoding: .utf8), svg.contains("<svg") else { return nil }
+        return svg
+    }
+
     /// Stroke width on the 24-unit grid for an SF weight (regular ≈ SF's
     /// regular stroke at text sizes).
     public static func strokeWidth(weight: Double) -> Double {
@@ -64,6 +85,7 @@ public enum SymbolArt {
     /// The symbol as a complete SVG (24×24 view box, ink `currentColor`),
     /// or nil for names with no art.
     public static func svg(_ name: String, weight: Double = 0) -> String? {
+        if name == "person.crop.circle.fill" { return filledProfile }
         guard let p = resolve(name), let glyph = table[p.base] else { return nil }
         let sw = strokeWidth(weight: weight)
         let ink = "currentColor"
@@ -92,4 +114,15 @@ public enum SymbolArt {
         return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"\(ink)\" "
             + "stroke-width=\"\(sw)\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\(body)</svg>"
     }
+
+    private static let filledProfile = #"""
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+      <mask id="profile">
+        <rect width="24" height="24" fill="white"/>
+        <circle cx="12" cy="9" r="3.1" fill="black"/>
+        <path d="M5 21v-1c0-3.8 3.1-6 7-6s7 2.2 7 6v1z" fill="black"/>
+      </mask>
+      <circle cx="12" cy="12" r="10" fill="currentColor" mask="url(#profile)"/>
+    </svg>
+    """#
 }

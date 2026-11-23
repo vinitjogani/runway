@@ -33,9 +33,14 @@ private let signalCallback1: @convention(c) (UnsafeMutableRawPointer?, UnsafeMut
     Unmanaged<Handler>.fromOpaque(data).takeUnretainedValue().fire(instance)
 }
 /// GtkGestureClick::released (gesture, n_press, x, y, data).
-private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { g, _, _, _, data in
+private final class ClickHandler {
+    let fire: (CGPoint) -> Void
+    init(_ fire: @escaping (CGPoint) -> Void) { self.fire = fire }
+}
+
+private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { _, _, x, y, data in
     guard let data else { return }
-    Unmanaged<Handler>.fromOpaque(data).takeUnretainedValue().fire(g)
+    Unmanaged<ClickHandler>.fromOpaque(data).takeUnretainedValue().fire(CGPoint(x: x, y: y))
 }
 /// Signals returning gboolean (activate-link, close-request).
 private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> gboolean = { instance, data in
@@ -57,12 +62,13 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
     var configured = false
     var events = WidgetEvents()
     var handlers: [Handler] = []
+    private var clickHandler: ClickHandler?
     var updating = false
     var segments: [GW] = []
     var cssClasses: Set<String> = []
     var markup: String?
     var options: [String] = []
-    var menuHandler: Handler?
+    var menuModelInstalled = false
     var menuItems: [MenuItemSpec] = []
     var size: CGSize = .zero
     var textureSize: CGSize?
@@ -86,10 +92,10 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         _ = runway_connect(instance, signal, unsafeBitCast(boolCallback, to: GCallback.self), Unmanaged.passUnretained(h).toOpaque())
     }
 
-    func onClick(_ f: @escaping () -> Void) {
+    func onClick(_ f: @escaping (CGPoint) -> Void) {
         let g = gtk_gesture_click_new()!
-        let h = Handler { _ in f() }
-        handlers.append(h)
+        let h = ClickHandler(f)
+        clickHandler = h
         _ = runway_connect(UnsafeMutableRawPointer(g), "released", unsafeBitCast(clickCallback, to: GCallback.self), Unmanaged.passUnretained(h).toOpaque())
         gtk_widget_add_controller(outer, g)
     }
@@ -387,26 +393,32 @@ final class WorkBox {
             g_value_unset(&v)
         }
         let env = ProcessInfo.processInfo.environment
-        let nativeFont = env["RUNWAY_NATIVE_FONT"] != nil
+        let nativeFont = mobilePreview ? mobileFont.useToolkitFont : env["RUNWAY_NATIVE_FONT"] != nil
+        if !nativeFont, macLook || mobilePreview {
+            // Detached measuring widgets inherit the same family as native controls.
+            runway_settings_set_string("gtk-font-name", systemFontFamilies.joined(separator: ",") + " 10")
+        }
         if macLook {
-            // The family for widgets outside windows (text measuring) and
-            // the Mac's window-control order.
-            if !nativeFont { runway_settings_set_string("gtk-font-name", MacTheme.pangoFamilies + " 10") }
             runway_settings_set_string("gtk-decoration-layout", "close,minimize,maximize:")
         }
-        runway_install_css(Self.css(nativeFont: nativeFont, dark: colorScheme == .dark, macLook: macLook))
+        let dark = colorScheme == .dark
+        let controls = mobilePreview && macLook ? MacTheme.mobileControlCSS(dark: dark) : ""
+        runway_install_css(Self.css(nativeFont: nativeFont, dark: dark, macLook: macLook, families: systemFontFamilies) + controls)
         Self.current = self
     }
 
     /// Whether controls take the Mac look (MacTheme) or the desktop's own
     /// theme (RUNWAY_NATIVE_LOOK).
     let macLook = ProcessInfo.processInfo.environment["RUNWAY_NATIVE_LOOK"] == nil
+    private let mobilePreview = ["iphone-pro", "iphone", "ipad"].contains(ProcessInfo.processInfo.environment["RUNWAY_PREVIEW_DEVICE"] ?? "")
+    private let mobileFont = MobileSystemFont()
+    private var systemFontFamilies: [String] { mobilePreview ? mobileFont.candidates + ["sans-serif"] : MacTheme.fontFamilies }
 
     /// The Mac look and metrics (13 px text) unless RUNWAY_NATIVE_LOOK /
     /// RUNWAY_NATIVE_FONT are set, so apps designed on the Mac keep their
     /// appearance and proportions.
-    static func css(nativeFont: Bool, dark: Bool = false, macLook: Bool = true) -> String {
-        macLook ? MacTheme.css(dark: dark, nativeFont: nativeFont) : MacTheme.nativeCSS(nativeFont: nativeFont)
+    static func css(nativeFont: Bool, dark: Bool = false, macLook: Bool = true, families: [String]? = nil) -> String {
+        macLook ? MacTheme.css(dark: dark, nativeFont: nativeFont, families: families) : MacTheme.nativeCSS(nativeFont: nativeFont)
     }
 
     // MARK: Widgets
@@ -441,7 +453,11 @@ final class WorkBox {
             let c = runway_canvas_new()!
             let b = GtkBox(kind: kind, outer: c)
             b.canvas = c
-            b.onClick { [unowned b] in if b.props.enabled { b.events.onTap?() } }
+            b.onClick { [unowned b] point in
+                guard b.props.enabled else { return }
+                if let action = b.events.onTapLocation { action(point) }
+                else { b.events.onTap?() }
+            }
             gtk_widget_set_cursor_from_name(c, "pointer")
             return b
         case let .toggle(k):
@@ -543,6 +559,8 @@ final class WorkBox {
                 runway_drop_down_mac_menu(d)
             }
             let b = GtkBox(kind: kind, outer: d)
+            b.setClass("rw-mobile-dropdown", mobilePreview)
+            if mobilePreview { runway_popovers_constrain_to_window(d) }
             b.connect(raw(d), "notify::selected", arity: 1) { [unowned b] _ in
                 guard !b.updating else { return }
                 let i = gtk_drop_down_get_selected(opaque(d))
@@ -559,6 +577,7 @@ final class WorkBox {
                 b.setClass("linked", true)
             }
             b.setClass("rw-segmented", true)
+            b.setClass("rw-mobile-segmented", mobilePreview)
             return b
         case let .progress(circular):
             if circular {
@@ -596,7 +615,9 @@ final class WorkBox {
             return b
         case .menuButton:
             let m = gtk_menu_button_new()!
-            return GtkBox(kind: kind, outer: m)
+            let b = GtkBox(kind: kind, outer: m)
+            b.setClass("rw-mobile-menu", mobilePreview)
+            return b
         }
     }
 
@@ -622,6 +643,7 @@ final class WorkBox {
         case .text:
             if let t = p.text { applyText(b, t) }
         case .button:
+            b.setClass("rw-capsule-button", p.capsuleButton)
             if p.hasContent {
                 if b.canvas == nil {
                     let c = runway_canvas_new()!
@@ -688,18 +710,27 @@ final class WorkBox {
             let sel = p.selected >= 0 ? UInt32(p.selected) : UInt32.max
             if gtk_drop_down_get_selected(opaque(w)) != sel { gtk_drop_down_set_selected(opaque(w), sel) }
             b.setClass("rw-borderless", !p.bordered)
+            if mobilePreview { applyTint(b, p.tint) }
         case .segmented:
             updateSegments(b, p)
+            if mobilePreview {
+                applyTint(b, p.tint)
+                if old.title != p.title { runway_accessible_label(w, p.title) }
+            }
         case .progress(let circular):
             applyTint(b, p.tint)
             if !circular {
                 if p.indeterminate { gtk_progress_bar_pulse(opaque(w)) } else { gtk_progress_bar_set_fraction(opaque(w), p.number) }
             }
         case .image:
-            if old.image != p.image || old.imageTint != p.imageTint || old.imagePointSize != p.imagePointSize || b.inner == nil {
+            if old.image != p.image || old.imageSymbolVariant != p.imageSymbolVariant || old.imageTint != p.imageTint
+                || old.imagePointSize != p.imagePointSize || b.inner == nil {
                 updateImage(b, p)
             }
         case .canvas, .divider:
+            if old.backdropBlur != p.backdropBlur {
+                runway_widget_set_backdrop_blur(w, Float(p.backdropBlur?.radius ?? 0), Float(p.backdropBlur?.cornerRadius ?? 0))
+            }
             gtk_widget_queue_draw(w)
         case .link:
             gtk_button_set_label(typed(w), p.title)
@@ -708,9 +739,18 @@ final class WorkBox {
             var c = GdkRGBA(red: Float(p.color.r), green: Float(p.color.g), blue: Float(p.color.b), alpha: Float(p.color.a))
             gtk_color_dialog_button_set_rgba(opaque(w), &c)
         case .menuButton:
-            if old.title != p.title || b.props == WidgetProps() {
+            if p.hasContent {
+                if b.canvas == nil {
+                    let canvas = runway_canvas_new()!
+                    gtk_menu_button_set_always_show_arrow(opaque(w), 0)
+                    gtk_menu_button_set_child(opaque(w), canvas)
+                    b.canvas = canvas
+                }
+                if old.title != p.title { runway_accessible_label(w, p.title) }
+            } else if old.hasContent || old.title != p.title || old.image != p.image || old == WidgetProps() {
+                b.canvas = nil
                 if case let .symbol(s) = p.image, p.title.isEmpty {
-                    if let svg = SymbolArt.svg(s), let img = runway_symbol_image(svg, 16) {
+                    if let img = symbolArtwork(s, size: 16, builtInSize: 16) {
                         gtk_menu_button_set_child(opaque(w), img)
                     } else {
                         gtk_menu_button_set_icon_name(opaque(w), SymbolMap.iconName(for: s))
@@ -721,7 +761,8 @@ final class WorkBox {
             }
             gtk_menu_button_set_has_frame(opaque(w), p.bordered ? 1 : 0)
             setMenu(b, events.menu)
-            if macLook { runway_popovers_plain(w) }
+            if macLook || mobilePreview { runway_popovers_plain(w) }
+            if mobilePreview { runway_popovers_constrain_to_window(w) }
         case .container, .scroll:
             if old.clips != p.clips, let c = b.canvas { runway_canvas_set_clip(c, p.clips ? 1 : 0) }
         }
@@ -768,13 +809,20 @@ final class WorkBox {
             }
             if f.italic { desc.append("Italic") }
             desc.append("\(Int(f.size.rounded()))px")
-            var attrs = "font_desc=\"\(desc.joined(separator: " "))\""
+            let escapedDescription = g_markup_escape_text(desc.joined(separator: " "), -1)!
+            var attrs = "font_desc=\"\(String(cString: escapedDescription))\""
+            g_free(escapedDescription)
             if let c = run.color {
                 attrs += " foreground=\"\(String(c.hexString.prefix(7)))\" alpha=\"\(max(1, Int((c.a * 100).rounded())))%\""
             }
             if f.monospacedDigit { attrs += " font_features=\"tnum\"" }
             if run.underline { attrs += " underline=\"single\"" }
             if run.strikethrough { attrs += " strikethrough=\"true\"" }
+            if run.tracking.isFinite, run.tracking != 0 {
+                let units = run.tracking * CGFloat(PANGO_SCALE)
+                let tracking = Int32(max(CGFloat(Int32.min), min(CGFloat(Int32.max), units.rounded())))
+                attrs += " letter_spacing=\"\(tracking)\""
+            }
             let escaped = g_markup_escape_text(run.string, -1)!
             out += "<span \(attrs)>\(String(cString: escaped))</span>"
             g_free(escaped)
@@ -832,6 +880,17 @@ final class WorkBox {
 
     // MARK: Images
 
+    private func symbolArtwork(_ name: String, size: Int32, builtInSize: Int32, variant: String? = nil) -> GW? {
+        let names = variant.map { [$0, name] } ?? [name]
+        for candidate in names {
+            if let svg = SymbolArt.overrideSVG(candidate), let image = runway_symbol_template_image(svg, size) { return image }
+        }
+        for candidate in names {
+            if let svg = SymbolArt.svg(candidate) { return runway_symbol_image(svg, builtInSize) }
+        }
+        return nil
+    }
+
     private func updateImage(_ b: GtkBox, _ p: WidgetProps) {
         if let old = b.inner { runway_canvas_remove(b.outer, old); g_object_unref(raw(old)); b.inner = nil }
         b.textureSize = nil
@@ -839,9 +898,11 @@ final class WorkBox {
         switch p.image {
         case let .symbol(name):
             let img: GW
-            if let svg = SymbolArt.svg(name) {
-                // Drawn art: its glyphs fill about 5/6 of the box, as SF's do at this size.
-                img = runway_symbol_image(svg, Int32((p.imagePointSize * 1.25).rounded()))!
+            // Runway's built-in art has margins on its 24-point grid.
+            if let artwork = symbolArtwork(name, size: Int32(p.imagePointSize.rounded()),
+                                           builtInSize: Int32((p.imagePointSize * 1.25).rounded()),
+                                           variant: p.imageSymbolVariant) {
+                img = artwork
             } else {
                 img = gtk_image_new_from_icon_name(SymbolMap.iconName(for: name))!
                 gtk_image_set_pixel_size(opaque(img), Int32((p.imagePointSize * 1.1).rounded()))
@@ -896,6 +957,7 @@ final class WorkBox {
             colorRules[name] = """
             button.\(name).rw-default, switch.\(name):checked, checkbutton.\(name) > check:checked,
             scale.\(name) > trough > highlight, progressbar.\(name) > trough > progress { background-color: \(col); }
+            box.rw-mobile-segmented.\(name) > button:checked, dropdown.rw-mobile-dropdown.\(name) > button { color: \(col); }
             """
             loadColorRules()
         }
@@ -916,7 +978,7 @@ final class WorkBox {
         if colorRules[name] == nil {
             let f = run.font
             let family = f.design == .monospaced ? "monospace" : f.design == .serif ? "serif"
-                : (f.family ?? MacTheme.pangoFamilies).split(separator: ",").map { "\"\($0.trimmingCharacters(in: .whitespaces))\"" }.joined(separator: ", ")
+                : MacTheme.fontFamilyCSS(f.family.map { [$0] } ?? systemFontFamilies)
             let weight: Int = switch f.weight {
             case .ultraLight: 100
             case .thin: 200
@@ -966,9 +1028,14 @@ final class WorkBox {
             }
         }
         walk(items, 0)
+        // Keep an open menu mounted across renders that only replace actions.
+        let previous = b.menuItems
         b.menuItems = flat
-        let h = Handler { _ in }
-        b.menuHandler = h
+        if b.menuModelInstalled, previous.elementsEqual(flat, by: { old, new in
+            old.title == new.title && old.enabled == new.enabled && old.checked == new.checked &&
+                old.isSeparator == new.isSeparator && old.children.count == new.children.count
+        }) { return }
+        b.menuModelInstalled = true
         let box = Unmanaged.passUnretained(b).toOpaque()
         withCStrings(titles) { t in
             runway_menu_button_set(b.outer, t, kinds, depths, enabled, checked, Int32(flat.count), { index, data in
@@ -1012,7 +1079,13 @@ final class WorkBox {
             let chrome: CGFloat = !macLook ? 46 : borderless ? 26 : 38
             width = max(CGFloat(minW), longest + chrome)
         }
-        if b.kind == .text, let pw = proposal.width, pw < width { width = max(CGFloat(minW), pw.rounded(.down)) }
+        if b.kind == .text {
+            // Pango includes trailing letter spacing when deciding whether a line wraps,
+            // though GTK's natural-width measurement omits that spacing.
+            let tracking = b.props.text?.runs.map(\.tracking).filter { $0.isFinite && $0 > 0 }.max() ?? 0
+            width += min(tracking.rounded(.up), CGFloat(Int32.max) - width)
+            if let pw = proposal.width, pw < width { width = max(CGFloat(minW), pw.rounded(.down)) }
+        }
         gtk_widget_measure(w, GTK_ORIENTATION_VERTICAL, Int32(width), &minH, &natH, nil, nil)
         return CGSize(width: width, height: CGFloat(natH))
     }
@@ -1038,6 +1111,9 @@ final class WorkBox {
 
     public func contentInsets(_ widget: NativeWidget) -> EdgeInsetsValue {
         let b = widget as! GtkBox
+        if b.kind == .menuButton, b.canvas != nil {
+            return EdgeInsetsValue(top: 0, leading: 10, bottom: 0, trailing: 10)
+        }
         guard b.kind == .button, let c = b.canvas else { return .zero }
         // The chrome is the button's size around an empty label area.
         runway_canvas_set_content_size(c, 0, 0)
@@ -1130,12 +1206,15 @@ final class WorkBox {
         schedule(start)
         // RUNWAY_SCREENSHOT=path.png: render every window to PNGs once the
         // UI has settled, then quit (CI and docs).
-        if let path = ProcessInfo.processInfo.environment["RUNWAY_SCREENSHOT"] {
-            let delay = UInt32(ProcessInfo.processInfo.environment["RUNWAY_SCREENSHOT_DELAY"].flatMap(UInt32.init) ?? 1500)
+        let environment = ProcessInfo.processInfo.environment
+        if let path = environment["RUNWAY_SCREENSHOT"] {
+            let delay = environment["RUNWAY_SCREENSHOT_DELAY"].flatMap(UInt32.init) ?? 1500
+            let scale = environment["RUNWAY_SCREENSHOT_SCALE"].flatMap(UInt32.init).flatMap { (1...4).contains($0) ? $0 : nil } ?? 1
+            let mobilePreview = self.mobilePreview
             // RUNWAY_SCREENSHOT_POPUP=n: also open the window's nth pop-up or
             // pull-down button and save its menu (path-menu.png).
             var popover: GW?
-            if let n = ProcessInfo.processInfo.environment["RUNWAY_SCREENSHOT_POPUP"].flatMap(Int32.init) {
+            if let n = environment["RUNWAY_SCREENSHOT_POPUP"].flatMap(Int32.init) {
                 let open = WorkBox { [weak self] in
                     if let w = self?.windows.first { popover = runway_debug_popup(w.window, n) }
                 }
@@ -1149,12 +1228,13 @@ final class WorkBox {
                 guard let self else { return }
                 for (i, w) in self.windows.enumerated() {
                     let out = i == 0 ? path : path.replacingOccurrences(of: ".png", with: "-\(i).png")
-                    let ok = runway_widget_save_png(w.window, out) != 0
+                    let content = mobilePreview ? (w.content as? GtkBox)?.outer : nil
+                    let ok = runway_widget_save_scaled_png(w.window, content, out, scale) != 0
                     FileHandle.standardError.write(Data("runway: \(ok ? "saved" : "could not save") \(out) (\(w.title))\n".utf8))
                 }
                 if let popover {
                     let out = path.replacingOccurrences(of: ".png", with: "-menu.png")
-                    let ok = runway_widget_save_png(popover, out) != 0
+                    let ok = runway_widget_save_scaled_png(popover, nil, out, scale) != 0
                     FileHandle.standardError.write(Data("runway: \(ok ? "saved" : "could not save") \(out) (menu)\n".utf8))
                 }
                 self.quit()
@@ -1297,14 +1377,14 @@ enum Cairo {
             let pat = source(paint, bounds: p.bounds, cr)
             cairo_fill(cr)
             if let pat { cairo_pattern_destroy(pat) }
-        case let .stroke(p, paint, width, dash):
+        case let .stroke(p, paint, style):
+            cairo_save(cr)
             path(p, cr)
             let pat = source(paint, bounds: p.bounds, cr)
-            cairo_set_line_width(cr, width)
-            if !dash.isEmpty { dash.map(Double.init).withUnsafeBufferPointer { cairo_set_dash(cr, $0.baseAddress, Int32(dash.count), 0) } }
+            AppKitCairo.strokeStyle(cr, style)
             cairo_stroke(cr)
-            cairo_set_dash(cr, nil, 0, 0)
             if let pat { cairo_pattern_destroy(pat) }
+            cairo_restore(cr)
         case .image, .text:
             break
         case let .displayList(list): AppKitCairo.replay(list, cr)

@@ -14,7 +14,7 @@ let runwayModules: Set<String> = [
     "ServiceManagement", "Security", "CryptoKit", "RunwayFoundation", "Cocoa", "Darwin",
     "Combine", "os", "OSLog", "CoreServices", "FoundationModels", "UserNotifications", "ApplicationServices", "Carbon",
     "IOKit", "SystemConfiguration", "Network", "LocalAuthentication", "CoreLocation", "StoreKit", "EventKit", "Contacts",
-    "WidgetKit", "CloudKit",
+    "WidgetKit", "CloudKit", "UIKit", "ActivityKit", "BackgroundTasks",
     "CoreVideo", "CoreMedia", "AVFoundation", "AVKit", "ScreenCaptureKit", "CoreImage", "QuartzCore", "Metal", "MetalKit",
     "CoreText", "VideoToolbox", "Speech", "Vision", "WebKit",
     "CoreTransferable", "AppIntents", "Intents", "CommonCrypto", "Compression", "CoreBluetooth", "CoreWLAN", "ScriptingBridge", "simd", "SwiftData", "Charts", "CoreAudio", "AudioToolbox", "System",
@@ -37,7 +37,7 @@ let unsupportedModules: [String: String] = [
     "CoreServices": "FSEvents and Launch Services (inotify / ReadDirectoryChangesW)", "WebKit": "web views",
     "UserNotifications": "notifications", "StoreKit": "App Store", "CloudKit": "iCloud", "Combine": "Combine (use Observation)",
     "os": "unified logging", "OSLog": "unified logging", "AppIntents": "Shortcuts", "PDFKit": "PDF views", "MapKit": "maps",
-    "Vision": "computer vision", "CoreML": "ML models", "UIKit": "iOS UI", "Carbon": "legacy Mac APIs", "IOKit": "devices",
+    "Vision": "computer vision", "CoreML": "ML models", "Carbon": "legacy Mac APIs", "IOKit": "devices",
     "CoreAudio": "audio devices", "AudioToolbox": "audio", "CoreLocation": "location", "Contacts": "contacts", "EventKit": "calendars",
 ]
 

@@ -2,6 +2,7 @@
 // Windows), and Image.
 
 import Foundation
+import CoreGraphics
 import RunwayCore
 
 public struct Path: Hashable, Sendable {
@@ -16,6 +17,17 @@ public struct Path: Hashable, Sendable {
         simple = .roundedRect(rect, radius: min(cornerSize.width, cornerSize.height))
     }
     public init(ellipseIn rect: CGRect) { simple = .ellipse(rect) }
+    public init(_ path: CGPath) {
+        elements = path.ops.map { operation in
+            switch operation {
+            case .move(let point): .move(point)
+            case .line(let point): .line(point)
+            case .quad(let control, let point): .quad(point, control: control)
+            case .cubic(let first, let second, let point): .curve(point, control1: first, control2: second)
+            case .close: .close
+            }
+        }
+    }
     public init(_ build: (inout Path) -> Void) { build(&self) }
 
     public mutating func move(to p: CGPoint) { simple = nil; elements.append(.move(p)) }
@@ -74,9 +86,90 @@ public struct Path: Hashable, Sendable {
     var shapePath: ShapePath { simple ?? .path(elements) }
     public var boundingRect: CGRect { shapePath.bounds }
     public var isEmpty: Bool { simple == nil && elements.isEmpty }
+
+    public var cgPath: CGPath { shapePath.cgPath }
+
+    public func applying(_ transform: CGAffineTransform) -> Path {
+        transform.isIdentity ? self : Path(cgPath.copy(using: transform))
+    }
+
+    public func trimmedPath(from start: CGFloat, to end: CGFloat) -> Path {
+        guard start.isFinite, end.isFinite else { return Path() }
+        let lower = max(0, start), upper = min(1, end)
+        guard lower < upper else { return Path() }
+        if lower == 0 && upper == 1 { return self }
+
+        if case let .ellipse(bounds)? = simple, bounds.width == bounds.height, bounds.width > 0 {
+            // Circles have constant arc length per turn. Preserve their smooth curve.
+            let arc = CGMutablePath()
+            arc.addRelativeArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: bounds.width / 2,
+                               startAngle: lower * 2 * .pi, delta: (upper - lower) * 2 * .pi)
+            return Path(arc)
+        }
+
+        let subpaths = cgPath.flattened(tolerance: 0.1).map { polyline in
+            var points = polyline.points
+            if polyline.closed, let first = points.first { points.append(first) }
+            return zip(points, points.dropFirst()).compactMap(TrimSegment.init)
+        }
+        let length = subpaths.reduce(CGFloat(0)) { total, segments in
+            total + segments.reduce(CGFloat(0)) { $0 + $1.length }
+        }
+        guard length.isFinite, length > 0 else { return Path() }
+        let startDistance = lower * length, endDistance = upper * length
+
+        var distance: CGFloat = 0
+        var result = Path()
+        for segments in subpaths {
+            var beganSubpath = false
+            for segment in segments {
+                let segmentStart = distance
+                distance += segment.length
+                if segmentStart >= endDistance { return result }
+                if distance <= startDistance { continue }
+                if !beganSubpath {
+                    result.move(to: segment.point(at: max(0, startDistance - segmentStart)))
+                    beganSubpath = true
+                }
+                result.addLine(to: segment.point(at: min(segment.length, endDistance - segmentStart)))
+            }
+        }
+        return result
+    }
+}
+
+private struct TrimSegment {
+    let start: CGPoint
+    let end: CGPoint
+    let length: CGFloat
+
+    init?(_ points: (CGPoint, CGPoint)) {
+        (start, end) = points
+        length = hypot(end.x - start.x, end.y - start.y)
+        guard length.isFinite, length > 0 else { return nil }
+    }
+
+    func point(at distance: CGFloat) -> CGPoint {
+        let fraction = distance / length
+        return CGPoint(x: start.x + fraction * (end.x - start.x), y: start.y + fraction * (end.y - start.y))
+    }
 }
 
 extension ShapePath {
+    var cgPath: CGPath {
+        let path = CGMutablePath()
+        for element in flattenedElements {
+            switch element {
+            case .move(let point): path.move(to: point)
+            case .line(let point): path.addLine(to: point)
+            case .quad(let point, let control): path.addQuadCurve(to: point, control: control)
+            case .curve(let point, let first, let second): path.addCurve(to: point, control1: first, control2: second)
+            case .close: path.closeSubpath()
+            }
+        }
+        return path
+    }
+
     var flattenedElements: [PathElement] {
         if case let .path(e) = self { return e }
         var p = Path()
@@ -91,6 +184,37 @@ extension ShapePath {
     }
 }
 
+extension DrawCommand {
+    func applying(_ transform: CGAffineTransform) -> DrawCommand {
+        switch self {
+        case let .fill(path, paint):
+            let transformed = Path(path.cgPath.copy(using: transform)).shapePath
+            return .fill(transformed, paint.applying(transform, before: path.bounds, after: transformed.bounds))
+        case let .stroke(path, paint, style):
+            let transformed = Path(path.cgPath.copy(using: transform)).shapePath
+            return .stroke(transformed, paint.applying(transform, before: path.bounds, after: transformed.bounds), style: style)
+        case let .image(source, frame): return .image(source, frame.applying(transform))
+        case let .text(text, frame): return .text(text, frame.applying(transform))
+        case .displayList: return self
+        }
+    }
+}
+
+private extension Paint {
+    func applying(_ transform: CGAffineTransform, before: CGRect, after: CGRect) -> Paint {
+        func map(_ unit: CGPoint) -> CGPoint {
+            let point = CGPoint(x: before.minX + unit.x * before.width, y: before.minY + unit.y * before.height).applying(transform)
+            return CGPoint(x: after.width > 0 ? (point.x - after.minX) / after.width : 0,
+                           y: after.height > 0 ? (point.y - after.minY) / after.height : 0)
+        }
+        switch self {
+        case .color: return self
+        case let .linearGradient(stops, start, end): return .linearGradient(stops: stops, start: map(start), end: map(end))
+        case let .radialGradient(stops, center, start, end): return .radialGradient(stops: stops, center: map(center), startRadius: start, endRadius: end)
+        }
+    }
+}
+
 public enum RoundedCornerStyle: Hashable, Sendable { case circular, continuous }
 
 public struct FillStyle: Hashable, Sendable {
@@ -101,12 +225,31 @@ public struct FillStyle: Hashable, Sendable {
 
 public struct StrokeStyle: Hashable, Sendable {
     public var lineWidth: CGFloat
+    public var lineCap: LineCap
+    public var lineJoin: LineJoin
+    public var miterLimit: CGFloat
     public var dash: [CGFloat]
     public var dashPhase: CGFloat
-    public enum LineCap: Sendable { case butt, round, square }
-    public enum LineJoin: Sendable { case miter, round, bevel }
+    public typealias LineCap = CGLineCap
+    public typealias LineJoin = CGLineJoin
     public init(lineWidth: CGFloat = 1, lineCap: LineCap = .butt, lineJoin: LineJoin = .miter, miterLimit: CGFloat = 10, dash: [CGFloat] = [], dashPhase: CGFloat = 0) {
-        self.lineWidth = lineWidth; self.dash = dash; self.dashPhase = dashPhase
+        self.lineWidth = lineWidth
+        self.lineCap = lineCap
+        self.lineJoin = lineJoin
+        self.miterLimit = miterLimit
+        self.dash = dash
+        self.dashPhase = dashPhase
+    }
+
+    var drawingStyle: CGStrokeStyle {
+        var style = CGStrokeStyle()
+        style.lineWidth = lineWidth
+        style.lineCap = lineCap
+        style.lineJoin = lineJoin
+        style.miterLimit = miterLimit
+        style.dashLengths = dash
+        style.dashPhase = dashPhase
+        return style
     }
 }
 
@@ -117,6 +260,10 @@ public protocol Shape: View, Sendable {
 public protocol InsettableShape: Shape {
     associatedtype InsetShape: InsettableShape
     func inset(by amount: CGFloat) -> InsetShape
+}
+
+extension Path: Shape {
+    public func path(in rect: CGRect) -> Path { self }
 }
 
 extension Shape {
@@ -132,9 +279,44 @@ extension Shape {
     }
     public func stroke(lineWidth: CGFloat = 1) -> _ShapeView<Self> { stroke(ForegroundStyle(), lineWidth: lineWidth) }
     public func stroke(style: StrokeStyle) -> _ShapeView<Self> { stroke(ForegroundStyle(), style: style) }
-    public func trim(from: CGFloat = 0, to: CGFloat = 1) -> Self { self }
-    public func rotation(_ angle: Angle) -> Self { self }
+    public func trim(from: CGFloat = 0, to: CGFloat = 1) -> some Shape {
+        TrimmedShape(shape: self, from: from, to: to)
+    }
+    public func rotation(_ angle: Angle, anchor: UnitPoint = .center) -> some Shape {
+        RotatedShape(shape: self, angle: angle, anchor: anchor)
+    }
     public func offset(x: CGFloat = 0, y: CGFloat = 0) -> Self { self }
+}
+
+private struct TrimmedShape<Base: Shape>: Shape {
+    let shape: Base
+    let from: CGFloat
+    let to: CGFloat
+    func path(in rect: CGRect) -> Path { shape.path(in: rect).trimmedPath(from: from, to: to) }
+}
+
+struct ShapeRotation: Sendable {
+    let angle: Angle
+    let anchor: UnitPoint
+
+    func transform(in rect: CGRect) -> CGAffineTransform {
+        guard angle.radians.isFinite, angle.radians != 0 else { return .identity }
+        let x = rect.minX + anchor.x * rect.width, y = rect.minY + anchor.y * rect.height
+        // Keep right-angle rotations on integer boundaries when placing their surfaces.
+        func snap(_ value: CGFloat) -> CGFloat { abs(value) < 1e-12 ? 0 : value }
+        let sine = snap(sin(angle.radians)), cosine = snap(cos(angle.radians))
+        let turn = CGAffineTransform(a: cosine, b: sine, c: -sine, d: cosine, tx: 0, ty: 0)
+        return CGAffineTransform(translationX: -x, y: -y)
+            .concatenating(turn)
+            .concatenating(CGAffineTransform(translationX: x, y: y))
+    }
+}
+
+private struct RotatedShape<Base: Shape>: Shape {
+    let shape: Base
+    let angle: Angle
+    let anchor: UnitPoint
+    func path(in rect: CGRect) -> Path { shape.path(in: rect).applying(ShapeRotation(angle: angle, anchor: anchor).transform(in: rect)) }
 }
 
 extension InsettableShape {
@@ -178,7 +360,7 @@ public struct _ShapeView<S: Shape>: View, PrimitiveView {
             paints.map { paint, stroke, inset in
                 if let stroke {
                     let path = shape.path(in: inset ? rect.insetBy(dx: stroke.lineWidth / 2, dy: stroke.lineWidth / 2) : rect).shapePath
-                    return .stroke(path, paint, lineWidth: stroke.lineWidth, dash: stroke.dash)
+                    return .stroke(path, paint, style: stroke.drawingStyle)
                 }
                 return .fill(shape.path(in: rect).shapePath, paint)
             }
@@ -211,12 +393,18 @@ public struct UnevenRoundedRectangle: InsettableShape {
 }
 
 public struct Circle: InsettableShape {
+    private var insetAmount: CGFloat = 0
     public init() {}
     public func path(in rect: CGRect) -> Path {
-        let d = min(rect.width, rect.height)
+        let d = min(rect.width, rect.height) - 2 * insetAmount
+        guard d > 0 else { return Path() }
         return Path(ellipseIn: CGRect(x: rect.midX - d / 2, y: rect.midY - d / 2, width: d, height: d))
     }
-    public func inset(by amount: CGFloat) -> Circle { self }
+    public func inset(by amount: CGFloat) -> Circle {
+        var circle = self
+        circle.insetAmount += amount
+        return circle
+    }
 }
 
 public struct Ellipse: InsettableShape {
@@ -326,8 +514,11 @@ public struct Image: View, PrimitiveView, Equatable {
         if let w {
             var p = WidgetProps()
             p.image = imageSource
-            p.imagePointSize = (env.font ?? .body).spec.size
-            if case .symbol = source {
+            p.imagePointSize = (env.font ?? .body).resolved(in: env).size
+            if case let .symbol(name) = source {
+                if env._mobileTabSymbol, name == "person.crop.circle" {
+                    p.imageSymbolVariant = "person.crop.circle.fill"
+                }
                 p.imageTint = (env._foreground?.resolvePaint(env, role: .foreground).averageColor ?? Color.primary.resolve(env))
                     .multiplyingAlpha(env.isEnabled ? 1 : 0.5)
             }

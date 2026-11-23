@@ -105,6 +105,21 @@ final class PBXImportTests: XCTestCase {
         XCTAssertEqual(ws.folders.map(\.lastPathComponent), ["LocalKit"])
         XCTAssertNotNil(ws.resolvedFile)
     }
+
+    func testIOSSDKRootInPBXProject() throws {
+        let text = try String(contentsOf: project.file.appendingPathComponent("project.pbxproj"), encoding: .utf8)
+        let mobile = text.replacingOccurrences(of: "SDKROOT = macosx;", with: "SDKROOT = iphoneos;")
+            .replacingOccurrences(of: "MACOSX_DEPLOYMENT_TARGET = 14.0;", with: "IPHONEOS_DEPLOYMENT_TARGET = 17.0;")
+        let xp = try PBXProjectReader.read(OpenStepPlist.parse(mobile), xcodeproj: project.file)
+        let importer = XcodeImporter(xp)
+        let plan = try importer.plan()
+        XCTAssertEqual(plan.xcodePlatform, .iOS)
+        XCTAssertEqual(plan.targets.map(\.name), ["Groups_App", "Kit", "GroupsAppTests"])
+        let info = try XCTUnwrap(plan.targets.first?.infoPlist)
+        XCTAssertEqual(info["MinimumOSVersion"] as? String, "17.0")
+        XCTAssertNil(info["LSMinimumSystemVersion"])
+        XCTAssertThrowsError(try importer.plan(options: .init(platform: .macOS)))
+    }
 }
 
 final class SynchronizedFolderTests: XCTestCase {
@@ -174,6 +189,77 @@ final class OtherFormatTests: XCTestCase {
         XCTAssertEqual(app.infoPlist?["LSUIElement"] as? Bool, true)
         XCTAssertEqual(Set(plan.dependencies.map(\.identity)), ["yams", "localkit"])
         XCTAssertEqual(Set(app.productDependencies), [ProductRef(product: "Yams", package: "yams"), ProductRef(product: "LocalKit", package: "localkit")])
+    }
+
+    func testMixedXcodeGenPlatformsAndSimulatorSettings() throws {
+        let spec = fixtures.appendingPathComponent("GenApp/project.yml")
+        let yaml = """
+        name: MultiApp
+        options:
+          deploymentTarget:
+            iOS: "17.0"
+        targets:
+          Desktop:
+            type: application
+            platform: macOS
+            sources: [Sources/App/GenApp.swift]
+          Mobile:
+            type: application
+            platform: iOS
+            sources: [Sources/App/GenApp.swift]
+            info:
+              path: Generated/Info.plist
+              properties:
+                CFBundleDisplayName: Mobile App
+            settings:
+              base:
+                PRODUCT_MODULE_NAME[sdk=iphonesimulator*]: MobilePreview
+                OTHER_SWIFT_FLAGS[sdk=iphonesimulator*]: "-D SIMULATOR_SETTINGS"
+                OTHER_SWIFT_FLAGS[sdk=iphoneos*]: "-D DEVICE_SETTINGS"
+            dependencies:
+              - target: Shared
+              - target: TVKit
+              - target: Widget
+                embed: true
+          Shared:
+            type: framework
+            sources: [Sources/App/GenApp.swift]
+          TVKit:
+            type: framework
+            platform: tvOS
+            sources: [Sources/App/GenApp.swift]
+          Widget:
+            type: app-extension
+            platform: iOS
+          MobileUITests:
+            type: bundle.ui-testing
+            platform: iOS
+            dependencies:
+              - target: Mobile
+        """
+        let data = try XCTUnwrap(YAML.parse(yaml) as? [String: Any])
+        let xp = XcodeGenReader.read(data, spec: spec)
+        let importer = XcodeImporter(xp)
+        XCTAssertEqual(xp.target(named: "Mobile")?.embeds, ["Widget"])
+        let desktop = try importer.plan()
+        XCTAssertEqual(desktop.xcodePlatform, .macOS)
+        XCTAssertEqual(desktop.targets.map(\.name), ["Desktop"])
+
+        let mobile = try importer.plan(options: .init(platform: .iOS))
+        XCTAssertEqual(mobile.xcodePlatform, .iOS)
+        XCTAssertEqual(mobile.targets.map(\.name), ["MobilePreview", "Shared"])
+        let app = try XCTUnwrap(mobile.targets.first)
+        XCTAssertEqual(app.localDependencies, ["Shared"])
+        XCTAssertEqual(app.infoPlist?["MinimumOSVersion"] as? String, "17.0")
+        XCTAssertEqual(app.infoPlist?["CFBundleDisplayName"] as? String, "Mobile App")
+        XCTAssertTrue(app.notes.contains { $0.contains("properties from XcodeGen spec") })
+        XCTAssertTrue(app.settings.contains(SwiftSetting(kind: .define("SIMULATOR_SETTINGS"), configuration: nil)))
+        XCTAssertFalse(app.settings.contains(SwiftSetting(kind: .define("DEVICE_SETTINGS"), configuration: nil)))
+        XCTAssertTrue(mobile.notes.contains { $0.contains("TVKit") && $0.contains("does not support iOS") })
+        XCTAssertTrue(mobile.notes.contains { $0.contains("Widget") && $0.contains("app-extension") })
+        XCTAssertTrue(mobile.notes.contains { $0.contains("MobileUITests") && $0.contains("UI tests") })
+        XCTAssertEqual(try importer.plan(options: .init(target: "MobilePreview")).xcodePlatform, .iOS)
+        XCTAssertThrowsError(try importer.plan(options: .init(target: "Desktop", platform: .iOS)))
     }
 
     func testLocator() throws {

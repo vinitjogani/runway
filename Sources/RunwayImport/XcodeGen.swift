@@ -80,8 +80,17 @@ public enum XcodeGenReader {
         for (name, v) in (y["targets"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }) {
             guard let t = v as? [String: Any] else { continue }
             var xt = XcodeTarget(name: name, productType: (t["type"] as? String) ?? "application")
+            var defaults: [SettingAssignment] = []
+            if let platform = t["platform"] as? String, let preset = platformPresets[platform.lowercased()] {
+                defaults.append(SettingAssignment(key: "SDKROOT", value: preset.sdks[0]))
+                defaults.append(SettingAssignment(key: "SUPPORTED_PLATFORMS", value: preset.sdks.joined(separator: " ")))
+                let deploymentTargets = options["deploymentTarget"] as? [String: Any]
+                let version = t["deploymentTarget"] as? String
+                    ?? deploymentTargets?.first { $0.key.lowercased() == platform.lowercased() }?.value as? String
+                if let version { defaults.append(SettingAssignment(key: preset.deploymentKey, value: version)) }
+            }
             for c in xp.configurations {
-                xt.settings[c] = settingsStack(t["settings"], config: c, base: base, configFiles: t["configFiles"] as? [String: Any], notes: &notes)
+                xt.settings[c] = defaults + settingsStack(t["settings"], config: c, base: base, configFiles: t["configFiles"] as? [String: Any], notes: &notes)
             }
             if let info = t["info"] as? [String: Any] {
                 if let path = info["path"] as? String {
@@ -112,8 +121,10 @@ public enum XcodeGenReader {
                 }
             }
             for d in t["dependencies"] as? [[String: Any]] ?? [] {
-                if let target = d["target"] as? String { xt.dependencies.append(target) }
-                else if let pkg = d["package"] as? String {
+                if let target = d["target"] as? String {
+                    xt.dependencies.append(target)
+                    if (d["embed"] as? String) == "true" || (d["embed"] as? Bool) == true { xt.embeds.append(target) }
+                } else if let pkg = d["package"] as? String {
                     let products = (d["products"] as? [String]) ?? [(d["product"] as? String) ?? pkg]
                     for p in products { xt.packageProducts.append(XcodeProductDependency(product: p, package: packageByName[pkg])) }
                 }
@@ -124,6 +135,15 @@ public enum XcodeGenReader {
         xp.notes = notes
         return xp
     }
+
+    private static let platformPresets: [String: (sdks: [String], deploymentKey: String)] = [
+        "macos": (["macosx"], "MACOSX_DEPLOYMENT_TARGET"),
+        "ios": (["iphoneos", "iphonesimulator"], "IPHONEOS_DEPLOYMENT_TARGET"),
+        "tvos": (["appletvos", "appletvsimulator"], "TVOS_DEPLOYMENT_TARGET"),
+        "watchos": (["watchos", "watchsimulator"], "WATCHOS_DEPLOYMENT_TARGET"),
+        "visionos": (["xros", "xrsimulator"], "XROS_DEPLOYMENT_TARGET"),
+        "driverkit": (["driverkit"], "DRIVERKIT_DEPLOYMENT_TARGET"),
+    ]
 }
 
 /// YAML scalars as plist values: `true`/`false` are booleans.
