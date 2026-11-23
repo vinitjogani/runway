@@ -37,9 +37,8 @@ final class TabViewTests: XCTestCase {
         } else {
             XCTFail("Expected a translucent glass fill")
         }
-        let shadow = root.all.first { $0.kind == .canvas && $0.windowFrame.height == 94 }
-        XCTAssertEqual(shadow?.windowFrame, CGRect(x: 5, y: 775, width: 392, height: 94))
-        XCTAssertGreaterThan(shadow?.props.drawing.count ?? 0, 1)
+        XCTAssertEqual(root.all.filter { $0.kind == .canvas }.count, 2)
+        assertSingleGlassEdge(bar?.props.drawing ?? [])
         let buttons = root.all.filter { $0.kind == .button && $0 !== action }
         XCTAssertEqual(buttons.map(\.props.title), ["One", "Second tab"])
         XCTAssertEqual(buttons.map(\.windowFrame), [
@@ -87,7 +86,7 @@ final class TabViewTests: XCTestCase {
         XCTAssertEqual(content.contentSize.height, 992)
     }
 
-    func testMobileGlassOpacityAppliesToBackdropAndPaint() throws {
+    func testToolbarGlassUsesOneDirectionalEdgeAndKeepsItsBackdrop() throws {
         let backend = HeadlessBackend()
         Runway.install(backend)
         let host = ViewHost(Color.clear.frame(width: 44, height: 44)
@@ -101,6 +100,8 @@ final class TabViewTests: XCTestCase {
         XCTAssertEqual(surface.props.backdropBlur?.radius, 10)
         XCTAssertEqual(surface.props.opacity, 0.4)
         XCTAssertEqual(surface.windowFrame, CGRect(x: 28, y: 28, width: 44, height: 44))
+        XCTAssertEqual(root.all.filter { $0.kind == .canvas }.count, 2)
+        assertSingleGlassEdge(surface.props.drawing)
     }
 
     func testDesktopTabViewUsesSegmentedControl() {
@@ -121,5 +122,16 @@ final class TabViewTests: XCTestCase {
         backend.drain()
         XCTAssertEqual(control?.props.selected, 1)
         XCTAssertTrue(root.all.contains { $0.props.text?.plain == "Second page" })
+    }
+
+    private func assertSingleGlassEdge(_ commands: [DrawCommand], file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(commands.count, 2, file: file, line: line)
+        guard case let .stroke(edge, .linearGradient(stops, start, end), style)? = commands.last else {
+            return XCTFail("Expected one directional edge", file: file, line: line)
+        }
+        XCTAssertEqual(edge.bounds.minY - style.lineWidth / 2, 0, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(start, CGPoint(x: 0.5, y: 0), file: file, line: line)
+        XCTAssertEqual(end, CGPoint(x: 0.5, y: 1), file: file, line: line)
+        XCTAssertGreaterThan(stops.first?.color.a ?? 0, stops.last?.color.a ?? 0, file: file, line: line)
     }
 }

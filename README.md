@@ -374,8 +374,8 @@ profile. The GTK renderer draws at the capture scale and the layout keeps
 the same 402 × 874 logical points.
 
 On GTK, the floating tab bar and toolbar capsules blur the content behind
-them. Tint, rim lighting, and shadows give the chrome depth. Text, icons,
-and controls are drawn above the glass at their usual size.
+them. A translucent tint and a single shaded rim give each capsule depth.
+Text, icons, and controls are drawn above the glass at their usual size.
 
 GTK previews prefer Open Sans when available, followed by Noto Sans Display,
 Noto Sans and Liberation Sans. Set `RUNWAY_IOS_SYSTEM_FONT` to select an

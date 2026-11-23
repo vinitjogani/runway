@@ -1,8 +1,7 @@
 import Foundation
 import RunwayCore
 
-/// Capsule material for the mobile chrome. Its shadows extend past the
-/// capsule's frame without taking space from the content or hit targets.
+/// Translucent capsule material for the mobile chrome.
 struct MobileGlassSurface: View, PrimitiveView {
     typealias Body = Never
 
@@ -23,17 +22,10 @@ struct MobileGlassSurface: View, PrimitiveView {
         case .toolbar: props.backdropBlur = BackdropBlur(radius: 10, cornerRadius: .infinity)
         case .selection: break
         }
-        let surface = ShapeNode(widget: ctx.widget(.canvas, "surface"), backend: backend,
-                                props: props, events: WidgetEvents()) { rect in
+        return [ShapeNode(widget: ctx.widget(.canvas, "surface"), backend: backend,
+                          props: props, events: WidgetEvents()) { rect in
             material.surface(in: rect, dark: dark, tint: tint)
-        }
-        guard material != .selection else { return [surface] }
-
-        let shadow = ShapeNode(widget: ctx.widget(.canvas, "shadow"), backend: backend,
-                               props: WidgetProps(), events: WidgetEvents()) { rect in
-            material.shadow(in: rect, dark: dark, opacity: opacity)
-        }
-        return [GlassShadowNode(shadow), surface]
+        }]
     }
 }
 
@@ -59,7 +51,21 @@ private extension MobileGlassSurface.Material {
         let path = glassCapsule(rect)
         let wash = glassGradient(fill, locations: [0, 0.46, 1])
         var commands: [DrawCommand] = [.fill(path, wash)]
-        if self == .selection, let tint {
+        if self != .selection {
+            // Put the highlight and lower edge on the same contour. An
+            // inset highlight draws a second outline at high display scales.
+            let edge = Paint.linearGradient(stops: [
+                GradientStop(color: .white.withAlpha(dark ? 0.37 : 0.80), location: 0),
+                GradientStop(color: .white.withAlpha(dark ? 0.15 : 0.23), location: 0.26),
+                GradientStop(color: .black.withAlpha(dark ? 0.23 : 0.12), location: 0.50),
+                GradientStop(color: .black.withAlpha(dark ? 0.16 : 0.035), location: 1),
+            ], start: UnitPoint.top.point, end: UnitPoint.bottom.point)
+            let contour = glassCapsule(rect.insetBy(dx: 0.4, dy: 0.4))
+            commands.append(.stroke(contour, edge, lineWidth: 0.8, dash: []))
+            return commands
+        }
+
+        if let tint {
             commands.append(.fill(path, .color(tint.multiplyingAlpha(0.035))))
         }
 
@@ -67,47 +73,13 @@ private extension MobileGlassSurface.Material {
         let outerRim = glassCapsule(rect.insetBy(dx: 0.5, dy: 0.5))
         commands.append(.stroke(outerRim, .color(edge), lineWidth: 1, dash: []))
 
-        let strength = self == .selection ? 0.42 : 1.0
         let bright = RGBA.white.withAlpha(dark ? 0.37 : 0.83)
         let rest = RGBA.white.withAlpha(dark ? 0.065 : 0.28)
         let reflection = RGBA.white.withAlpha(dark ? 0.19 : 0.60)
-        let rim = glassGradient([bright, rest, rest, reflection], locations: [0, 0.34, 0.72, 1], opacity: strength)
+        let rim = glassGradient([bright, rest, rest, reflection], locations: [0, 0.34, 0.72, 1], opacity: 0.42)
         let innerRim = glassCapsule(rect.insetBy(dx: 1.1, dy: 1.1))
-        commands.append(.stroke(innerRim, rim, lineWidth: self == .selection ? 0.6 : 1, dash: []))
+        commands.append(.stroke(innerRim, rim, lineWidth: 0.6, dash: []))
         return commands
-    }
-
-    func shadow(in rect: CGRect, dark: Bool, opacity: Double) -> [DrawCommand] {
-        let margin = GlassShadowNode.overflow
-        let capsule = rect.insetBy(dx: margin, dy: margin)
-        guard !capsule.isEmpty else { return [] }
-        let isBar = self == .tabBar
-        let spread: CGFloat = isBar ? 11 : 8
-        let softness: CGFloat = isBar ? 4.5 : 3.2
-        let offset: CGFloat = isBar ? 2.5 : 1.8
-        let strength = dark ? (isBar ? 0.15 : 0.10) : (isBar ? 0.07 : 0.045)
-
-        // Narrow, antialiased contours with a Gaussian falloff form a soft
-        // edge without darkening the translucent interior of the capsule.
-        return stride(from: spread, through: 0, by: -0.8).map { distance in
-            let ratio = distance / softness
-            let alpha = strength * exp(-0.5 * ratio * ratio) * opacity
-            let outline = capsule.insetBy(dx: -distance, dy: -distance).offsetBy(dx: 0, dy: offset)
-            return .stroke(glassCapsule(outline), .color(RGBA.black.withAlpha(alpha)), lineWidth: 0.9, dash: [])
-        }
-    }
-}
-
-@MainActor private final class GlassShadowNode: LayoutNode {
-    static let overflow: CGFloat = 15
-    let shape: ShapeNode
-
-    init(_ shape: ShapeNode) { self.shape = shape }
-
-    override var children: [LayoutNode] { [shape] }
-    override func sizeThatFits(_ proposal: ProposedSize) -> CGSize { shape.size(proposal) }
-    override func place(_ rect: CGRect, _ sink: PlacementSink) {
-        shape.place(rect.insetBy(dx: -Self.overflow, dy: -Self.overflow), sink)
     }
 }
 
