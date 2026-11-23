@@ -30,6 +30,8 @@ void runway_canvas_raise(GtkWidget *canvas, GtkWidget *child);
 void runway_canvas_remove(GtkWidget *canvas, GtkWidget *child);
 void runway_canvas_set_resize_callback(GtkWidget *canvas, RunwayResizeFunc fn, void *user_data);
 void runway_canvas_set_clip(GtkWidget *canvas, gboolean clip);
+/// Filters the content behind a placed widget inside its rounded frame.
+void runway_widget_set_backdrop_blur(GtkWidget *child, float radius, float corner_radius);
 
 /// Signal helpers: GTK's g_signal_connect is a macro Swift can't import.
 gulong runway_connect(gpointer instance, const char *signal, GCallback cb, gpointer data);
@@ -45,6 +47,9 @@ void runway_install_css(const char *css);
 void runway_settings_set_string(const char *property, const char *value);
 /// Turns off the arrow on a menu button's or drop-down's popovers.
 void runway_popovers_plain(GtkWidget *w);
+/// Keeps a mobile menu's popover horizontally inside its window.
+void runway_popovers_constrain_to_window(GtkWidget *w);
+void runway_accessible_label(GtkWidget *w, const char *label);
 
 /// Light or dark: GTK settings, GTK_THEME, or the desktop's colour-scheme.
 gboolean runway_prefers_dark(void);
@@ -81,6 +86,8 @@ void runway_drop_down_set_strings(GtkWidget *dd, const char *const *strings);
 
 /// Renders a widget (a window) to a PNG through GSK; for screenshots.
 gboolean runway_widget_save_png(GtkWidget *w, const char *path);
+gboolean runway_widget_save_content_png(GtkWidget *w, GtkWidget *content, const char *path);
+gboolean runway_widget_save_scaled_png(GtkWidget *w, GtkWidget *content, const char *path, guint scale);
 /// Opens the `index`th drop-down or menu button under `root` and returns
 /// its popover (screenshots of menus).
 GtkWidget *runway_debug_popup(GtkWidget *root, int index);
@@ -97,6 +104,7 @@ void runway_loop_attach(RunwayTimerFunc next_timer, void *user_data);
 G_DECLARE_FINAL_TYPE(RunwaySymbol, runway_symbol, RUNWAY, SYMBOL, GObject)
 GdkPaintable *runway_symbol_new(const char *svg, int size);
 GtkWidget *runway_symbol_image(const char *svg, int size);
+GtkWidget *runway_symbol_template_image(const char *svg, int size);
 
 // The global menu bar over D-Bus (runway_appmenu.c).
 typedef struct _RunwayAppMenu RunwayAppMenu;

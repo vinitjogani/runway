@@ -154,6 +154,7 @@ public struct Plan {
     /// Package.resolved pins, by identity.
     public var pins: [String: Pin] = [:]
     public var origin: Origin = .swiftPM
+    public var xcodePlatform: XcodePlatform?
     public init(name: String, root: URL, targets: [PlanTarget], products: [(name: String, type: String, targets: [String])],
                 dependencies: [PlanDependency], languageModes: [String], defaultLocalization: String?, notes: [String] = []) {
         self.name = name; self.root = root; self.targets = targets; self.products = products; self.dependencies = dependencies

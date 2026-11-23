@@ -77,12 +77,19 @@ public struct FontSpec: Hashable, Sendable {
 /// One step of drawing in a canvas widget, in the widget's coordinates.
 public enum DrawCommand: Hashable, Sendable {
     case fill(ShapePath, Paint)
-    case stroke(ShapePath, Paint, lineWidth: CGFloat, dash: [CGFloat])
+    case stroke(ShapePath, Paint, style: CGStrokeStyle)
     case image(ImageSource, CGRect)
     case text(StyledText, CGRect)
     /// Core Graphics drawing recorded by a CGContext (AppKit views'
     /// `draw(_:)`), in the widget's top-left coordinates.
     case displayList(CGDisplayList)
+
+    public static func stroke(_ path: ShapePath, _ paint: Paint, lineWidth: CGFloat, dash: [CGFloat]) -> Self {
+        var style = CGStrokeStyle()
+        style.lineWidth = lineWidth
+        style.dashLengths = dash
+        return .stroke(path, paint, style: style)
+    }
 }
 
 /// The geometry shapes reduce to.

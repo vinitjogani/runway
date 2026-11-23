@@ -1,9 +1,9 @@
 // SF Symbols as GTK symbolic paintables: an SVG drawn in the foreground
 // colour GTK hands it (the widget's CSS `color`), so tints, hover, disabled
 // dimming and dark mode follow the theme as with icon-theme icons. The SVG
-// comes from RunwayCore's SymbolArt with `currentColor` for the ink; it is
-// rasterised by GdkPixbuf's SVG loader at device pixels and the last texture
-// is kept, so redraws in the same colour and size cost nothing.
+// comes from RunwayCore's SymbolArt with `currentColor` for the ink or from
+// a local template whose alpha masks the tint. GdkPixbuf rasterises the SVG
+// at device pixels and the paintable keeps the last texture for redraws.
 
 #include "runway_gtk.h"
 #include <string.h>
@@ -16,6 +16,7 @@ struct _RunwaySymbol {
     GdkTexture *cache;
     GdkRGBA cache_color;
     int cache_px;
+    gboolean is_template;
 };
 
 static void runway_symbol_paintable_init(GdkPaintableInterface *iface);
@@ -81,6 +82,22 @@ static void runway_symbol_snapshot_symbolic(GtkSymbolicPaintable *p, GdkSnapshot
     // Device pixels: twice the logical size covers 1x and 2x screens crisply.
     int px = (int)ceil(side * 2);
     if (px <= 0) return;
+    graphene_rect_t r = GRAPHENE_RECT_INIT((float)((w - side) / 2), (float)((h - side) / 2), (float)side, (float)side);
+    if (s->is_template) {
+        if (s->cache_px != px) {
+            g_clear_object(&s->cache);
+            s->cache = rasterize(s->svg, px);
+            s->cache_px = px;
+        }
+        if (s->cache) {
+            gtk_snapshot_push_mask(GTK_SNAPSHOT(snap), GSK_MASK_MODE_ALPHA);
+            gtk_snapshot_append_scaled_texture(GTK_SNAPSHOT(snap), s->cache, GSK_SCALING_FILTER_TRILINEAR, &r);
+            gtk_snapshot_pop(GTK_SNAPSHOT(snap));
+            gtk_snapshot_append_color(GTK_SNAPSHOT(snap), &fg, &r);
+            gtk_snapshot_pop(GTK_SNAPSHOT(snap));
+        }
+        return;
+    }
     if (!s->cache || s->cache_px != px || !gdk_rgba_equal(&s->cache_color, &fg)) {
         g_clear_object(&s->cache);
         char *svg = with_color(s->svg, &fg);
@@ -90,7 +107,6 @@ static void runway_symbol_snapshot_symbolic(GtkSymbolicPaintable *p, GdkSnapshot
         s->cache_px = px;
     }
     if (!s->cache) return;
-    graphene_rect_t r = GRAPHENE_RECT_INIT((float)((w - side) / 2), (float)((h - side) / 2), (float)side, (float)side);
     gtk_snapshot_append_scaled_texture(GTK_SNAPSHOT(snap), s->cache, GSK_SCALING_FILTER_TRILINEAR, &r);
 }
 
@@ -119,6 +135,21 @@ GdkPaintable *runway_symbol_new(const char *svg, int size) {
 
 GtkWidget *runway_symbol_image(const char *svg, int size) {
     GdkPaintable *p = runway_symbol_new(svg, size);
+    GtkWidget *img = gtk_image_new_from_paintable(p);
+    gtk_image_set_pixel_size(GTK_IMAGE(img), size);
+    g_object_unref(p);
+    return img;
+}
+
+GtkWidget *runway_symbol_template_image(const char *svg, int size) {
+    int px = MAX(1, size) * 2;
+    GdkTexture *texture = rasterize(svg, px);
+    if (!texture) return NULL;
+    GdkPaintable *p = runway_symbol_new(svg, size);
+    RunwaySymbol *s = (RunwaySymbol *)p;
+    s->is_template = TRUE;
+    s->cache = texture;
+    s->cache_px = px;
     GtkWidget *img = gtk_image_new_from_paintable(p);
     gtk_image_set_pixel_size(GTK_IMAGE(img), size);
     g_object_unref(p);

@@ -64,8 +64,10 @@ public struct TextRun: Hashable, Sendable {
     public var color: RGBA?
     public var underline: Bool = false
     public var strikethrough: Bool = false
-    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false) {
+    public var tracking: CGFloat
+    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false, tracking: CGFloat = 0) {
         self.string = string; self.font = font; self.color = color; self.underline = underline; self.strikethrough = strikethrough
+        self.tracking = tracking
     }
 }
 
@@ -87,6 +89,18 @@ public enum ImageSource: Hashable, Sendable {
     case file(String)
     case pixels(width: Int, height: Int, rgba: [UInt8])
     case none
+}
+
+/// Blurs preceding sibling content inside a rectangular or rounded widget frame.
+public struct BackdropBlur: Equatable, Sendable {
+    public let radius: CGFloat
+    /// An infinite corner radius clips the frame to a capsule.
+    public let cornerRadius: CGFloat
+
+    public init(radius: CGFloat, cornerRadius: CGFloat) {
+        self.radius = radius
+        self.cornerRadius = cornerRadius
+    }
 }
 
 /// Everything a widget shows. Backends read what applies to their kind.
@@ -116,13 +130,16 @@ public struct WidgetProps: Equatable, Sendable {
     public var isDestructive = false
     public var prominent = false
     public var bordered = true
+    public var capsuleButton = false
     public var hasContent = false
     // Image.
     public var image: ImageSource = .none
+    public var imageSymbolVariant: String?
     public var imageTint: RGBA?
     public var imagePointSize: CGFloat = 13
     // Canvas.
     public var drawing: [DrawCommand] = []
+    public var backdropBlur: BackdropBlur?
     public var clips = false
     public init() {}
 }
@@ -130,6 +147,7 @@ public struct WidgetProps: Equatable, Sendable {
 /// What a widget reports back. Closures are replaced on every render.
 @MainActor public struct WidgetEvents {
     public var onTap: (() -> Void)?
+    public var onTapLocation: ((CGPoint) -> Void)?
     public var onToggle: ((Bool) -> Void)?
     public var onText: ((String) -> Void)?
     public var onSubmit: (() -> Void)?

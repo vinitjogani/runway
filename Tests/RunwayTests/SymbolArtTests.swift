@@ -22,6 +22,33 @@ final class SymbolArtTests: XCTestCase {
         XCTAssertNotNil(SymbolArt.svg("gearshape"))
     }
 
+    func testMobileChartAndActivitySymbolsResolve() throws {
+        let names = ["chart.line.uptrend.xyaxis", "chart.bar.fill", "chart.bar.xaxis", "hourglass",
+                     "arrowtriangle.down.fill", "lightbulb", "figure.run", "figure.mixed.cardio", "book.closed",
+                     "dumbbell.fill", "leaf.fill", "rosette", "point.3.connected.trianglepath.dotted", "wave.3.right"]
+        for name in names { XCTAssertNotNil(SymbolArt.svg(name), name) }
+        let down = try XCTUnwrap(SymbolArt.svg("arrowtriangle.down.fill"))
+        XCTAssertNotEqual(down, SymbolArt.svg("arrowtriangle.up.fill"))
+        XCTAssertNotEqual(SymbolArt.svg("waveform.path.ecg"), SymbolArt.svg("waveform"))
+        let trend = try XCTUnwrap(SymbolArt.svg("chart.line.uptrend.xyaxis"))
+        XCTAssertTrue(trend.contains("M14.5 9H19v4.5"))
+    }
+
+    func testLocalOverrideLooksUpTheExactSymbolName() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let svg = #"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="black"/></svg>"#
+        try svg.write(to: directory.appendingPathComponent("chevron.down.svg"), atomically: true, encoding: .utf8)
+        try "not SVG artwork".write(to: directory.appendingPathComponent("chevron.up.svg"), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(SymbolArt.overrideSVG("chevron.down", in: directory), svg)
+        XCTAssertNil(SymbolArt.overrideSVG("chevron.down.circle", in: directory))
+        XCTAssertNil(SymbolArt.overrideSVG("chevron.up", in: directory))
+        XCTAssertNil(SymbolArt.overrideSVG("../chevron.down", in: directory))
+        XCTAssertNotNil(SymbolArt.svg("chevron.down.circle"))
+    }
+
     /// Every symbol name an app in this repo uses has art, when the file
     /// listing them is given (RUNWAY_SYMBOL_NAMES=path, one name per line).
     func testAppSymbolsHaveArt() throws {

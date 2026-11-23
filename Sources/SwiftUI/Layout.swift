@@ -5,6 +5,7 @@
 // The result is absolute frames that backends apply to native widgets.
 
 import Foundation
+import CoreGraphics
 import RunwayCore
 
 // MARK: Geometry types
@@ -311,6 +312,9 @@ final class StackNode: LayoutNode {
         let low = items.map { $0.size(proposal(main: 0, cross: crossP)) }
         let high = items.map { $0.size(proposal(main: .infinity, cross: crossP)) }
         let mins = low.map(main), maxs = high.map(main)
+        let idealWidths = axis == .horizontal && total.isFinite
+            ? items.map { main($0.size(proposal(main: nil, cross: crossP))) }
+            : []
         // Highest priority first; within a priority, least flexible first.
         let groups: [[Int]]
         let firstPriority = items.first?.layoutPriority ?? 0
@@ -326,7 +330,10 @@ final class StackNode: LayoutNode {
             reservedBelow -= groupMin
             var avail = remaining - reservedBelow
             let order = group.sorted { (maxs[$0] - mins[$0]) < (maxs[$1] - mins[$1]) }
+            var remainingIdeal = idealWidths.isEmpty ? 0 : group.reduce(CGFloat.zero) { $0 + idealWidths[$1] }
+            let canFitIdeal = !idealWidths.isEmpty && remainingIdeal <= avail
             for (n, i) in order.enumerated() {
+                if canFitIdeal { remainingIdeal -= idealWidths[i] }
                 let s: CGSize
                 if low[i] == high[i] {
                     // A child the same size whatever it's offered (text, a
@@ -334,7 +341,12 @@ final class StackNode: LayoutNode {
                     // in between: no need to ask again.
                     s = high[i]
                 } else {
-                    let share = max(0, avail / CGFloat(order.count - n))
+                    var share = max(0, avail / CGFloat(order.count - n))
+                    if canFitIdeal {
+                        // Keep a fitting single-line label at its ideal width, even
+                        // with a wide spacer or a sibling with a smaller ideal.
+                        share = max(idealWidths[i], min(share, avail - remainingIdeal))
+                    }
                     s = items[i].size(proposal(main: share, cross: crossP))
                 }
                 sizes[i] = s
@@ -545,6 +557,34 @@ final class OffsetNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) { child.place(rect.offsetBy(dx: offset.width, dy: offset.height), sink) }
 }
 
+/// Rotates drawing in the subtree while leaving its layout proposal unchanged.
+final class DrawingRotationNode: LayoutNode {
+    let child: LayoutNode
+    let rotation: ShapeRotation
+
+    init(child: LayoutNode, rotation: ShapeRotation) {
+        self.child = child
+        self.rotation = rotation
+        super.init()
+        layoutPriority = child.layoutPriority
+        tag = child.tag
+        tagValue = child.tagValue
+    }
+
+    override var children: [LayoutNode] { [child] }
+    override var menuItem: MenuItemSpec? { child.menuItem }
+    override var isSpacer: Bool { child.isSpacer }
+    override var isEmptyLayout: Bool { child.isEmptyLayout }
+    override func sizeThatFits(_ p: ProposedSize) -> CGSize { child.size(p) }
+
+    override func place(_ rect: CGRect, _ sink: PlacementSink) {
+        let previous = sink.drawingTransform
+        sink.drawingTransform = rotation.transform(in: rect).concatenating(previous)
+        defer { sink.drawingTransform = previous }
+        child.place(rect, sink)
+    }
+}
+
 /// A layout-priority wrapper (`.layoutPriority(_:)`).
 final class PriorityNode: LayoutNode {
     let child: LayoutNode
@@ -658,9 +698,23 @@ final class ShapeNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         guard let widget else { return }
         var pr = props
-        pr.drawing = draw(CGRect(origin: .zero, size: rect.size))
+        let commands = draw(CGRect(origin: .zero, size: rect.size))
+        let transform = sink.drawingTransform
+        let frame: CGRect
+        if transform.isIdentity {
+            pr.drawing = commands
+            frame = rect
+        } else {
+            // Enlarge the drawing surface to contain the rotated rectangle.
+            // The parent still lays out the shape at its original size.
+            frame = rect.applying(transform).integral
+            let local = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+                .concatenating(transform)
+                .concatenating(CGAffineTransform(translationX: -frame.minX, y: -frame.minY))
+            pr.drawing = commands.map { $0.applying(local) }
+        }
         backend.update(widget, props: pr, events: events)
-        sink.add(widget, rect)
+        sink.add(widget, frame)
     }
 }
 

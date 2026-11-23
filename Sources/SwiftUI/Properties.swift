@@ -115,7 +115,8 @@ public struct Environment<Value>: DynamicPropertyLink, DynamicProperty {
         MainActor.assumeIsolated { read(_link.env ?? EnvironmentValues()) }
     }
 
-    func link(_ ctx: ResolveContext, key: String) { _link.env = ctx.env }
+    func link(_ ctx: ResolveContext, key: String) { linkForProbe(ctx.env) }
+    func linkForProbe(_ env: EnvironmentValues) { _link.env = env }
 }
 
 extension Environment where Value: AnyObject & Observable {
@@ -322,10 +323,13 @@ public struct EnvironmentObject<ObjectType: ObservableObject>: DynamicPropertyLi
         return o
     }
     func link(_ ctx: ResolveContext, key: String) {
-        _link.object = ctx.env.objects[ObjectIdentifier(ObjectType.self)] as? ObjectType
+        linkForProbe(ctx.env)
         if let o = _link.object {
             observe(o, host: ctx.host, scope: ctx.scope, key: key)
         }
+    }
+    func linkForProbe(_ env: EnvironmentValues) {
+        _link.object = env.objects[ObjectIdentifier(ObjectType.self)] as? ObjectType
     }
 }
 

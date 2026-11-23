@@ -15,10 +15,14 @@ public protocol Gesture<Value> {
     /// Runway: the action to run on a tap, when this gesture is a tap that
     /// ends in one.
     func _runwayTap() -> (count: Int, action: () -> Void)?
+    func _runwaySpatialTap() -> _RunwaySpatialTap?
 }
+
+public typealias _RunwaySpatialTap = (count: Int, coordinateSpace: CoordinateSpace, action: (CGPoint) -> Void)
 
 extension Gesture {
     public func _runwayTap() -> (count: Int, action: () -> Void)? { nil }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { nil }
 }
 
 extension Never: Gesture {
@@ -132,10 +136,13 @@ public struct RotationGesture: _PrimitiveGesture {
 
 public struct AnyGesture<Value>: _PrimitiveGesture {
     let tap: () -> (count: Int, action: () -> Void)?
+    let spatialTap: () -> _RunwaySpatialTap?
     public init<T: Gesture>(_ gesture: T) where T.Value == Value {
         tap = { gesture._runwayTap() }
+        spatialTap = { gesture._runwaySpatialTap() }
     }
     public func _runwayTap() -> (count: Int, action: () -> Void)? { tap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { spatialTap() }
 }
 
 // MARK: Gesture modifiers
@@ -145,6 +152,7 @@ public struct _ChangedGesture<Content: Gesture>: _PrimitiveGesture {
     let content: Content
     let action: (Content.Value) -> Void
     public func _runwayTap() -> (count: Int, action: () -> Void)? { content._runwayTap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { content._runwaySpatialTap() }
 }
 
 public struct _EndedGesture<Content: Gesture>: _PrimitiveGesture {
@@ -154,10 +162,13 @@ public struct _EndedGesture<Content: Gesture>: _PrimitiveGesture {
     public func _runwayTap() -> (count: Int, action: () -> Void)? {
         let action = self.action
         if let t = content as? TapGesture { return (t.count, { action(() as! Content.Value) }) }
-        if let t = content as? SpatialTapGesture {
-            return (t.count, { action(SpatialTapGesture.Value(location: .zero) as! Content.Value) })
-        }
         return content._runwayTap()
+    }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? {
+        if let t = content as? SpatialTapGesture {
+            return (t.count, t.coordinateSpace, { location in action(SpatialTapGesture.Value(location: location) as! Content.Value) })
+        }
+        return content._runwaySpatialTap()
     }
 }
 
@@ -165,6 +176,7 @@ public struct _MapGesture<Content: Gesture, Value>: _PrimitiveGesture {
     let content: Content
     let transform: (Content.Value) -> Value
     public func _runwayTap() -> (count: Int, action: () -> Void)? { content._runwayTap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { content._runwaySpatialTap() }
 }
 
 public struct GestureStateGesture<Base: Gesture, State>: _PrimitiveGesture {
@@ -173,6 +185,7 @@ public struct GestureStateGesture<Base: Gesture, State>: _PrimitiveGesture {
     public var state: GestureState<State>
     let update: (Base.Value, inout State, inout Transaction) -> Void
     public func _runwayTap() -> (count: Int, action: () -> Void)? { base._runwayTap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { base._runwaySpatialTap() }
 }
 
 public struct SequenceGesture<First: Gesture, Second: Gesture>: _PrimitiveGesture {
@@ -194,6 +207,9 @@ public struct SimultaneousGesture<First: Gesture, Second: Gesture>: _PrimitiveGe
     public var second: Second
     public init(_ first: First, _ second: Second) { self.first = first; self.second = second }
     public func _runwayTap() -> (count: Int, action: () -> Void)? { first._runwayTap() ?? second._runwayTap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? {
+        first._runwaySpatialTap() ?? (first._runwayTap() == nil ? second._runwaySpatialTap() : nil)
+    }
 }
 
 public struct ExclusiveGesture<First: Gesture, Second: Gesture>: _PrimitiveGesture {
@@ -209,12 +225,16 @@ public struct ExclusiveGesture<First: Gesture, Second: Gesture>: _PrimitiveGestu
         // take the first that resolves.
         first._runwayTap() ?? second._runwayTap()
     }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? {
+        first._runwaySpatialTap() ?? (first._runwayTap() == nil ? second._runwaySpatialTap() : nil)
+    }
 }
 
 public struct _ModifiersGesture<Content: Gesture>: _PrimitiveGesture {
     public typealias Value = Content.Value
     let content: Content
     public func _runwayTap() -> (count: Int, action: () -> Void)? { content._runwayTap() }
+    public func _runwaySpatialTap() -> _RunwaySpatialTap? { content._runwaySpatialTap() }
 }
 
 extension Gesture {
@@ -257,6 +277,9 @@ struct GestureView<Content: View, G: Gesture>: View, PrimitiveView {
     let content: Content
     let gesture: G
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        if let tap = gesture._runwaySpatialTap() {
+            return ctx.resolve(content.onTapGesture(count: tap.count, coordinateSpace: tap.coordinateSpace, perform: tap.action), "g")
+        }
         if let tap = gesture._runwayTap() {
             return ctx.resolve(content.onTapGesture(count: tap.count, perform: tap.action), "g")
         }

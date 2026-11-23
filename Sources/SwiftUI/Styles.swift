@@ -217,6 +217,8 @@ extension ListStyle where Self == _Style {
     public static var inset: _Style { _Style("inset") }
     public static var plain: _Style { _Style("plain") }
     public static var bordered: _Style { _Style("bordered") }
+    public static var grouped: _Style { _Style("grouped") }
+    public static var insetGrouped: _Style { _Style("insetGrouped") }
 }
 extension TabViewStyle where Self == _Style {
     public static var automatic: _Style { _Style("automatic") }
@@ -250,6 +252,7 @@ extension WindowToolbarStyle where Self == _Style {
 }
 
 /// A custom ButtonStyle: `makeBody` decorates the label.
+@MainActor @preconcurrency
 public protocol ButtonStyle {
     associatedtype Body: View
     @ViewBuilder @MainActor func makeBody(configuration: Configuration) -> Body
@@ -340,20 +343,26 @@ extension View {
         return environment { $0._progressStyle = k }
     }
     public func menuStyle<S: MenuStyle>(_ s: S) -> some View { self }
-    public func listStyle<S: ListStyle>(_ s: S) -> some View { self }
+    public func listStyle<S: ListStyle>(_ s: S) -> some View {
+        environment { $0._insetGroupedListStyle = (s as? _Style)?._kind.name == "insetGrouped" }
+    }
     public func tabViewStyle<S: TabViewStyle>(_ s: S) -> some View { self }
     public func navigationSplitViewStyle<S: NavigationSplitViewStyle>(_ s: S) -> some View { self }
     public func datePickerStyle<S: DatePickerStyle>(_ s: S) -> some View { self }
     public func groupBoxStyle<S: GroupBoxStyle>(_ s: S) -> some View { self }
     public func controlGroupStyle<S: ControlGroupStyle>(_ s: S) -> some View { self }
     public func indexViewStyle<S: IndexViewStyle>(_ s: S) -> some View { self }
-    public func buttonBorderShape(_ shape: ButtonBorderShape) -> some View { self }
+    public func buttonBorderShape(_ shape: ButtonBorderShape) -> some View { environment { $0[ButtonBorderShapeKey.self] = shape } }
     public func menuIndicator(_ visibility: Visibility) -> some View { self }
 }
 
 public struct ButtonBorderShape: Sendable {
-    public static let automatic = ButtonBorderShape(), capsule = ButtonBorderShape(), roundedRectangle = ButtonBorderShape(), circle = ButtonBorderShape()
-    public static func roundedRectangle(radius: CGFloat) -> ButtonBorderShape { ButtonBorderShape() }
+    let isCapsule: Bool
+    public static let automatic = Self(isCapsule: false), capsule = Self(isCapsule: true)
+    public static let roundedRectangle = Self(isCapsule: false), circle = Self(isCapsule: true)
+    public static func roundedRectangle(radius: CGFloat) -> ButtonBorderShape { .roundedRectangle }
 }
+
+struct ButtonBorderShapeKey: EnvironmentKey { static let defaultValue = ButtonBorderShape.automatic }
 
 public enum Visibility: Hashable, Sendable, CaseIterable { case automatic, visible, hidden }

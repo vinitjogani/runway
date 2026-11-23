@@ -3,6 +3,7 @@
 #include <string.h>
 
 typedef struct { int x, y, w, h; } RunwayRect;
+typedef struct { float radius, corner_radius; } RunwayBackdrop;
 
 #define RUNWAY_TYPE_CANVAS (runway_canvas_get_type())
 G_DECLARE_FINAL_TYPE(RunwayCanvas, runway_canvas, RUNWAY, CANVAS, GtkWidget)
@@ -17,6 +18,7 @@ struct _RunwayCanvas {
     // a scroll redraws the (culled) children.
     GtkAdjustment *hadj, *vadj;
     gboolean pass_through;
+    unsigned backdrop_count;
     // A window's content: the smallest it may get (-1: its content size,
     // as for any canvas), so the window can still be made smaller.
     int min_w, min_h;
@@ -28,6 +30,16 @@ static GQuark rect_quark(void) {
     static GQuark q = 0;
     if (!q) q = g_quark_from_static_string("runway-rect");
     return q;
+}
+
+static GQuark backdrop_quark(void) {
+    static GQuark q = 0;
+    if (!q) q = g_quark_from_static_string("runway-backdrop");
+    return q;
+}
+
+static RunwayBackdrop *widget_backdrop(GtkWidget *widget) {
+    return g_object_get_qdata(G_OBJECT(widget), backdrop_quark());
 }
 
 static void runway_canvas_measure(GtkWidget *widget, GtkOrientation orientation, int for_size,
@@ -79,6 +91,78 @@ static void canvas_watch(RunwayCanvas *self, GtkAdjustment **slot, GtkAdjustment
     if (adj) g_signal_connect(adj, "value-changed", G_CALLBACK(canvas_scrolled), self);
 }
 
+static void clip_backdrop_slice(GskRenderNode *source, GskRenderNode **slices, guint *count,
+                                float x1, float y1, float x2, float y2) {
+    if (x2 <= x1 || y2 <= y1) return;
+    graphene_rect_t clip = GRAPHENE_RECT_INIT(x1, y1, x2 - x1, y2 - y1);
+    slices[(*count)++] = gsk_clip_node_new(source, &clip);
+}
+
+static void filter_backdrop(GPtrArray *preceding, const RunwayRect *rect,
+                            const RunwayBackdrop *effect, double opacity) {
+    if (!rect || rect->w <= 0 || rect->h <= 0 || !preceding->len || opacity <= 0) return;
+    graphene_rect_t bounds = GRAPHENE_RECT_INIT(rect->x, rect->y, rect->w, rect->h);
+    graphene_rect_t sample = bounds;
+    // Leave enough room for the filter kernel while keeping its texture local.
+    graphene_rect_inset(&sample, -3 * effect->radius, -3 * effect->radius);
+    GskRenderNode *under = gsk_container_node_new((GskRenderNode **)preceding->pdata, preceding->len);
+    GskRenderNode *crop = gsk_clip_node_new(under, &sample);
+    GskRenderNode *blur = gsk_blur_node_new(crop, effect->radius);
+    gsk_render_node_unref(crop);
+    float corner = MIN(effect->corner_radius, MIN(rect->w, rect->h) / 2.0f);
+    GskRoundedRect clip;
+    gsk_rounded_rect_init_from_rect(&clip, &bounds, corner);
+    GskRenderNode *diffused = gsk_rounded_clip_node_new(blur, &clip);
+    gsk_render_node_unref(blur);
+
+    // Replace the prefix within the clip. Layering a translucent blur on the
+    // same sharp pixels would let the original text and seams bleed through.
+    GdkRGBA opaque = { 1, 1, 1, 1 };
+    GskRenderNode *mask_fill = gsk_color_node_new(&opaque, &bounds);
+    GskRenderNode *mask = gsk_rounded_clip_node_new(mask_fill, &clip);
+    gsk_render_node_unref(mask_fill);
+    GskRenderNode *original = gsk_clip_node_new(under, &bounds);
+    GskRenderNode *corners = gsk_mask_node_new(original, mask, GSK_MASK_MODE_INVERTED_ALPHA);
+    gsk_render_node_unref(mask);
+    GskRenderNode *pieces[] = { corners, diffused };
+    GskRenderNode *replacement = gsk_container_node_new(pieces, G_N_ELEMENTS(pieces));
+    gsk_render_node_unref(corners);
+    gsk_render_node_unref(diffused);
+    if (opacity < 1) {
+        GskRenderNode *faded = gsk_cross_fade_node_new(original, replacement, opacity);
+        gsk_render_node_unref(replacement);
+        replacement = faded;
+    }
+    gsk_render_node_unref(original);
+
+    // Keep the mask's offscreen work limited to the glass rectangle. Outside
+    // that rectangle the renderer draws the original content in simple clips.
+    graphene_rect_t under_bounds;
+    gsk_render_node_get_bounds(under, &under_bounds);
+    float left = under_bounds.origin.x, top = under_bounds.origin.y;
+    float right = left + under_bounds.size.width, bottom = top + under_bounds.size.height;
+    float glass_left = CLAMP(bounds.origin.x, left, right);
+    float glass_right = CLAMP(bounds.origin.x + bounds.size.width, left, right);
+    float glass_top = CLAMP(bounds.origin.y, top, bottom);
+    float glass_bottom = CLAMP(bounds.origin.y + bounds.size.height, top, bottom);
+    GskRenderNode *slices[5];
+    guint count = 0;
+    clip_backdrop_slice(under, slices, &count, left, top, right, glass_top);
+    clip_backdrop_slice(under, slices, &count, left, glass_bottom, right, bottom);
+    clip_backdrop_slice(under, slices, &count, left, glass_top, glass_left, glass_bottom);
+    clip_backdrop_slice(under, slices, &count, glass_right, glass_top, right, glass_bottom);
+    slices[count++] = replacement;
+    GskRenderNode *result = gsk_container_node_new(slices, count);
+    for (guint i = 0; i < count; i++) gsk_render_node_unref(slices[i]);
+    gsk_render_node_unref(under);
+    g_ptr_array_set_size(preceding, 0);
+    g_ptr_array_add(preceding, result);
+}
+
+static void snapshot_prefix(GtkSnapshot *snapshot, GPtrArray *preceding) {
+    for (guint i = 0; i < preceding->len; i++) gtk_snapshot_append_node(snapshot, preceding->pdata[i]);
+}
+
 // Children are snapshotted only where they can be seen. GTK's default
 // snapshots every child, and the Cairo renderer then draws every node,
 // clipped or not: a scroll view of 2,000 rows (12,000 widgets) repainted
@@ -103,6 +187,8 @@ static void runway_canvas_snapshot(GtkWidget *widget, GtkSnapshot *snapshot) {
         }
     }
     const double margin = 64;
+    unsigned backdrop_count = self->backdrop_count;
+    GPtrArray *preceding = backdrop_count ? g_ptr_array_new_with_free_func((GDestroyNotify)gsk_render_node_unref) : NULL;
     for (GtkWidget *c = gtk_widget_get_first_child(widget); c; c = gtk_widget_get_next_sibling(c)) {
         if (cull) {
             RunwayRect *r = g_object_get_qdata(G_OBJECT(c), rect_quark());
@@ -111,7 +197,31 @@ static void runway_canvas_snapshot(GtkWidget *widget, GtkSnapshot *snapshot) {
                 if (r->x > vx + vw + margin || r->x + w < vx - margin || r->y > vy + vh + margin || r->y + h < vy - margin) continue;
             }
         }
-        gtk_widget_snapshot_child(widget, c, snapshot);
+        if (!preceding) {
+            gtk_widget_snapshot_child(widget, c, snapshot);
+            continue;
+        }
+        RunwayBackdrop *effect = widget_backdrop(c);
+        if (effect && gtk_widget_get_visible(c)) {
+            filter_backdrop(preceding, g_object_get_qdata(G_OBJECT(c), rect_quark()),
+                            effect, gtk_widget_get_opacity(c));
+            if (--backdrop_count == 0) {
+                snapshot_prefix(snapshot, preceding);
+                g_clear_pointer(&preceding, g_ptr_array_unref);
+                gtk_widget_snapshot_child(widget, c, snapshot);
+                continue;
+            }
+        }
+        // Reuse each child's render node for the original canvas and for any
+        // following backdrop. Foreground widgets never enter their own blur.
+        GtkSnapshot *child_snapshot = gtk_snapshot_new();
+        gtk_widget_snapshot_child(widget, c, child_snapshot);
+        GskRenderNode *node = gtk_snapshot_free_to_node(child_snapshot);
+        if (node) g_ptr_array_add(preceding, node);
+    }
+    if (preceding) {
+        snapshot_prefix(snapshot, preceding);
+        g_ptr_array_unref(preceding);
     }
 }
 
@@ -179,6 +289,7 @@ void runway_canvas_place(GtkWidget *canvas, GtkWidget *child, int x, int y, int 
     r->x = x; r->y = y; r->w = width; r->h = height;
     if (gtk_widget_get_parent(child) != canvas) {
         gtk_widget_set_parent(child, canvas);
+        if (widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count++;
         changed = TRUE;
     }
     if (changed) gtk_widget_queue_allocate(canvas);
@@ -190,7 +301,30 @@ void runway_canvas_raise(GtkWidget *canvas, GtkWidget *child) {
 }
 
 void runway_canvas_remove(GtkWidget *canvas, GtkWidget *child) {
-    if (gtk_widget_get_parent(child) == canvas) gtk_widget_unparent(child);
+    if (gtk_widget_get_parent(child) == canvas) {
+        if (RUNWAY_IS_CANVAS(canvas) && widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count--;
+        gtk_widget_unparent(child);
+    }
+}
+
+void runway_widget_set_backdrop_blur(GtkWidget *child, float radius, float corner_radius) {
+    gboolean had_backdrop = widget_backdrop(child) != NULL;
+    gboolean has_backdrop = radius > 0;
+    RunwayBackdrop *effect = NULL;
+    if (has_backdrop) {
+        effect = g_new(RunwayBackdrop, 1);
+        effect->radius = MIN(radius, 64);
+        effect->corner_radius = corner_radius > 0 ? corner_radius : 0;
+    }
+    g_object_set_qdata_full(G_OBJECT(child), backdrop_quark(), effect, g_free);
+    GtkWidget *parent = gtk_widget_get_parent(child);
+    if (parent && RUNWAY_IS_CANVAS(parent)) {
+        if (had_backdrop != has_backdrop) {
+            if (has_backdrop) RUNWAY_CANVAS(parent)->backdrop_count++;
+            else RUNWAY_CANVAS(parent)->backdrop_count--;
+        }
+        gtk_widget_queue_draw(parent);
+    }
 }
 
 void runway_canvas_set_resize_callback(GtkWidget *canvas, RunwayResizeFunc fn, void *user_data) {
@@ -249,6 +383,46 @@ void runway_popovers_plain(GtkWidget *w) {
     }
     for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
         if (GTK_IS_POPOVER(c)) gtk_popover_set_has_arrow(GTK_POPOVER(c), FALSE);
+}
+
+static void constrain_popover_on_show(GtkWidget *popup, GtkWidget *anchor) {
+    GtkRoot *root = gtk_widget_get_root(anchor);
+    graphene_rect_t bounds;
+    if (!root || !gtk_widget_compute_bounds(anchor, GTK_WIDGET(root), &bounds)) return;
+
+    int popup_width = 0;
+    gtk_widget_measure(popup, GTK_ORIENTATION_HORIZONTAL, -1, NULL, &popup_width, NULL, NULL);
+    int viewport_width = gtk_widget_get_width(GTK_WIDGET(root));
+    if (popup_width <= 0 || viewport_width <= 0) return;
+
+    int left = (int)(bounds.origin.x + (bounds.size.width - popup_width) / 2);
+    int gap = viewport_width - popup_width;
+    int inset = MIN(8, MAX(0, gap / 2));
+    int clamped = gap < 0 ? gap / 2 : CLAMP(left, inset, gap - inset);
+    gtk_popover_set_offset(GTK_POPOVER(popup), clamped - left, 0);
+    gtk_popover_present(GTK_POPOVER(popup));
+}
+
+static void constrain_menu_popover(GtkWidget *popup, GtkWidget *anchor) {
+    const char *key = "runway-constrain-mobile-popover";
+    if (!popup || g_object_get_data(G_OBJECT(popup), key)) return;
+    g_object_set_data(G_OBJECT(popup), key, GINT_TO_POINTER(1));
+    gtk_widget_set_halign(popup, GTK_ALIGN_CENTER);
+    g_signal_connect_object(popup, "show", G_CALLBACK(constrain_popover_on_show), anchor, 0);
+}
+
+void runway_popovers_constrain_to_window(GtkWidget *w) {
+    if (GTK_IS_MENU_BUTTON(w)) {
+        constrain_menu_popover(GTK_WIDGET(gtk_menu_button_get_popover(GTK_MENU_BUTTON(w))), w);
+        return;
+    }
+    for (GtkWidget *child = gtk_widget_get_first_child(w); child; child = gtk_widget_get_next_sibling(child)) {
+        if (GTK_IS_POPOVER(child)) constrain_menu_popover(child, w);
+    }
+}
+
+void runway_accessible_label(GtkWidget *w, const char *label) {
+    gtk_accessible_update_property(GTK_ACCESSIBLE(w), GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
 }
 
 gboolean runway_prefers_dark(void) {
@@ -462,6 +636,7 @@ void runway_menu_button_set(GtkWidget *menu_button, const char *const *titles, c
     stack[0] = g_menu_new();
     sections[0] = g_menu_new();
     g_menu_append_section(stack[0], NULL, G_MENU_MODEL(sections[0]));
+    g_object_unref(sections[0]);
     int depth = 0;
     for (int i = 0; i < count; i++) {
         int d = depths[i] < 7 ? depths[i] : 7;
@@ -469,15 +644,18 @@ void runway_menu_button_set(GtkWidget *menu_button, const char *const *titles, c
         if (kinds[i] == 1) {
             sections[depth] = g_menu_new();
             g_menu_append_section(stack[depth], NULL, G_MENU_MODEL(sections[depth]));
+            g_object_unref(sections[depth]);
             continue;
         }
-        if (kinds[i] == 2) {
+        if (kinds[i] == 2 && depth < 7) {
             GMenu *sub = g_menu_new();
             g_menu_append_submenu(sections[depth], titles[i], G_MENU_MODEL(sub));
+            g_object_unref(sub);
             depth++;
             stack[depth] = sub;
             sections[depth] = g_menu_new();
             g_menu_append_section(sub, NULL, G_MENU_MODEL(sections[depth]));
+            g_object_unref(sections[depth]);
             continue;
         }
         char name[32];
@@ -495,6 +673,7 @@ void runway_menu_button_set(GtkWidget *menu_button, const char *const *titles, c
     }
     gtk_widget_insert_action_group(menu_button, "rw", G_ACTION_GROUP(group));
     gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(stack[0]));
+    g_object_unref(stack[0]);
     g_object_unref(group);
 }
 
@@ -541,22 +720,47 @@ void runway_drop_down_set_strings(GtkWidget *dd, const char *const *strings) {
     g_object_unref(l);
 }
 
-gboolean runway_widget_save_png(GtkWidget *w, const char *path) {
+gboolean runway_widget_save_scaled_png(GtkWidget *w, GtkWidget *content, const char *path, guint scale) {
     int width = gtk_widget_get_width(w), height = gtk_widget_get_height(w);
     if (width <= 0 || height <= 0) return FALSE;
+    GtkNative *native = gtk_widget_get_native(w);
+    GskRenderer *r = native ? gtk_native_get_renderer(native) : NULL;
+    if (!r) return FALSE;
+    graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, width, height);
+    if (content && !gtk_widget_compute_bounds(content, w, &bounds)) return FALSE;
     GdkPaintable *p = gtk_widget_paintable_new(w);
     GtkSnapshot *s = gtk_snapshot_new();
     gdk_paintable_snapshot(p, s, width, height);
     GskRenderNode *node = gtk_snapshot_free_to_node(s);
     g_object_unref(p);
     if (!node) return FALSE;
-    GskRenderer *r = gtk_native_get_renderer(gtk_widget_get_native(w));
-    graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, width, height);
+    scale = CLAMP(scale, 1, 4);
+    if (scale > 1) {
+        // Scale the render node before rasterization and keep the same crop
+        // in logical points, including the origin below the desktop title bar.
+        GskTransform *transform = gsk_transform_scale(NULL, scale, scale);
+        GskRenderNode *scaled = gsk_transform_node_new(node, transform);
+        gsk_transform_unref(transform);
+        gsk_render_node_unref(node);
+        node = scaled;
+        bounds.origin.x *= scale;
+        bounds.origin.y *= scale;
+        bounds.size.width *= scale;
+        bounds.size.height *= scale;
+    }
     GdkTexture *t = gsk_renderer_render_texture(r, node, &bounds);
     gboolean ok = t && gdk_texture_save_to_png(t, path);
     if (t) g_object_unref(t);
     gsk_render_node_unref(node);
     return ok;
+}
+
+gboolean runway_widget_save_content_png(GtkWidget *w, GtkWidget *content, const char *path) {
+    return runway_widget_save_scaled_png(w, content, path, 1);
+}
+
+gboolean runway_widget_save_png(GtkWidget *w, const char *path) {
+    return runway_widget_save_content_png(w, NULL, path);
 }
 
 static GtkWidget *find_popup_owner(GtkWidget *w, int *n) {

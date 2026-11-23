@@ -65,7 +65,8 @@ func pruneStagedDependencies(_ stageDir: URL, keep: Set<String>) {
 
 /// `runway plan`: the plan, target by target.
 func printPlan(_ plan: Plan) {
-    print("\(plan.name) (\(plan.origin.rawValue), \(plan.root.path))")
+    let platform = plan.xcodePlatform.map { ", \($0.name)" } ?? ""
+    print("\(plan.name) (\(plan.origin.rawValue)\(platform), \(plan.root.path))")
     for n in plan.notes { print("  note: \(n)") }
     for t in plan.targets {
         print("\n\(t.name) [\(t.kind.rawValue)]\(t.productName.map { " product \($0)" } ?? "")")
@@ -85,7 +86,7 @@ func printPlan(_ plan: Plan) {
         }
         if !t.settings.isEmpty { print("  settings: \(t.settings.map { $0.render() }.joined(separator: " "))") }
         if let info = t.infoPlist {
-            let keys = ["CFBundleIdentifier", "CFBundleName", "CFBundleExecutable", "CFBundleShortVersionString", "CFBundleVersion", "LSUIElement", "NSPrincipalClass", "NSMainStoryboardFile"]
+            let keys = ["CFBundleIdentifier", "CFBundleName", "CFBundleExecutable", "CFBundleShortVersionString", "CFBundleVersion", "MinimumOSVersion", "LSUIElement", "NSPrincipalClass", "NSMainStoryboardFile"]
             print("  Info.plist: " + keys.compactMap { k in info[k].map { "\(k)=\($0)" } }.joined(separator: " ") + " (\(info.count) keys)")
         }
         for n in t.notes { print("  note: \(n)") }

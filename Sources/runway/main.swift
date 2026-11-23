@@ -1,4 +1,4 @@
-// runway: build, run and test an unchanged Mac app on Linux or Windows.
+// runway: build, run and test an unchanged Apple app on Linux or Windows.
 // Zero configuration: point it at the app's folder and it works out the rest.
 //
 //   runway check <dir>   Portability report: every file's imports and
@@ -13,15 +13,16 @@
 // <dir> holds a SwiftPM package (Package.swift), an Xcode project or
 // workspace (.xcodeproj in the project.pbxproj or the JSON project.xcproj
 // format, .xcworkspace), or an XcodeGen project.yml.
-// Options: --project <name|path>, --target <app>, --product <name>,
-// --filter <test>, --skip <test>, -c debug|release, --headless.
+// Options: --project <name|path>, --target <app>, --platform macos|ios, --product <name>,
+// --filter <test>, --skip <test>, -c debug|release, --headless,
+// --device iphone-pro|iphone|ipad, --ios-simulator-code.
 //
 // Xcode projects are read by RunwayImport into the same plan a SwiftPM
 // package gives (one SwiftPM target per Xcode target). Package
 // dependencies are fetched at their pinned revisions and staged the same
 // way, or replaced by Runway's third-party shims (Dependencies.swift).
 //
-// Staging leaves the app untouched. Under runway/.runway/stage/<name> it
+// Staging leaves the app untouched. Under runway/.runway it
 // writes a copy of every source through transformSource(_:path:) (the
 // transpiler hook; see Stage.swift), wrapped in #sourceLocation so #filePath
 // and diagnostics name the original file, and a Package.swift whose targets
@@ -33,11 +34,12 @@
 
 import Foundation
 import RunwayImport
+import RunwayTranspiler
 
 // MARK: check
 
 func check(_ plan: Plan) {
-    let local = Set(plan.targets.map(\.name))
+    let local = Set(plan.targets.map(\.name) + plan.targets.flatMap { $0.productDependencies.map(\.product) })
     print("Portability report: \(plan.name) (\(plan.root.path))\n")
     var totals = (files: 0, portable: 0)
     let appKitName = try! NSRegularExpression(pattern: "\\bNS[A-Z][A-Za-z]+")
@@ -72,7 +74,7 @@ func check(_ plan: Plan) {
         }
         print()
     }
-    print("\(totals.portable) of \(totals.files) files use only what Runway maps; the rest need an Apple API Runway doesn't provide yet.")
+    print("\(totals.portable) of \(totals.files) files pass the import and AppKit name scan. Use runway build to check API compatibility.")
 }
 
 // MARK: CLI
@@ -82,11 +84,14 @@ usage: runway <check|plan|stage|build|run|test> <dir> [options] [-- args]
   <dir>                    a SwiftPM package, an Xcode project or workspace, or an XcodeGen spec
   --project <name|path>    which .xcodeproj/.xcworkspace/project.yml, when there are several
   --target <name>          the Xcode app target to build (default: the main app)
+  --platform <macos|ios>   the Xcode app platform (default: inferred, preferring macos)
   --product <name>         product to build or run
   --filter <pattern>       tests to run
   --skip <pattern>         tests to skip
   -c, --configuration      debug (default) or release
   --headless               run with no display (RUNWAY_BACKEND=headless)
+  --device <iphone-pro|iphone|ipad>  viewport for a SwiftUI preview
+  --ios-simulator-code     include simulator-only branches in an iOS project
 """
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -109,10 +114,13 @@ var packagePath: String?
 var product: String?
 var projectOption: String?
 var targetOption: String?
+var platformOption: XcodePlatform?
 var filters: [String] = []
 var skips: [String] = []
 var configuration = "debug"
 var headless = false
+var previewDevice: String?
+var includeSimulatorCode = false
 var passthrough: [String] = []
 while !args.isEmpty {
     let a = args.removeFirst()
@@ -120,10 +128,21 @@ while !args.isEmpty {
     case "--product": product = args.isEmpty ? nil : args.removeFirst()
     case "--project": projectOption = args.isEmpty ? nil : args.removeFirst()
     case "--target": targetOption = args.isEmpty ? nil : args.removeFirst()
+    case "--platform":
+        guard let value = args.first, let platform = XcodePlatform(rawValue: value.lowercased()) else {
+            die("--platform needs macos or ios")
+        }
+        args.removeFirst()
+        platformOption = platform
     case "--filter": if !args.isEmpty { filters.append(args.removeFirst()) }
     case "--skip": if !args.isEmpty { skips.append(args.removeFirst()) }
     case "-c", "--configuration": configuration = args.isEmpty ? "debug" : args.removeFirst()
     case "--headless": headless = true
+    case "--device":
+        guard let value = args.first, ["iphone-pro", "iphone", "ipad"].contains(value) else { die("--device needs iphone-pro, iphone or ipad") }
+        args.removeFirst()
+        previewDevice = value
+    case "--ios-simulator-code": includeSimulatorCode = true
     case "--": passthrough = args; args = []
     default:
         if a.hasPrefix("-") { die("unknown option \(a)\n\(usage)") }
@@ -136,13 +155,16 @@ let packageDir = URL(fileURLWithPath: packagePath ?? ".").standardizedFileURL
 
 var plan: Plan
 do {
-    let located = try ProjectLocator.locate(packageDir, project: projectOption)
+    let located = try ProjectLocator.locate(packageDir, project: projectOption, platform: platformOption)
     if case .swiftPM(let dir) = located {
+        if platformOption != nil { die("--platform selects targets in Xcode projects and XcodeGen specs") }
         plan = try planSwiftPM(dir, scratch: root.appendingPathComponent(".runway/manifests/\(c99Name(dir.path))"))
     } else {
-        plan = try planXcodeProject(located, options: XcodeImportOptions(target: targetOption))
+        plan = try planXcodeProject(located, options: XcodeImportOptions(target: targetOption, platform: platformOption))
     }
 } catch { die("\(error)") }
+if previewDevice != nil, command != "run" { die("--device is used with runway run") }
+if includeSimulatorCode, plan.xcodePlatform != .iOS { die("--ios-simulator-code requires an iOS project") }
 if command != "plan" { for n in plan.notes { log("note: \(n)") } }
 
 /// The targets `roots` need, themselves included.
@@ -190,15 +212,22 @@ if command == "plan" {
 }
 
 // Package dependencies: fetched, staged (or shimmed) and wired by path.
-let stageDir = root.appendingPathComponent(".runway/stage/\(stageName(plan.name))")
-var graph = DependencyGraph(root: root, appStage: stageDir, pins: plan.pins)
+let iosPreview = plan.xcodePlatform == .iOS ? IOSPreview(includingSimulatorCode: includeSimulatorCode) : nil
+let stageFolder = switch iosPreview {
+case nil: "stage"
+case let preview?: preview.includingSimulatorCode ? "stage-ios-simulator" : "stage-ios"
+}
+let stageDir = root.appendingPathComponent(".runway/\(stageFolder)/\(stageName(plan.name))")
+var graph = DependencyGraph(root: root, appStage: stageDir, pins: plan.pins, iosPreview: iosPreview)
 let dependencyPaths = graph.resolve(plan).filter { ![.sharedWithRunway, .dropped].contains(graph.resolved[$0.key.lowercased()]?.mode) }
 plan.dependencies.removeAll { graph.resolved[$0.identity.lowercased()]?.mode == .dropped }
 linkUnresolvedProducts(&plan, graph)
 pruneStagedDependencies(stageDir, keep: Set(graph.resolved.values.filter { $0.mode != .asIs }.map(\.identity)))
 
 let staged: Staged
-do { staged = try stagePlan(plan, at: stageDir, root: root, dependencies: dependencyPaths) } catch { die("staging \(plan.name) failed: \(error)") }
+do {
+    staged = try stagePlan(plan, at: stageDir, root: root, dependencies: dependencyPaths, iosPreview: iosPreview)
+} catch { die("staging \(plan.name) failed: \(error)") }
 log("staged \(plan.name) at \(staged.dir.path)")
 if command == "stage" {
     print(staged.dir.path)
@@ -206,7 +235,12 @@ if command == "stage" {
 }
 
 let swift = which("swift")
-let env = headless ? ["RUNWAY_BACKEND": "headless"] : [:]
+var env = headless ? ["RUNWAY_BACKEND": "headless"] : [:]
+if let device = previewDevice {
+    env["RUNWAY_PREVIEW_DEVICE"] = device
+} else if plan.xcodePlatform == .iOS, ProcessInfo.processInfo.environment["RUNWAY_PREVIEW_DEVICE"] == nil {
+    env["RUNWAY_PREVIEW_DEVICE"] = "iphone-pro"
+}
 refreshModuleCacheIfRunwayChanged(staged.dir, root: root)
 
 // RUNWAY_SCRATCH_PATH=<dir>: one SwiftPM build directory for every staged

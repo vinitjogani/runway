@@ -325,8 +325,13 @@ enum Drag {
     private func activate(_ w: W32Widget, at p: CGPoint, _ n: OpaquePointer) {
         let props = w.props
         switch w.kind {
-        case .button, .tapArea, .link, .menuButton:
+        case .button, .link, .menuButton:
             w.events.onTap?()
+        case .tapArea:
+            if let action = w.events.onTapLocation {
+                let frame = w.windowFrame
+                action(CGPoint(x: p.x - frame.minX, y: p.y - frame.minY))
+            } else { w.events.onTap?() }
         case .toggle:
             w.events.onToggle?(!props.isOn)
         case .segmented:

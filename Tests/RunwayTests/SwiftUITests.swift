@@ -329,6 +329,92 @@ final class SwiftUITests: XCTestCase {
         XCTAssertEqual(w.window.contentSize, CGSize(width: 120, height: 80))
         XCTAssertEqual(w.window.title, "T")
     }
+
+    func testMobileSceneProfilesSizeWindowsAndSetSizeClasses() {
+        let profiles: [(MobilePreviewProfile, CGSize, String)] = [
+            (.iphone, CGSize(width: 393, height: 852), "compact × regular"),
+            (.ipad, CGSize(width: 820, height: 1180), "regular × regular"),
+        ]
+        for (profile, size, sizeClasses) in profiles {
+            let registry = SceneRegistry(mobileProfile: profile)
+            registry.collect(WindowGroup { SizeClassLabel() })
+            registry.openInitial()
+            guard let window = backend.windows.first else {
+                XCTFail("Missing preview window")
+                return
+            }
+            XCTAssertEqual(window.contentSize, size)
+            XCTAssertNotNil(text(window.root, sizeClasses))
+            window.close()
+        }
+    }
+
+    func testSheetInheritsEnvironment() {
+        _ = render(
+            Text("Parent")
+                .sheet(isPresented: .constant(true)) { SizeClassLabel() }
+                .environment(\.horizontalSizeClass, .compact)
+        )
+        guard let sheet = backend.windows.first else {
+            XCTFail("Missing sheet window")
+            return
+        }
+        XCTAssertNotNil(text(sheet.root, "compact × regular"))
+    }
+
+    func testMobilePickerMenusUseDirectActionsAndKeepTheirLabel() {
+        let (host, root) = render(MobilePickerControls().environment(\._mobilePreview, true),
+                                  size: CGSize(width: 340, height: 220))
+        guard let menu = widgets(root, .menuButton).first, let segments = widgets(root, .segmented).first else {
+            XCTFail("Missing mobile picker controls")
+            return
+        }
+        XCTAssertNotNil(text(menu, "Selected 1"))
+        XCTAssertEqual(menu.events.menu.map(\.title), ["Daily", "Weekly"])
+        XCTAssertEqual(menu.events.menu.map(\.checked), [true, false])
+        XCTAssertNil(text(root, "Trend interval"))
+        XCTAssertEqual(segments.frame.width, 340)
+        XCTAssertEqual(segments.frame.height, 32)
+        menu.events.menu.last?.action?()
+        backend.drain()
+        XCTAssertNotNil(text(menu, "Selected 2"))
+        XCTAssertEqual(menu.events.menu.map(\.checked), [false, true])
+        XCTAssertEqual(segments.props.selected, 1)
+        withExtendedLifetime(host) {}
+    }
+
+    private struct MobilePickerControls: View {
+        @State var selection = 1
+
+        var body: some View {
+            VStack {
+                Menu {
+                    Picker("Show", selection: $selection) { options }
+                } label: {
+                    HStack {
+                        Text("Selected \(selection)")
+                        Image(systemName: "chevron.down")
+                    }
+                }
+                Picker("Trend interval", selection: $selection) { options }
+                    .pickerStyle(.segmented)
+            }
+        }
+
+        @ViewBuilder private var options: some View {
+            Text("Daily").tag(1)
+            Text("Weekly").tag(2)
+        }
+    }
+
+    private struct SizeClassLabel: View {
+        @Environment(\.horizontalSizeClass) private var horizontal
+        @Environment(\.verticalSizeClass) private var vertical
+
+        var body: some View {
+            Text("\(horizontal == .compact ? "compact" : "regular") × \(vertical == .compact ? "compact" : "regular")")
+        }
+    }
 }
 
 @MainActor

@@ -94,8 +94,12 @@ final class Rewriter: SyntaxVisitor {
     // MARK: Attributes and modifiers
 
     override func visit(_ node: AttributeSyntax) -> SyntaxVisitorContinueKind {
-        if strippedAttributes.contains(Selectors.attributeName(node)) { remove(node) }
-        if Selectors.attributeName(node) == "NSApplicationDelegateAdaptor" { delegateAdaptor(node) }
+        let name = Selectors.attributeName(node)
+        if strippedAttributes.contains(name) { remove(node) }
+        if let adaptor = name.split(separator: ".").last,
+           adaptor == "NSApplicationDelegateAdaptor" || adaptor == "UIApplicationDelegateAdaptor" {
+            delegateAdaptor(node, name: name)
+        }
         conventionAttribute(node)
         swiftDataAttribute(node)
         entryAttribute(node)
@@ -196,11 +200,11 @@ final class Rewriter: SyntaxVisitor {
         }
     }
 
-    /// `@NSApplicationDelegateAdaptor(AppDelegate.self)`: Apple creates the
+    /// `@NSApplicationDelegateAdaptor(AppDelegate.self)` and its UIKit equivalent: Apple creates the
     /// delegate through the Objective-C runtime; off it, a delegate class's
     /// `init()` (not `required`) can't be called through its metatype, so
     /// the attribute gets a factory: `(AppDelegate.self, { AppDelegate() })`.
-    private func delegateAdaptor(_ node: AttributeSyntax) {
+    private func delegateAdaptor(_ node: AttributeSyntax, name: String) {
         var type: String?
         if case .argumentList(let args)? = node.arguments, let first = args.first?.expression.trimmedDescription,
            first.hasSuffix(".self"), args.count == 1 {
@@ -210,7 +214,7 @@ final class Rewriter: SyntaxVisitor {
             type = t
         }
         guard let type else { return }
-        replace(node, "@NSApplicationDelegateAdaptor(\(type).self, { \(type)() })", runtime: false)
+        replace(node, "@\(name)(\(type).self, { \(type)() })", runtime: false)
     }
 
     override func visit(_ node: DeclModifierSyntax) -> SyntaxVisitorContinueKind {

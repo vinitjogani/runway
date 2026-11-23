@@ -7,6 +7,8 @@
 @_exported import Observation
 // On macOS, SwiftUI re-exports AppKit (NSView, NSViewRepresentable hosts…).
 @_exported import AppKit
+// iOS SwiftUI source likewise sees UIKit types without an explicit import.
+@_exported @_spi(Runway) import UIKit
 import RunwayCore
 import RunwayPlatform
 import AppKit
@@ -22,8 +24,10 @@ public protocol App {
 
 extension App {
     @MainActor @preconcurrency public static func main() {
+        if MobilePreviewProfile.current != nil { UIKitRuntime.registerMobileSystemFonts() }
         RunwayPlatform.installDefaultBackend()
         SwiftUIRuntime.install()
+        UIKitRuntime.registerBundleFonts()
         let app = Self()
         let registry = SceneRegistry.shared
         Runway.backend.run {
@@ -31,12 +35,34 @@ extension App {
             // around the scenes' first windows, as on the Mac.
             let n = Notification(name: NSApplication.didFinishLaunchingNotification, object: NSApplication.shared)
             NSApplication.shared.delegate?.applicationWillFinishLaunching(n)
+            let application = UIApplication.shared
+            _ = application.delegate?.application(application, didFinishLaunchingWithOptions: nil)
             registry.load(app)
             registry.openInitial()
             NSApplication.shared.delegate?.applicationDidFinishLaunching(n)
             NotificationCenter.default.post(n)
         }
+        withExtendedLifetime(app) {}
     }
+}
+
+@MainActor @preconcurrency @propertyWrapper
+public struct UIApplicationDelegateAdaptor<DelegateType: NSObject & UIApplicationDelegate>: DynamicProperty {
+    public let wrappedValue: DelegateType
+
+    /// Runway stages UIKit delegate adaptors with a factory to construct the
+    /// delegate without the Objective-C runtime.
+    public init(_ delegateType: DelegateType.Type = DelegateType.self, _ make: @MainActor () -> DelegateType) {
+        wrappedValue = make()
+        UIApplication.shared.delegate = wrappedValue
+    }
+
+    @available(*, unavailable, message: "Build with runway to provide a delegate factory")
+    public init(_ delegateType: DelegateType.Type = DelegateType.self) { fatalError() }
+}
+
+extension UIApplicationDelegateAdaptor where DelegateType: ObservableObject {
+    public var projectedValue: ObservedObject<DelegateType> { ObservedObject(wrappedValue: wrappedValue) }
 }
 
 @MainActor @preconcurrency
@@ -224,6 +250,56 @@ struct SceneModifier<Base: Scene>: Scene, PrimitiveScene {
     }
 }
 
+/// A portrait viewport for running iOS SwiftUI scenes on a desktop backend.
+enum MobilePreviewProfile: String, Sendable {
+    case iphone, ipad
+    case iphonePro = "iphone-pro"
+
+    static var current: Self? {
+        ProcessInfo.processInfo.environment["RUNWAY_PREVIEW_DEVICE"].flatMap(Self.init(rawValue:))
+    }
+
+    var size: CGSize {
+        switch self {
+        case .iphone: CGSize(width: 393, height: 852)
+        case .iphonePro: CGSize(width: 402, height: 874)
+        case .ipad: CGSize(width: 820, height: 1180)
+        }
+    }
+
+    var topSafeArea: CGFloat {
+        switch self {
+        case .iphone: 59
+        case .iphonePro: 62
+        case .ipad: 24
+        }
+    }
+
+    var toolbarHeight: CGFloat { 44 }
+    var toolbarHorizontalInset: CGFloat { 16 }
+    var tabBarHorizontalInset: CGFloat { 20 }
+    var tabBarHeight: CGFloat { 64 }
+    var tabBarBottomInset: CGFloat { 20 }
+
+    var environment: EnvironmentValues {
+        var environment = EnvironmentValues()
+        environment._mobilePreview = true
+        environment._mobilePreviewProfile = self
+        environment._mobileSystemFontFamily = UIKitRuntime.mobileSystemFontFamily
+        environment.horizontalSizeClass = self == .ipad ? .regular : .compact
+        return environment
+    }
+}
+
+private struct MobilePreviewProfileKey: EnvironmentKey { static let defaultValue: MobilePreviewProfile? = nil }
+
+extension EnvironmentValues {
+    var _mobilePreviewProfile: MobilePreviewProfile? {
+        get { self[MobilePreviewProfileKey.self] }
+        set { self[MobilePreviewProfileKey.self] = newValue }
+    }
+}
+
 /// The app's scenes and their open windows.
 @MainActor final class SceneRegistry {
     static let shared = SceneRegistry()
@@ -233,11 +309,16 @@ struct SceneModifier<Base: Scene>: Scene, PrimitiveScene {
     private var open: [String: WindowHost] = [:]
     private var appHost: ViewHost?
     private var counter = 0
+    private let mobileProfile: MobilePreviewProfile?
+
+    init(mobileProfile: MobilePreviewProfile? = .current) {
+        self.mobileProfile = mobileProfile
+    }
 
     func load<A: App>(_ app: A) {
         // The App's own @State lives in a host of its own.
         let h = ViewHost(EmptyView())
-        h.link(app, ResolveContext(host: h, env: EnvironmentValues(), path: "app"))
+        h.link(app, ResolveContext(host: h, env: mobileProfile?.environment ?? EnvironmentValues(), path: "app"))
         appHost = h
         specs.removeAll()
         extras.removeAll()
@@ -284,7 +365,9 @@ struct SceneModifier<Base: Scene>: Scene, PrimitiveScene {
         let key: String
         if let id = spec.id, spec.kind != .group { key = id } else { counter += 1; key = (spec.id ?? "window") + "#\(counter)" }
         if let w = open[key] { w.window.show(); return }
-        let host = WindowHost(title: spec.title, view: spec.content(), size: spec.defaultSize, sizedToContent: spec.resizability == .contentSize)
+        let profile = spec.kind == .group || spec.kind == .single ? mobileProfile : nil
+        let host = WindowHost(title: spec.title, view: spec.content(), size: spec.defaultSize ?? profile?.size,
+                              sizedToContent: spec.resizability == .contentSize, environment: profile?.environment ?? EnvironmentValues())
         host.onClose = { [weak self] in
             self?.open[key] = nil
             // An app with status items lives on without windows.
@@ -355,22 +438,30 @@ struct SceneModifier<Base: Scene>: Scene, PrimitiveScene {
 @MainActor final class Presentation {
     var content: () -> AnyView
     var onDismiss: () -> Void
+    var environment: EnvironmentValues
     let title: String
     private var windowHost: WindowHost?
-    init(title: String, content: @escaping () -> AnyView, onDismiss: @escaping () -> Void) {
-        self.title = title; self.content = content; self.onDismiss = onDismiss
+    init(title: String, environment: EnvironmentValues, content: @escaping () -> AnyView, onDismiss: @escaping () -> Void) {
+        self.title = title
+        self.environment = environment
+        self.content = content
+        self.onDismiss = onDismiss
     }
     func update(_ other: Presentation) {
+        environment = other.environment
         content = other.content
         onDismiss = other.onDismiss
+        windowHost?.host.baseEnvironment = presentationEnvironment
         windowHost?.host.setRoot(content())
     }
-    func open(parent: NativeWindow?) {
-        var env = EnvironmentValues()
-        let dismiss = onDismiss
-        env.dismiss = DismissAction { dismiss() }
+    private var presentationEnvironment: EnvironmentValues {
+        var env = environment
+        env.dismiss = DismissAction { [weak self] in self?.onDismiss() }
         env.isPresented = true
-        let w = WindowHost(title: title, view: content(), size: nil, sizedToContent: true, parent: parent, modal: true, environment: env)
+        return env
+    }
+    func open(parent: NativeWindow?) {
+        let w = WindowHost(title: title, view: content(), size: nil, sizedToContent: true, parent: parent, modal: true, environment: presentationEnvironment)
         w.onClose = { [weak self] in
             guard let self, self.windowHost != nil else { return }
             self.windowHost = nil
@@ -390,7 +481,7 @@ extension View {
     public func sheet<Content: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
         nodes("sheet") { ns, ctx in
             if isPresented.wrappedValue, !ctx.dryRun {
-                ctx.host.present(ctx.path, Presentation(title: "", content: { AnyView(content()) }, onDismiss: {
+                ctx.host.present(ctx.path, Presentation(title: "", environment: ctx.env, content: { AnyView(content()) }, onDismiss: {
                     if isPresented.wrappedValue { isPresented.wrappedValue = false }
                     onDismiss?()
                 }))
@@ -402,7 +493,7 @@ extension View {
     public func sheet<Item: Identifiable, Content: View>(item: Binding<Item?>, onDismiss: (() -> Void)? = nil, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
         nodes("sheet") { ns, ctx in
             if let value = item.wrappedValue, !ctx.dryRun {
-                ctx.host.present(ctx.path + "=\(value.id)", Presentation(title: "", content: { AnyView(content(value)) }, onDismiss: {
+                ctx.host.present(ctx.path + "=\(value.id)", Presentation(title: "", environment: ctx.env, content: { AnyView(content(value)) }, onDismiss: {
                     if item.wrappedValue != nil { item.wrappedValue = nil }
                     onDismiss?()
                 }))
@@ -440,6 +531,13 @@ extension View {
     }
     public func confirmationDialog<A: View>(_ title: LocalizedStringKey, isPresented: Binding<Bool>, titleVisibility: Visibility = .automatic, @ViewBuilder actions: @escaping () -> A) -> some View {
         alert(title.string, isPresented: isPresented, actions: actions)
+    }
+    public func confirmationDialog<T, A: View>(_ title: String, isPresented: Binding<Bool>, titleVisibility: Visibility = .automatic, presenting data: T?, @ViewBuilder actions: @escaping (T) -> A) -> some View {
+        confirmationDialog(title, isPresented: isPresented, titleVisibility: titleVisibility, presenting: data, actions: actions, message: { _ in EmptyView() })
+    }
+    public func confirmationDialog<T, A: View, M: View>(_ title: String, isPresented: Binding<Bool>, titleVisibility: Visibility = .automatic, presenting data: T?, @ViewBuilder actions: @escaping (T) -> A, @ViewBuilder message: @escaping (T) -> M) -> some View {
+        let presenting = Binding(get: { isPresented.wrappedValue && data != nil }, set: { isPresented.wrappedValue = $0 })
+        return alert(titleVisibility == .hidden ? "" : title, isPresented: presenting, presenting: data, actions: actions, message: message)
     }
     /// The system's open dialog, for files of the given types (folders when `.folder` is among them).
     public func fileImporter(isPresented: Binding<Bool>, allowedContentTypes: [UTType], allowsMultipleSelection: Bool, onCompletion: @escaping (Result<[URL], Error>) -> Void) -> some View {
@@ -485,7 +583,7 @@ struct AlertBody: View {
     let isPresented: Binding<Bool>
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
+            if !title.isEmpty { Text(title).font(.headline) }
             message.font(.system(size: 12)).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Spacer()
@@ -596,6 +694,8 @@ extension NSColor {
 }
 
 extension Image {
+    public init(uiImage: UIImage) { self.init(nsImage: uiImage.platformImage) }
+
     public init(nsImage: NSImage) {
         switch nsImage.imageSource {
         case let .pixels(w, h, px): self.init(width: w, height: h, rgba: px)

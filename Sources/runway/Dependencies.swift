@@ -15,6 +15,7 @@
 
 import Foundation
 import RunwayImport
+import RunwayTranspiler
 
 struct ResolvedPackage {
     var identity: String
@@ -30,6 +31,7 @@ struct DependencyGraph {
     let root: URL
     /// Where staged dependencies go: <app stage>/Dependencies/<identity>.
     let stageDir: URL
+    let iosPreview: IOSPreview?
     var pins: [String: Pin]
     var resolved: [String: ResolvedPackage] = [:]
     var failed: [String: String] = [:]
@@ -37,10 +39,11 @@ struct DependencyGraph {
     var declarations: [String: PlanDependency] = [:]
     private var inProgress: Set<String> = []
 
-    init(root: URL, appStage: URL, pins: [String: Pin]) {
+    init(root: URL, appStage: URL, pins: [String: Pin], iosPreview: IOSPreview? = nil) {
         self.root = root
         self.stageDir = appStage.appendingPathComponent("Dependencies")
         self.pins = pins
+        self.iosPreview = iosPreview
     }
 
     var checkouts: URL { root.appendingPathComponent(".runway/deps/checkouts") }
@@ -207,7 +210,7 @@ struct DependencyGraph {
             }
             sub.dependencies = sub.dependencies.filter { subPaths[$0.identity] != nil || resolved[$0.identity.lowercased()]?.mode == .sharedWithRunway }
             do {
-                _ = try stagePlan(sub, at: target, root: root, dependencies: subPaths)
+                _ = try stagePlan(sub, at: target, root: root, dependencies: subPaths, iosPreview: iosPreview)
                 r.path = target
                 r.mode = shimDir != nil ? .shim : .staged
             } catch {
@@ -238,6 +241,7 @@ struct DependencyGraph {
             if !t.standInHeaders.isEmpty { return true }
             for f in t.sources {
                 guard let s = try? readSource(f.origin) else { continue }
+                if let iosPreview, iosPreview.rewriteConditions(in: s) != s { return true }
                 // Optional system modules (`#if canImport(os) import os`) don't make a package Mac-only.
                 if !runwayImports(in: s, local: local, skippingGuarded: ["Darwin", "os", "OSLog", "Combine", "Dispatch", "Compression", "CommonCrypto", "CryptoKit", "System"]).isEmpty { return true }
                 if (s.contains("URLSession") || s.contains("URLRequest")) && !s.contains("FoundationNetworking") { return true }

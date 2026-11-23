@@ -65,14 +65,16 @@ public struct EnvironmentValues: @unchecked Sendable {
     public var multilineTextAlignment: TextAlignment { get { self[AlignmentKey.self] } set { self[AlignmentKey.self] = newValue } }
     public var isScrollEnabled: Bool { get { self[ScrollEnabledKey.self] } set { self[ScrollEnabledKey.self] = newValue } }
     public var locale: Locale { get { self[LocaleKey.self] } set { self[LocaleKey.self] = newValue } }
+    public var calendar: Calendar { get { self[CalendarKey.self] } set { self[CalendarKey.self] = newValue } }
+    public var timeZone: TimeZone { get { self[TimeZoneKey.self] } set { self[TimeZoneKey.self] = newValue } }
     public var dismiss: DismissAction { get { self[DismissKey.self] } set { self[DismissKey.self] = newValue } }
     public var openURL: OpenURLAction { get { self[OpenURLKey.self] } set { self[OpenURLKey.self] = newValue } }
     public var openWindow: OpenWindowAction { OpenWindowAction() }
     public var dismissWindow: DismissWindowAction { DismissWindowAction() }
     public var isPresented: Bool { get { self[PresentedKey.self] } set { self[PresentedKey.self] = newValue } }
     public var displayScale: CGFloat { get { self[DisplayScaleKey.self] } set { self[DisplayScaleKey.self] = newValue } }
-    public var horizontalSizeClass: UserInterfaceSizeClass? { .regular }
-    public var verticalSizeClass: UserInterfaceSizeClass? { .regular }
+    public var horizontalSizeClass: UserInterfaceSizeClass? { get { self[HorizontalSizeClassKey.self] } set { self[HorizontalSizeClassKey.self] = newValue } }
+    public var verticalSizeClass: UserInterfaceSizeClass? { get { self[VerticalSizeClassKey.self] } set { self[VerticalSizeClassKey.self] = newValue } }
     public var layoutDirection: LayoutDirection { get { self[LayoutDirectionKey.self] } set { self[LayoutDirectionKey.self] = newValue } }
     public var undoManager: AnyObject? { nil }
     public var scenePhase: ScenePhase { get { self[ScenePhaseKey.self] } set { self[ScenePhaseKey.self] = newValue } }
@@ -132,10 +134,14 @@ struct TruncationKey: EnvironmentKey { static var defaultValue: Text.TruncationM
 struct AlignmentKey: EnvironmentKey { static var defaultValue: TextAlignment { .leading } }
 struct ScrollEnabledKey: EnvironmentKey { static var defaultValue: Bool { true } }
 struct LocaleKey: EnvironmentKey { static var defaultValue: Locale { .current } }
+struct CalendarKey: EnvironmentKey { static var defaultValue: Calendar { .current } }
+struct TimeZoneKey: EnvironmentKey { static var defaultValue: TimeZone { .current } }
 struct DismissKey: EnvironmentKey { static var defaultValue: DismissAction { DismissAction(nil) } }
 struct OpenURLKey: EnvironmentKey { static var defaultValue: OpenURLAction { OpenURLAction(handler: nil) } }
 struct PresentedKey: EnvironmentKey { static var defaultValue: Bool { false } }
 struct DisplayScaleKey: EnvironmentKey { static var defaultValue: CGFloat { 1 } }
+struct HorizontalSizeClassKey: EnvironmentKey { static var defaultValue: UserInterfaceSizeClass? { .regular } }
+struct VerticalSizeClassKey: EnvironmentKey { static var defaultValue: UserInterfaceSizeClass? { .regular } }
 struct LayoutDirectionKey: EnvironmentKey { static var defaultValue: LayoutDirection { .leftToRight } }
 struct ScenePhaseKey: EnvironmentKey { static var defaultValue: ScenePhase { .active } }
 struct ForegroundKey: EnvironmentKey { static var defaultValue: AnyShapeStyle? { nil } }

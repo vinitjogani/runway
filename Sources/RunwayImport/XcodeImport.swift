@@ -10,7 +10,11 @@ import Foundation
 public struct XcodeImportOptions {
     /// The app target to build (`--target`); otherwise the project's main app.
     public var target: String?
-    public init(target: String? = nil) { self.target = target }
+    public var platform: XcodePlatform?
+    public init(target: String? = nil, platform: XcodePlatform? = nil) {
+        self.target = target
+        self.platform = platform
+    }
 }
 
 /// Upcoming features Swift 6 turns on by default (enabling them again in
@@ -52,6 +56,7 @@ public struct XcodeImporter {
     public var debugConfig: String
     /// Package.resolved pins (the workspace's or the project's).
     public var pins: [String: Pin] = [:]
+    private var selectedPlatform: XcodePlatform?
 
     public init(_ project: XcodeProject, pins: [String: Pin] = [:]) {
         self.project = project
@@ -63,7 +68,11 @@ public struct XcodeImporter {
 
     /// The build settings of `target` in `config`: Xcode's defaults, then the
     /// project's levels, then the target's.
-    public func settings(_ target: XcodeTarget, _ config: String) -> BuildSettings {
+    public func settings(_ target: XcodeTarget, _ config: String, for platform: XcodePlatform? = nil) -> BuildSettings {
+        settings(target, config, platform: platform ?? self.platform(for: target), includePlatformDefaults: true)
+    }
+
+    private func settings(_ target: XcodeTarget, _ config: String, platform: XcodePlatform, includePlatformDefaults: Bool) -> BuildSettings {
         let root = project.sourceRoot.path
         var defaults: [SettingAssignment] = [
             .init(key: "TARGET_NAME", value: target.name),
@@ -72,54 +81,98 @@ public struct XcodeImporter {
             .init(key: "PROJECT_DIR", value: root), .init(key: "SRCROOT", value: root), .init(key: "SOURCE_ROOT", value: root),
             .init(key: "PROJECT_FILE_PATH", value: project.file.path),
             .init(key: "CONFIGURATION", value: config),
-            .init(key: "PLATFORM_NAME", value: "macosx"), .init(key: "SDKROOT", value: "macosx"),
-            .init(key: "EFFECTIVE_PLATFORM_NAME", value: ""),
+            .init(key: "PLATFORM_NAME", value: platform.sdk),
+            .init(key: "EFFECTIVE_PLATFORM_NAME", value: platform == .macOS ? "" : "-\(platform.sdk)"),
             .init(key: "PRODUCT_NAME", value: "$(TARGET_NAME)"),
             .init(key: "PRODUCT_MODULE_NAME", value: "$(PRODUCT_NAME:c99extidentifier)"),
             .init(key: "EXECUTABLE_NAME", value: "$(PRODUCT_NAME)"),
             .init(key: "DEVELOPMENT_LANGUAGE", value: project.developmentRegion ?? "en"),
             .init(key: "CURRENT_ARCH", value: "arm64"), .init(key: "ARCHS", value: "arm64"),
-            .init(key: "MACOSX_DEPLOYMENT_TARGET", value: "13.0"),
             .init(key: "SWIFT_ACTIVE_COMPILATION_CONDITIONS", value: ""),
             .init(key: "PRODUCT_BUNDLE_PACKAGE_TYPE", value: target.role == .library ? "FMWK" : target.role == .test ? "BNDL" : "APPL"),
         ]
         defaults.append(.init(key: "BUILT_PRODUCTS_DIR", value: project.sourceRoot.appendingPathComponent("build").path))
-        return BuildSettings(stack: defaults + (project.settings[config] ?? []) + (target.settings[config] ?? []), context: SettingContext(configuration: config))
+        if includePlatformDefaults && platform == .macOS {
+            defaults.append(.init(key: "SDKROOT", value: platform.sdk))
+            defaults.append(.init(key: "MACOSX_DEPLOYMENT_TARGET", value: "13.0"))
+        }
+        var stack = defaults + (project.settings[config] ?? []) + (target.settings[config] ?? [])
+        if includePlatformDefaults && platform == .iOS { stack.append(.init(key: "SDKROOT", value: platform.sdk)) }
+        var context = SettingContext(configuration: config)
+        context.sdk = platform.sdk
+        return BuildSettings(stack: stack, context: context)
     }
 
     /// Targets built for macOS (multi-platform ones included).
     public func isMacTarget(_ t: XcodeTarget) -> Bool {
-        let s = settings(t, releaseConfig)
-        let sdk = s.string("SDKROOT").lowercased()
-        let supported = s.string("SUPPORTED_PLATFORMS").lowercased()
-        if !supported.isEmpty { return supported.contains("macosx") }
-        if ["iphoneos", "appletvos", "watchos", "xros", "driverkit"].contains(where: { sdk.contains($0) }) { return false }
-        return true
+        supports(t, on: .macOS)
     }
 
-    /// The app `runway build` builds: the one asked for, else the macOS app
-    /// no other target embeds, named like the project if several.
+    func supports(_ target: XcodeTarget, on platform: XcodePlatform) -> Bool {
+        if let supported = declaredSupport(target, on: platform) { return supported }
+        return platform == .macOS && declaredSupport(target, on: .iOS) != true
+    }
+
+    private func platform(for target: XcodeTarget) -> XcodePlatform {
+        if let selectedPlatform { return selectedPlatform }
+        return !supports(target, on: .macOS) && supports(target, on: .iOS) ? .iOS : .macOS
+    }
+
+    private func isPlatformUnspecified(_ target: XcodeTarget) -> Bool {
+        declaredSupport(target, on: .macOS) == nil && declaredSupport(target, on: .iOS) == nil
+    }
+
+    /// Nil means the target does not declare a platform in this configuration.
+    private func declaredSupport(_ target: XcodeTarget, on platform: XcodePlatform) -> Bool? {
+        let s = settings(target, releaseConfig, platform: platform, includePlatformDefaults: false)
+        let supported = s.list("SUPPORTED_PLATFORMS")
+        if !supported.isEmpty { return supported.contains(where: platform.matchesSDK) }
+        let sdk = (s.string("SDKROOT").lowercased() as NSString).lastPathComponent
+        if XcodePlatform.macOS.matchesSDK(sdk) || XcodePlatform.iOS.matchesSDK(sdk) { return platform.matchesSDK(sdk) }
+        if ["appletv", "watch", "xros", "xrsimulator", "driverkit"].contains(where: { sdk.hasPrefix($0) }) { return false }
+        let ios = !s.string("IPHONEOS_DEPLOYMENT_TARGET").isEmpty
+        let mac = !s.string("MACOSX_DEPLOYMENT_TARGET").isEmpty
+        return ios == mac ? nil : (platform == .iOS ? ios : mac)
+    }
+
+    /// The app `runway build` builds: the one asked for, else the main app
+    /// for the chosen platform (macOS preferred when both exist).
     public func mainApp(_ requested: String?) throws -> XcodeTarget {
-        if let r = requested {
-            guard let t = project.targets.first(where: { $0.name == r || moduleName(of: $0) == r }) else {
-                throw ImportError("no target \(r) in \(project.file.lastPathComponent); targets: \(project.targets.map(\.name).joined(separator: ", "))")
-            }
-            return t
-        }
-        let apps = project.targets.filter { $0.role == .app && isMacTarget($0) }
-        let embedded = Set(project.targets.flatMap(\.embeds))
-        let candidates = apps.filter { !embedded.contains($0.name) }
-        let pool = candidates.isEmpty ? apps : candidates
-        if let named = pool.first(where: { $0.name == project.name }) { return named }
-        if let best = pool.max(by: { $0.sources.count < $1.sources.count }) { return best }
-        // No app: a tool or a framework project.
-        if let tool = project.targets.first(where: { $0.role == .tool && isMacTarget($0) }) { return tool }
-        if let lib = project.targets.first(where: { $0.role == .library && isMacTarget($0) }) { return lib }
-        throw ImportError("\(project.file.lastPathComponent) has no macOS app, tool or framework target (targets: \(project.targets.map { "\($0.name) [\($0.productType)]" }.joined(separator: ", ")))")
+        try selectTarget(options: .init(target: requested)).target
     }
 
-    public func moduleName(of t: XcodeTarget) -> String {
-        let s = settings(t, releaseConfig)
+    private func selectTarget(options: XcodeImportOptions) throws -> (target: XcodeTarget, platform: XcodePlatform) {
+        let platforms = options.platform.map { [$0] } ?? [.macOS, .iOS]
+        if let requested = options.target {
+            let target = project.target(named: requested) ?? project.targets.first { t in
+                platforms.contains { moduleName(of: t, for: $0) == requested }
+            }
+            guard let target else {
+                throw ImportError("no target \(requested) in \(project.file.lastPathComponent); targets: \(project.targets.map(\.name).joined(separator: ", "))")
+            }
+            if let platform = platforms.first(where: { supports(target, on: $0) }) { return (target, platform) }
+            if let platform = options.platform, isPlatformUnspecified(target) { return (target, platform) }
+            throw ImportError("target \(target.name) does not support \(platforms.map(\.name).joined(separator: " or "))")
+        }
+        let embedded = Set(project.targets.flatMap(\.embeds))
+        for role in [XcodeTarget.Role.app, .tool, .library] {
+            for platform in platforms {
+                var candidates = project.targets.filter { $0.role == role && supports($0, on: platform) }
+                if candidates.isEmpty && options.platform != nil {
+                    candidates = project.targets.filter { $0.role == role && isPlatformUnspecified($0) }
+                }
+                if role != .app, let target = candidates.first { return (target, platform) }
+                let standalone = candidates.filter { !embedded.contains($0.name) }
+                let pool = standalone.isEmpty ? candidates : standalone
+                if let named = pool.first(where: { $0.name == project.name }) { return (named, platform) }
+                if let best = pool.max(by: { $0.sources.count < $1.sources.count }) { return (best, platform) }
+            }
+        }
+        throw ImportError("\(project.file.lastPathComponent) has no \(platforms.map(\.name).joined(separator: " or ")) app, tool or framework target (targets: \(project.targets.map { "\($0.name) [\($0.productType)]" }.joined(separator: ", ")))")
+    }
+
+    public func moduleName(of t: XcodeTarget, for platform: XcodePlatform? = nil) -> String {
+        let s = settings(t, releaseConfig, for: platform)
         let m = s.string("PRODUCT_MODULE_NAME")
         return c99Name(m.isEmpty ? t.name : m)
     }
@@ -127,6 +180,8 @@ public struct XcodeImporter {
     /// The targets staged for `app`: it, what it depends on (transitively),
     /// the helper apps and tools it embeds, and unit tests of those.
     public func targetClosure(of app: XcodeTarget) -> (included: [XcodeTarget], skipped: [(String, String)]) {
+        let platform = platform(for: app)
+        func applies(_ t: XcodeTarget) -> Bool { supports(t, on: platform) || isPlatformUnspecified(t) }
         var keep: [String] = [], skipped: [(String, String)] = []
         var queue = [app.name]
         while let n = queue.first {
@@ -138,25 +193,25 @@ public struct XcodeImporter {
                 case .uiTest, .other: skipped.append((n, "\(t.productType) isn't built")); continue
                 default: break
                 }
-                if !isMacTarget(t) { skipped.append((n, "not a macOS target")); continue }
+                if !applies(t) { skipped.append((n, "does not support \(platform.name)")); continue }
             }
             keep.append(n)
             queue += t.dependencies + t.embeds
         }
-        for t in project.targets where t.role == .test && isMacTarget(t) && !keep.contains(t.name) {
+        for t in project.targets where t.role == .test && applies(t) && !keep.contains(t.name) {
             let deps = Set(t.dependencies)
-            let host = settings(t, releaseConfig).string("TEST_HOST")
+            let host = settings(t, releaseConfig, for: platform).string("TEST_HOST")
             if !deps.isDisjoint(with: keep) || host.contains("/\(app.name).app/") || host.contains("\(settings(app, releaseConfig).string("PRODUCT_NAME")).app") {
                 keep.append(t.name)
                 for d in t.dependencies where !keep.contains(d) {
-                    if let dt = project.target(named: d), dt.role == .library, isMacTarget(dt) { keep.append(d) }
+                    if let dt = project.target(named: d), dt.role == .library, applies(dt) { keep.append(d) }
                 }
             }
         }
         for t in project.targets where !keep.contains(t.name) && !skipped.contains(where: { $0.0 == t.name }) {
             let why: String
             switch t.role {
-            case _ where !isMacTarget(t): why = "not a macOS target"
+            case _ where !applies(t): why = "does not support \(platform.name)"
             case .app: why = "another app (pass --target \(t.name) to build it)"
             case .appExtension: why = "\(t.productType) (app extensions, widgets and XPC services aren't built)"
             case .uiTest: why = "UI tests aren't run"
@@ -232,6 +287,7 @@ public struct XcodeImporter {
     /// INFOPLIST_KEY_* settings generate.
     public func infoPlist(_ t: XcodeTarget, executable: String) -> (plist: [String: Any], notes: [String]) {
         let s = settings(t, releaseConfig)
+        let platform = platform(for: t)
         var notes: [String] = []
         func lookup(_ name: String) -> String { name == "EXECUTABLE_NAME" ? executable : s.string(name) }
         func expand(_ v: Any) -> Any {
@@ -242,11 +298,14 @@ public struct XcodeImporter {
         }
         var dict: [String: Any] = [:]
         let file = s.string("INFOPLIST_FILE")
+        let hasSpecInfo = project.format == .xcodegen && t.infoProperties != nil
         if !file.isEmpty {
             let url = URL(fileURLWithPath: file, relativeTo: project.sourceRoot).standardizedFileURL
             if let d = (try? readPropertyList(url)) as? [String: Any] {
                 dict = expand(d) as? [String: Any] ?? [:]
                 notes.append("Info.plist from \(relativePath(url, from: project.sourceRoot))")
+            } else if hasSpecInfo {
+                notes.append("Info.plist properties from XcodeGen spec (\(file) is generated by XcodeGen)")
             } else {
                 notes.append("INFOPLIST_FILE \(file) can't be read")
             }
@@ -261,7 +320,7 @@ public struct XcodeImporter {
             if !file.isEmpty { notes.append("Info.plist entries generated from INFOPLIST_KEY_* settings merged in") }
             else { notes.append("Info.plist generated from build settings") }
         }
-        let standard: [String: String] = [
+        var standard: [String: String] = [
             "CFBundleDevelopmentRegion": s.string("DEVELOPMENT_LANGUAGE", default: "en"),
             "CFBundleExecutable": executable,
             "CFBundleIdentifier": s.string("PRODUCT_BUNDLE_IDENTIFIER"),
@@ -270,16 +329,17 @@ public struct XcodeImporter {
             "CFBundlePackageType": s.string("PRODUCT_BUNDLE_PACKAGE_TYPE", default: "APPL"),
             "CFBundleShortVersionString": s.string("MARKETING_VERSION"),
             "CFBundleVersion": s.string("CURRENT_PROJECT_VERSION"),
-            "LSMinimumSystemVersion": s.string("MACOSX_DEPLOYMENT_TARGET"),
         ]
-        if s.bool("GENERATE_INFOPLIST_FILE") || file.isEmpty {
+        if platform == .iOS { standard["MinimumOSVersion"] = s.string("IPHONEOS_DEPLOYMENT_TARGET") }
+        else { standard["LSMinimumSystemVersion"] = s.string("MACOSX_DEPLOYMENT_TARGET") }
+        if s.bool("GENERATE_INFOPLIST_FILE") || file.isEmpty || hasSpecInfo {
             for (k, v) in standard where !v.isEmpty { generated[k] = v }
         }
         for (k, v) in t.infoProperties ?? [:] { generated[k] = expand(v) }
         // Keys in the file win, as in Xcode; generated ones fill the gaps.
         for (k, v) in generated where dict[k] == nil || (dict[k] as? String)?.isEmpty == true { dict[k] = v }
         dict["CFBundleExecutable"] = executable  // the binary on Linux is named after the module
-        for k in ["CFBundleIdentifier", "CFBundleName", "CFBundleShortVersionString", "CFBundleVersion"] where (dict[k] as? String ?? "").isEmpty {
+        for k in ["CFBundleIdentifier", "CFBundleName", "CFBundleShortVersionString", "CFBundleVersion", "MinimumOSVersion"] where (dict[k] as? String ?? "").isEmpty {
             if let v = standard[k], !v.isEmpty { dict[k] = v }
         }
         return (dict, notes)
@@ -288,10 +348,17 @@ public struct XcodeImporter {
     // MARK: The plan
 
     public func plan(options: XcodeImportOptions = .init()) throws -> Plan {
-        let app = try mainApp(options.target)
+        let (app, platform) = try selectTarget(options: options)
+        var importer = self
+        importer.selectedPlatform = platform
+        return importer.plan(app: app)
+    }
+
+    private func plan(app: XcodeTarget) -> Plan {
+        let platform = platform(for: app)
         let (included, skipped) = targetClosure(of: app)
         var notes = project.notes
-        notes.append("\(project.format.rawValue) \(project.file.lastPathComponent): building \(app.name) (\(app.productType)), \(releaseConfig)/\(debugConfig) settings")
+        notes.append("\(project.format.rawValue) \(project.file.lastPathComponent): building \(app.name) (\(app.productType)) for \(platform.name), \(releaseConfig)/\(debugConfig) settings")
         for (n, why) in skipped { notes.append("target \(n) left out: \(why)") }
 
         // Module names, unique.
@@ -471,6 +538,7 @@ public struct XcodeImporter {
                         dependencies: deps, languageModes: ["v5"], defaultLocalization: project.developmentRegion, notes: notes)
         plan.pins = pins
         plan.origin = project.format == .xcodegen ? .xcodeGen : .xcode
+        plan.xcodePlatform = platform
         return plan
     }
 

@@ -21,10 +21,12 @@ public let CBCentralManagerScanOptionAllowDuplicatesKey = "kCBScanOptionAllowDup
 public let CBCentralManagerScanOptionSolicitedServiceUUIDsKey = "kCBScanOptionSolicitedServiceUUIDs"
 public let CBCentralManagerOptionShowPowerAlertKey = "kCBInitOptionShowPowerAlert"
 public let CBCentralManagerOptionRestoreIdentifierKey = "kCBInitOptionRestoreIdentifier"
+public let CBCentralManagerRestoredStatePeripheralsKey = "kCBRestoredPeripherals"
 public let CBAdvertisementDataLocalNameKey = "kCBAdvDataLocalName"
 public let CBAdvertisementDataServiceUUIDsKey = "kCBAdvDataServiceUUIDs"
 public let CBAdvertisementDataManufacturerDataKey = "kCBAdvDataManufacturerData"
 public let CBConnectPeripheralOptionNotifyOnDisconnectionKey = "kCBConnectOptionNotifyOnDisconnection"
+public let CBConnectPeripheralOptionStartDelayKey = "kCBConnectOptionStartDelay"
 
 public let CBErrorDomain = "CBErrorDomain"
 public struct CBError: Error, Sendable {

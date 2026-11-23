@@ -28,6 +28,7 @@
 
 @_spi(Reflection) import Swift
 import Foundation
+import CoreGraphics
 import Observation
 import RunwayCore
 
@@ -85,6 +86,11 @@ final class StateBox<Value>: @unchecked Sendable {
 /// Implemented by @State, @Environment, @Bindable…: linked before a body runs.
 @MainActor protocol DynamicPropertyLink {
     func link(_ ctx: ResolveContext, key: String)
+    func linkForProbe(_ env: EnvironmentValues)
+}
+
+extension DynamicPropertyLink {
+    func linkForProbe(_ env: EnvironmentValues) {}
 }
 
 /// SwiftUI's DynamicProperty: custom ones may hold @State and friends.
@@ -317,7 +323,10 @@ final class ScopeNode: LayoutNode {
         if let r = view as? any NSViewControllerRepresentable { return r.resolveControllerRepresentable(in: ctx) }
         var ctx = ctx
         ctx.path += ":" + typeKey(V.self)
-        if ctx.dryRun { return resolve(view.body, in: ctx.child("body")) }
+        if ctx.dryRun {
+            linkTyped(view, ctx)
+            return resolve(view.body, in: ctx.child("body"))
+        }
         return resolveScope(view, ctx)
     }
 
@@ -442,7 +451,7 @@ final class ScopeNode: LayoutNode {
             for l in layout.links {
                 let v = l.load(base + l.offset)
                 if let d = v as? DynamicPropertyLink {
-                    d.link(ctx, key: ctx.path + "$" + l.label)
+                    linkProperty(d, ctx, label: l.label)
                 } else {
                     link(v, ctx.child(l.label))
                 }
@@ -453,10 +462,20 @@ final class ScopeNode: LayoutNode {
     private func linkMirror(_ value: Any, _ ctx: ResolveContext) {
         for (i, child) in Mirror(reflecting: value).children.enumerated() {
             if let d = child.value as? DynamicPropertyLink {
-                d.link(ctx, key: ctx.path + "$" + (child.label ?? "\(i)"))
+                linkProperty(d, ctx, label: child.label ?? "\(i)")
             } else if child.value is DynamicProperty {
                 link(child.value, ctx.child(child.label ?? "\(i)"))
             }
+        }
+    }
+
+    private func linkProperty(_ property: DynamicPropertyLink, _ ctx: ResolveContext, label: String) {
+        if ctx.dryRun {
+            // Labels and menu items can read the environment when inspected.
+            // The probe does not own persistent state or object subscriptions.
+            property.linkForProbe(ctx.env)
+        } else {
+            property.link(ctx, key: ctx.path + "$" + label)
         }
     }
 
@@ -830,6 +849,7 @@ struct UncheckedScopeRef: @unchecked Sendable {
     let backend: Backend
     weak var host: ViewHost?
     var offset: CGPoint = .zero
+    var drawingTransform: CGAffineTransform = .identity
     var items: [(NativeWidget, CGRect)] = []
     init(container: NativeWidget, backend: Backend, host: ViewHost? = nil) { self.container = container; self.backend = backend; self.host = host }
 

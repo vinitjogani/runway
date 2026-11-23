@@ -426,6 +426,7 @@ import CRunwayWin32
         if p.bordered { bezel(r, m.radius, face: theme.buttonFace, pressed: pressed) }
         else if pressed { fill(r, m.radius, theme.buttonPressed) }
         else if window.hovered === w { fill(r, m.radius, theme.hoverFill) }
+        if p.hasContent { return }
         let chevronX = r.maxX - 10
         if p.title.isEmpty, case let .symbol(name) = p.image {
             let glyph = w.label
@@ -578,10 +579,11 @@ import CRunwayWin32
                         }
                     }
                 }
-            case let .stroke(shape, paint, width, dash):
+            case let .stroke(shape, paint, style):
                 if setPaint(paint, shape.bounds) {
+                    let dash = style.dashLengths
                     if !dash.isEmpty { var d = dash.map { Float($0) }; rw_draw_set_dash(n, &d, Int32(d.count)) }
-                    drawShape(w, i, shape, fill: false, width: width)
+                    drawShape(w, i, shape, fill: false, width: style.lineWidth)
                     if !dash.isEmpty { rw_draw_set_dash(n, nil, 0) }
                 }
             case let .image(source, rect):

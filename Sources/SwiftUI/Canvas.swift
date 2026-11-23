@@ -20,6 +20,7 @@ public struct GraphicsContext {
 
     public struct Shading {
         let paint: @MainActor (EnvironmentValues) -> Paint
+        var paintForPath: (@MainActor (EnvironmentValues, CGRect) -> Paint)?
         public static func color(_ color: Color) -> Shading { Shading { color.resolvePaint($0, role: .fill) } }
         public static func color(red: Double, green: Double, blue: Double, opacity: Double = 1) -> Shading {
             .color(Color(red: red, green: green, blue: blue, opacity: opacity))
@@ -28,6 +29,26 @@ public struct GraphicsContext {
         public static var foreground: Shading { Shading { $0._foreground?.resolvePaint($0, role: .foreground) ?? Color.primary.resolvePaint($0, role: .fill) } }
         public static func linearGradient(_ gradient: Gradient, startPoint: CGPoint, endPoint: CGPoint, options: GradientOptions = []) -> Shading {
             Shading { env in AnyShapeStyle(LinearGradient(gradient: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)).resolvePaint(env, role: .fill) }
+        }
+        public static func conicGradient(_ gradient: Gradient, center: CGPoint, angle: Angle = .zero, options: GradientOptions = []) -> Shading {
+            var shading = Shading.color(gradient.stops.first?.color ?? .clear)
+            let stops = gradient.stops.sorted { $0.location < $1.location }
+            shading.paintForPath = { env, bounds in
+                guard let first = stops.first, let last = stops.last else { return .color(.clear) }
+                // The desktop drawing backends do not have a conic paint.
+                // Sample at the centre of each path to preserve the angular
+                // colouring of small repeated marks in a Canvas.
+                let turns = (atan2(bounds.midY - center.y, bounds.midX - center.x) - angle.radians) / (2 * .pi)
+                let fraction = turns - floor(turns)
+                if fraction <= first.location { return .color(first.color.resolve(env)) }
+                guard let upper = stops.firstIndex(where: { $0.location > fraction }) else { return .color(last.color.resolve(env)) }
+                let a = stops[upper - 1], b = stops[upper]
+                let mix = (fraction - a.location) / (b.location - a.location)
+                let from = a.color.resolve(env), to = b.color.resolve(env)
+                func lerp(_ x: Double, _ y: Double) -> Double { x + (y - x) * mix }
+                return .color(RGBA(lerp(from.r, to.r), lerp(from.g, to.g), lerp(from.b, to.b), lerp(from.a, to.a)))
+            }
+            return shading
         }
     }
 
@@ -97,26 +118,20 @@ public struct GraphicsContext {
     // MARK: Drawing
 
     private func mapped(_ path: Path) -> ShapePath {
-        if transform.isIdentity { return path.shapePath }
-        var p = Path()
-        for e in path.shapePath.flattenedElements {
-            switch e {
-            case .move(let a): p.move(to: a.applying(transform))
-            case .line(let a): p.addLine(to: a.applying(transform))
-            case .quad(let a, let c): p.addQuadCurve(to: a.applying(transform), control: c.applying(transform))
-            case .curve(let a, let c1, let c2): p.addCurve(to: a.applying(transform), control1: c1.applying(transform), control2: c2.applying(transform))
-            case .close: p.closeSubpath()
-            }
-        }
-        return p.shapePath
+        path.applying(transform).shapePath
     }
 
     @preconcurrency @MainActor public func fill(_ path: Path, with shading: Shading, style: FillStyle = FillStyle()) {
-        recorder.commands.append(.fill(mapped(path), shading.paint(env).multiplyingAlpha(opacity)))
+        recorder.commands.append(.fill(mapped(path), paint(shading, path)))
     }
 
     @preconcurrency @MainActor public func stroke(_ path: Path, with shading: Shading, style: StrokeStyle) {
-        recorder.commands.append(.stroke(mapped(path), shading.paint(env).multiplyingAlpha(opacity), lineWidth: style.lineWidth, dash: style.dash))
+        recorder.commands.append(.stroke(mapped(path), paint(shading, path), style: style.drawingStyle))
+    }
+
+    @MainActor private func paint(_ shading: Shading, _ path: Path) -> Paint {
+        let paint = shading.paintForPath?(env, path.boundingRect) ?? shading.paint(env)
+        return paint.multiplyingAlpha(opacity)
     }
 
     @preconcurrency @MainActor public func stroke(_ path: Path, with shading: Shading, lineWidth: CGFloat = 1) {
