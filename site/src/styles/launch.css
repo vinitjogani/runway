@@ -1,0 +1,1449 @@
+/*
+ * The hero's launch sequence: one SwiftUI source, `runway run`, a paper plane
+ * to a Linux window; then `--platform ios`, a plane to an iPhone preview.
+ *
+ * Everything inside the stage is sized in container units (cqi), so the
+ * whole scene scales like a video and records cleanly for social cards.
+ * Every element's resting style is its final frame: with motion off the
+ * scene simply shows both apps running. The loop lives in motion's media
+ * query at the end of this file.
+ */
+
+.launch {
+  --launch-loop: 13s;
+  --launch-ink: var(--color-text);
+  --launch-muted: var(--color-text-muted);
+  --launch-line: var(--color-border);
+  --launch-surface: var(--color-bg-elevated);
+  --launch-wash: var(--color-bg-muted);
+  --launch-bezel: #191817;
+  --launch-ios-bg: #f2f2f7;
+  --launch-ios-card: #ffffff;
+  --launch-ios-tint: #c4530f;
+
+  container-type: inline-size;
+  max-inline-size: var(--landing-mock-width);
+  margin: var(--space-12) auto 0;
+  text-align: start;
+}
+
+:root[data-theme='dark'] .launch {
+  --launch-bezel: #000000;
+  --launch-ios-bg: #0b0b0c;
+  --launch-ios-card: #1c1c1e;
+  --launch-ios-tint: #f79e75;
+}
+
+.launch__stage {
+  position: relative;
+  aspect-ratio: 100 / 62;
+  font-family: var(--landing-font);
+}
+
+/* ---- Source card ----------------------------------------------------------- */
+
+.launch__source {
+  position: absolute;
+  inset-inline-start: 3cqi;
+  inset-block-start: 0;
+  inline-size: 31cqi;
+  padding: 1.4cqi 1.8cqi 4.5cqi;
+  border-radius: 1.4cqi;
+  background: var(--launch-surface);
+  box-shadow: var(--shadow-card), var(--landing-float-shadow);
+  color: var(--launch-muted);
+  font-family: var(--font-mono);
+  font-size: 1.15cqi;
+  line-height: 1.7;
+  rotate: -2deg;
+}
+
+.launch__file {
+  display: flex;
+  align-items: center;
+  gap: 0.6cqi;
+  margin: 0 0 0.8cqi;
+  color: var(--launch-ink);
+  font-size: 1.05cqi;
+  font-weight: var(--weight-medium);
+}
+
+.launch__file::before {
+  content: '';
+  inline-size: 0.9cqi;
+  block-size: 0.9cqi;
+  border-radius: 0.25cqi;
+  background: var(--brand-gradient);
+}
+
+.launch__source pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre;
+}
+
+.launch__kw {
+  color: var(--color-accent-text);
+}
+
+/* ---- Terminal ---------------------------------------------------------------- */
+
+.launch__term {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 15.5cqi;
+  inline-size: 41cqi;
+  overflow: hidden;
+  border-radius: 1.4cqi;
+  background: var(--landing-panel-inset);
+  box-shadow: 0 0 0 1px var(--landing-panel-line), var(--landing-panel-shadow);
+  color: var(--landing-panel-text);
+  font-family: var(--font-mono);
+  font-size: 1.32cqi;
+  line-height: 2;
+}
+
+.launch__term-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6cqi;
+  padding: 0.9cqi 1.4cqi;
+  border-block-end: 1px solid var(--landing-panel-line);
+  color: var(--landing-panel-muted);
+  font-size: 0.95cqi;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.launch__term-bar i {
+  inline-size: 0.85cqi;
+  block-size: 0.85cqi;
+  border-radius: 50%;
+  background: var(--landing-panel-line);
+}
+
+.launch__term-bar span {
+  margin-inline-start: 0.8cqi;
+}
+
+.launch__term-body {
+  padding: 1.2cqi 1.6cqi 1.6cqi;
+}
+
+.launch__term-body p {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.launch__prompt {
+  margin-inline-end: 1ch;
+  color: var(--landing-panel-accent);
+}
+
+.launch__type {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.launch__flag {
+  color: var(--landing-panel-accent);
+}
+
+.launch__log {
+  color: var(--landing-panel-muted);
+}
+
+.launch__log b {
+  color: var(--landing-panel-ok);
+  font-weight: inherit;
+}
+
+.launch__caret {
+  display: inline-block;
+  inline-size: 0.6em;
+  block-size: 1.1em;
+  margin-inline-start: 0.2ch;
+  vertical-align: -0.15em;
+  background: var(--landing-panel-text);
+  opacity: 0;
+}
+
+/* ---- Targets: where each platform stands --------------------------------- */
+
+.launch__targets {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 45cqi;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8cqi;
+  inline-size: 41cqi;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 1.1cqi;
+  list-style: none;
+}
+
+.launch__target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6cqi;
+  padding: 0.5cqi 1.1cqi;
+  border-radius: var(--radius-full);
+  background: var(--launch-surface);
+  box-shadow: 0 0 0 1px var(--launch-line);
+  color: var(--launch-ink);
+}
+
+.launch__target::before {
+  content: '';
+  inline-size: 0.8cqi;
+  block-size: 0.8cqi;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.launch__target em {
+  color: var(--launch-muted);
+  font-style: normal;
+}
+
+.launch__target--ios::before {
+  background: var(--color-accent);
+}
+
+.launch__target--next {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--launch-line) inset;
+  color: var(--launch-muted);
+}
+
+.launch__target--next::before {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--color-text-faint) inset;
+}
+
+/* ---- Linux window -------------------------------------------------------- */
+
+.launch__win {
+  position: absolute;
+  inset-inline-start: 39cqi;
+  inset-block-start: 3cqi;
+  display: grid;
+  grid-template-columns: 12cqi 1fr;
+  grid-template-rows: auto 1fr;
+  inline-size: 45cqi;
+  block-size: 33cqi;
+  overflow: hidden;
+  border-radius: 1.3cqi;
+  background: var(--launch-surface);
+  box-shadow: var(--shadow-card), var(--landing-mock-shadow), 0 30px 60px -36px rgb(25 24 23 / 0.45);
+  transform-origin: 20% 40%;
+}
+
+.launch__win-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.6cqi;
+  padding: 1cqi 1.3cqi;
+  border-block-end: 1px solid var(--color-divider);
+  color: var(--launch-muted);
+  font-size: 1.05cqi;
+}
+
+.launch__win-bar i {
+  inline-size: 0.95cqi;
+  block-size: 0.95cqi;
+  border-radius: 50%;
+  background: #ff5f57;
+}
+
+.launch__win-bar i:nth-child(2) {
+  background: #febc2e;
+}
+
+.launch__win-bar i:nth-child(3) {
+  background: #28c840;
+}
+
+.launch__win-bar span {
+  flex: 1;
+  margin-inline-end: 4cqi;
+  text-align: center;
+}
+
+.launch__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5cqi;
+  padding: 1.2cqi 0.9cqi;
+  background: var(--color-sidebar);
+  border-inline-end: 1px solid var(--color-sidebar-divider);
+  color: var(--color-text-secondary);
+  font-size: 1.05cqi;
+}
+
+.launch__side span {
+  padding: 0.4cqi 0.8cqi;
+  border-radius: 0.6cqi;
+}
+
+.launch__side .is-on {
+  background: var(--color-sidebar-selected);
+  color: var(--launch-ink);
+  font-weight: var(--weight-medium);
+}
+
+.launch__doc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9cqi;
+  padding: 2cqi 2.4cqi;
+  color: var(--launch-ink);
+  font-size: 1.15cqi;
+}
+
+.launch__doc h3 {
+  margin: 0 0 0.4cqi;
+  font-size: 2.1cqi;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.launch__todo {
+  display: flex;
+  align-items: center;
+  gap: 0.8cqi;
+}
+
+.launch__todo::before {
+  content: '';
+  flex: none;
+  inline-size: 1.1cqi;
+  block-size: 1.1cqi;
+  border-radius: 0.3cqi;
+  box-shadow: 0 0 0 1px var(--color-text-faint) inset;
+}
+
+.launch__todo--done {
+  color: var(--launch-muted);
+  text-decoration: line-through;
+}
+
+.launch__todo--done::before {
+  background: var(--color-accent);
+  box-shadow: none;
+}
+
+.launch__bar {
+  block-size: 0.8cqi;
+  border-radius: var(--radius-full);
+  background: var(--launch-wash);
+}
+
+/* ---- iPhone preview ------------------------------------------------------- */
+
+.launch__phone {
+  position: absolute;
+  inset-inline-start: 79cqi;
+  inset-block-start: 15cqi;
+  inline-size: 20cqi;
+  aspect-ratio: 402 / 874;
+  padding: 0.7cqi;
+  border-radius: 3.6cqi;
+  background: var(--launch-bezel);
+  box-shadow: 0 0 0 0.25cqi #3a3836, 0 40px 60px -30px rgb(25 24 23 / 0.6);
+  transform-origin: 50% 70%;
+}
+
+.launch__screen {
+  position: relative;
+  block-size: 100%;
+  overflow: hidden;
+  padding: 4.4cqi 1.4cqi 0;
+  border-radius: 2.9cqi;
+  background: var(--launch-ios-bg);
+  color: var(--launch-ink);
+  font-size: 1.05cqi;
+}
+
+.launch__island {
+  position: absolute;
+  inset-block-start: 0.9cqi;
+  inset-inline-start: 50%;
+  inline-size: 6cqi;
+  block-size: 1.7cqi;
+  border-radius: var(--radius-full);
+  background: #000000;
+  translate: -50% 0;
+}
+
+.launch__screen h3 {
+  margin: 0 0 1cqi;
+  font-size: 2.3cqi;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.launch__search {
+  margin-block-end: 1.2cqi;
+  padding: 0.6cqi 1cqi;
+  border-radius: 1cqi;
+  background: var(--launch-wash);
+  color: var(--color-text-faint);
+}
+
+.launch__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8cqi;
+}
+
+.launch__row {
+  display: grid;
+  gap: 0.5cqi;
+  padding: 1cqi 1.1cqi;
+  border-radius: 1.2cqi;
+  background: var(--launch-ios-card);
+}
+
+.launch__row strong {
+  font-weight: var(--weight-semibold);
+}
+
+.launch__row .launch__bar {
+  block-size: 0.6cqi;
+  inline-size: 80%;
+}
+
+.launch__tabbar {
+  position: absolute;
+  inset-inline: 1.4cqi;
+  inset-block-end: 1.4cqi;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  block-size: 4.2cqi;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--launch-ios-card) 72%, transparent);
+  box-shadow: 0 0 0 1px var(--color-glass-border), 0 0.6cqi 1.6cqi -0.6cqi rgb(25 24 23 / 0.35);
+  backdrop-filter: blur(8px) saturate(1.6);
+}
+
+.launch__tabbar i {
+  inline-size: 1.7cqi;
+  block-size: 1.7cqi;
+  border-radius: 0.5cqi;
+  background: var(--color-text-faint);
+  opacity: 0.6;
+}
+
+.launch__tabbar i:first-child {
+  background: var(--launch-ios-tint);
+  opacity: 1;
+}
+
+.launch__ios-tag {
+  position: absolute;
+  inset-inline-start: 79cqi;
+  inset-block-start: 10.8cqi;
+  display: flex;
+  justify-content: center;
+  inline-size: 20cqi;
+}
+
+.launch__ios-tag span {
+  padding: 0.35cqi 1cqi;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+  font-size: 1.05cqi;
+  white-space: nowrap;
+}
+
+/* ---- Planes -------------------------------------------------------------------- */
+
+.launch__plane {
+  position: absolute;
+  inline-size: 0;
+  block-size: 0;
+  color: var(--landing-plane);
+  opacity: 0;
+}
+
+.launch__plane-y {
+  position: absolute;
+  inset: 0;
+}
+
+/* The nose sits on the flight point; the body turns around it. */
+.launch__plane-body {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: 0;
+  display: flex;
+  align-items: center;
+  translate: 0 -50%;
+  transform-origin: 100% 50%;
+}
+
+.launch__plane-trail {
+  inline-size: 7cqi;
+  margin-inline-end: -0.5cqi;
+  border-block-start: 2px dashed var(--landing-trail);
+  mask-image: linear-gradient(to right, transparent, #000);
+}
+
+.launch__plane svg {
+  inline-size: 2.6cqi;
+  block-size: 2.6cqi;
+}
+
+.launch__plane--1 {
+  --dx: 39cqi;
+
+  inset-inline-start: 19cqi;
+  inset-block-start: 20.5cqi;
+}
+
+.launch__plane--2 {
+  --dx: 59cqi;
+
+  inset-inline-start: 29cqi;
+  inset-block-start: 31.5cqi;
+}
+
+/* ---- Narrow: the scene stacks ------------------------------------------- */
+
+@container (max-width: 560px) {
+  .launch__stage {
+    aspect-ratio: 100 / 166;
+  }
+
+  .launch__source {
+    display: none;
+  }
+
+  .launch__term {
+    inset-block-start: 0;
+    inline-size: 100%;
+    border-radius: 3cqi;
+    font-size: 3.15cqi;
+  }
+
+  .launch__term-bar {
+    gap: 1.4cqi;
+    padding: 2cqi 3.2cqi;
+    font-size: 2.3cqi;
+  }
+
+  .launch__term-bar i {
+    inline-size: 2cqi;
+    block-size: 2cqi;
+  }
+
+  .launch__term-body {
+    padding: 2.4cqi 3.6cqi 3.2cqi;
+  }
+
+  .launch__targets {
+    inset-block-start: 63cqi;
+    gap: 1.6cqi;
+    inline-size: 100%;
+    font-size: 2.7cqi;
+  }
+
+  .launch__target {
+    gap: 1.2cqi;
+    padding: 1cqi 2.4cqi;
+  }
+
+  .launch__target::before {
+    inline-size: 1.8cqi;
+    block-size: 1.8cqi;
+  }
+
+  .launch__win {
+    inset-inline-start: 0;
+    inset-block-start: 84cqi;
+    grid-template-columns: 1fr;
+    inline-size: 68cqi;
+    block-size: 56cqi;
+    border-radius: 3cqi;
+  }
+
+  .launch__win-bar {
+    gap: 1.4cqi;
+    padding: 2.2cqi 3cqi;
+    font-size: 2.6cqi;
+  }
+
+  .launch__win-bar i {
+    inline-size: 2.2cqi;
+    block-size: 2.2cqi;
+  }
+
+  .launch__side {
+    display: none;
+  }
+
+  .launch__doc {
+    gap: 2cqi;
+    padding: 4cqi 4.4cqi;
+    font-size: 2.7cqi;
+  }
+
+  .launch__doc h3 {
+    font-size: 4.4cqi;
+  }
+
+  .launch__todo {
+    gap: 1.8cqi;
+  }
+
+  .launch__todo::before {
+    inline-size: 2.6cqi;
+    block-size: 2.6cqi;
+    border-radius: 0.7cqi;
+  }
+
+  .launch__bar {
+    block-size: 1.8cqi;
+  }
+
+  .launch__phone {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    inset-block-start: 91cqi;
+    inline-size: 33cqi;
+    padding: 1.2cqi;
+    border-radius: 6cqi;
+  }
+
+  .launch__screen {
+    padding: 7.4cqi 2.2cqi 0;
+    border-radius: 4.9cqi;
+    font-size: 1.8cqi;
+  }
+
+  .launch__island {
+    inset-block-start: 1.5cqi;
+    inline-size: 10cqi;
+    block-size: 2.8cqi;
+  }
+
+  .launch__screen h3 {
+    font-size: 3.9cqi;
+  }
+
+  .launch__search {
+    padding: 1cqi 1.6cqi;
+    border-radius: 1.6cqi;
+  }
+
+  .launch__rows {
+    gap: 1.3cqi;
+  }
+
+  .launch__row {
+    gap: 0.8cqi;
+    padding: 1.6cqi 1.8cqi;
+    border-radius: 2cqi;
+  }
+
+  .launch__row .launch__bar {
+    block-size: 1cqi;
+  }
+
+  .launch__tabbar {
+    inset-inline: 2.2cqi;
+    inset-block-end: 2.2cqi;
+    block-size: 7cqi;
+  }
+
+  .launch__tabbar i {
+    inline-size: 2.8cqi;
+    block-size: 2.8cqi;
+  }
+
+  .launch__ios-tag {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    inset-block-start: 75cqi;
+    inline-size: 33cqi;
+  }
+
+  .launch__ios-tag span {
+    padding: 0.8cqi 2cqi;
+    font-size: 2.5cqi;
+  }
+
+  .launch__plane-trail {
+    inline-size: 12cqi;
+  }
+
+  .launch__plane svg {
+    inline-size: 6cqi;
+    block-size: 6cqi;
+  }
+
+  .launch__plane--1 {
+    --dx: -28cqi;
+
+    inset-inline-start: 62cqi;
+    inset-block-start: 24cqi;
+  }
+
+  .launch__plane--2 {
+    --dx: -8cqi;
+
+    inset-inline-start: 92cqi;
+    inset-block-start: 46cqi;
+  }
+}
+
+/* ---- The loop -------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .launch__stage * {
+    animation-duration: var(--launch-loop);
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+  }
+
+  .launch__type--1 {
+    animation-name: launch-type-1;
+  }
+  .launch__caret--1 {
+    animation-name: launch-caret-1;
+  }
+  .launch__log--1a {
+    animation-name: launch-at-11;
+  }
+  .launch__log--1b {
+    animation-name: launch-at-13;
+  }
+  .launch__log--1c {
+    animation-name: launch-at-15;
+  }
+  .launch__plane--1 {
+    animation-name: launch-fly-1-x;
+    animation-timing-function: linear;
+  }
+  .launch__plane--1 .launch__plane-y {
+    animation-name: launch-fly-1-w-y;
+  }
+  .launch__plane--1 .launch__plane-body {
+    animation-name: launch-fly-1-w-r;
+    animation-timing-function: linear;
+  }
+  .launch__win {
+    animation-name: launch-pop-23;
+  }
+  .launch__target--linux {
+    animation-name: launch-at-26;
+  }
+  .launch__doc > :nth-child(1) {
+    animation-name: launch-at-27;
+  }
+  .launch__doc > :nth-child(2),
+  .launch__side > :nth-child(1) {
+    animation-name: launch-at-29;
+  }
+  .launch__doc > :nth-child(3),
+  .launch__side > :nth-child(2) {
+    animation-name: launch-at-31;
+  }
+  .launch__doc > :nth-child(n + 4),
+  .launch__side > :nth-child(n + 3) {
+    animation-name: launch-at-33;
+  }
+  .launch__cmd--2 {
+    animation-name: launch-at-37;
+  }
+  .launch__type--2 {
+    animation-name: launch-type-2;
+  }
+  .launch__caret--2 {
+    animation-name: launch-caret-2;
+  }
+  .launch__log--2a {
+    animation-name: launch-at-50;
+  }
+  .launch__log--2b {
+    animation-name: launch-at-52;
+  }
+  .launch__plane--2 {
+    animation-name: launch-fly-2-x;
+    animation-timing-function: linear;
+  }
+  .launch__plane--2 .launch__plane-y {
+    animation-name: launch-fly-2-w-y;
+  }
+  .launch__plane--2 .launch__plane-body {
+    animation-name: launch-fly-2-w-r;
+    animation-timing-function: linear;
+  }
+
+  /* Stacked scene: the same flights on their own arcs. */
+  @container (max-width: 560px) {
+    .launch__plane--1 .launch__plane-y {
+      animation-name: launch-fly-1-n-y;
+    }
+    .launch__plane--1 .launch__plane-body {
+      animation-name: launch-fly-1-n-r;
+    }
+    .launch__plane--2 .launch__plane-y {
+      animation-name: launch-fly-2-n-y;
+    }
+    .launch__plane--2 .launch__plane-body {
+      animation-name: launch-fly-2-n-r;
+    }
+  }
+  .launch__phone {
+    animation-name: launch-pop-62;
+  }
+  .launch__target--ios {
+    animation-name: launch-at-66;
+  }
+  .launch__ios-tag,
+  .launch__screen h3,
+  .launch__search {
+    animation-name: launch-at-67;
+  }
+  .launch__row:nth-child(1) {
+    animation-name: launch-at-69;
+  }
+  .launch__row:nth-child(2) {
+    animation-name: launch-at-71;
+  }
+  .launch__row:nth-child(n + 3) {
+    animation-name: launch-at-73;
+  }
+  .launch__tabbar {
+    animation-name: launch-rise-75;
+  }
+
+  /* Typing: the command is revealed a character at a time. */
+  @keyframes launch-type-1 {
+    0%,
+    2% {
+      clip-path: inset(0 100% 0 0);
+      animation-timing-function: steps(18, end);
+    }
+    9%,
+    94% {
+      clip-path: inset(0 0 0 0);
+      opacity: 1;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-type-2 {
+    0%,
+    38% {
+      clip-path: inset(0 100% 0 0);
+      animation-timing-function: steps(33, end);
+    }
+    48%,
+    94% {
+      clip-path: inset(0 0 0 0);
+      opacity: 1;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-caret-1 {
+    0%,
+    10% {
+      opacity: 1;
+    }
+    10.5%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-caret-2 {
+    0%,
+    37% {
+      opacity: 0;
+    }
+    37.5%,
+    49% {
+      opacity: 1;
+    }
+    49.5%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * The planes fly a true parabola: constant speed across, a quadratic
+   * climb and fall (the cubic-bezier is that quadratic, exactly), and the
+   * nose turned along the tangent, sampled every tenth of the flight.
+   */
+  @keyframes launch-fly-2-x {
+    0%,
+    54% {
+      translate: 0 0;
+      scale: 1;
+      opacity: 0;
+    }
+    55% {
+      opacity: 1;
+    }
+    62% {
+      scale: 1;
+      opacity: 1;
+    }
+    64%,
+    100% {
+      translate: var(--dx) 0;
+      scale: 0.6;
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-fly-1-x {
+    0%,
+    16% {
+      translate: 0 0;
+      scale: 1;
+      opacity: 0;
+    }
+    17% {
+      opacity: 1;
+    }
+    23% {
+      scale: 1;
+      opacity: 1;
+    }
+    25%,
+    100% {
+      translate: var(--dx) 0;
+      scale: 0.6;
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-fly-1-w-y {
+    0%,
+    16% {
+      translate: 0 0;
+      animation-timing-function: cubic-bezier(0.33333, 2.515, 0.66667, 2.848);
+    }
+    25%,
+    100% {
+      translate: 0 -5.5cqi;
+    }
+  }
+
+  @keyframes launch-fly-1-w-r {
+    0%,
+    16% {
+      rotate: -46.779deg;
+    }
+    16.9% {
+      rotate: -41.331deg;
+    }
+    17.8% {
+      rotate: -34.794deg;
+    }
+    18.7% {
+      rotate: -27.033deg;
+    }
+    19.6% {
+      rotate: -18.037deg;
+    }
+    20.5% {
+      rotate: -8.027deg;
+    }
+    21.4% {
+      rotate: 2.496deg;
+    }
+    22.3% {
+      rotate: 12.855deg;
+    }
+    23.2% {
+      rotate: 22.432deg;
+    }
+    24.1% {
+      rotate: 30.856deg;
+    }
+    25%,
+    100% {
+      rotate: 38.027deg;
+    }
+  }
+
+  @keyframes launch-fly-2-w-y {
+    0%,
+    54% {
+      translate: 0 0;
+      animation-timing-function: cubic-bezier(0.33333, 10.111, 0.66667, 10.444);
+    }
+    64%,
+    100% {
+      translate: 0 -1.5cqi;
+    }
+  }
+
+  @keyframes launch-fly-2-w-r {
+    0%,
+    54% {
+      rotate: -37.639deg;
+    }
+    55% {
+      rotate: -31.883deg;
+    }
+    56% {
+      rotate: -25.309deg;
+    }
+    57% {
+      rotate: -17.938deg;
+    }
+    58% {
+      rotate: -9.903deg;
+    }
+    59% {
+      rotate: -1.456deg;
+    }
+    60% {
+      rotate: 7.053deg;
+    }
+    61% {
+      rotate: 15.263deg;
+    }
+    62% {
+      rotate: 22.881deg;
+    }
+    63% {
+      rotate: 29.734deg;
+    }
+    64%,
+    100% {
+      rotate: 35.767deg;
+    }
+  }
+
+  @keyframes launch-fly-1-n-y {
+    0%,
+    16% {
+      translate: 0 0;
+      animation-timing-function: cubic-bezier(0.33333, 0.179, 0.66667, 0.513);
+    }
+    25%,
+    100% {
+      translate: 0 78cqi;
+    }
+  }
+
+  @keyframes launch-fly-1-n-r {
+    0%,
+    16% {
+      rotate: 123.69deg;
+    }
+    16.9% {
+      rotate: 119.644deg;
+    }
+    17.8% {
+      rotate: 116.402deg;
+    }
+    18.7% {
+      rotate: 113.762deg;
+    }
+    19.6% {
+      rotate: 111.578deg;
+    }
+    20.5% {
+      rotate: 109.747deg;
+    }
+    21.4% {
+      rotate: 108.193deg;
+    }
+    22.3% {
+      rotate: 106.858deg;
+    }
+    23.2% {
+      rotate: 105.702deg;
+    }
+    24.1% {
+      rotate: 104.691deg;
+    }
+    25%,
+    100% {
+      rotate: 103.799deg;
+    }
+  }
+
+  @keyframes launch-fly-2-n-y {
+    0%,
+    54% {
+      translate: 0 0;
+      animation-timing-function: cubic-bezier(0.33333, 0.158, 0.66667, 0.491);
+    }
+    64%,
+    100% {
+      translate: 0 76cqi;
+    }
+  }
+
+  @keyframes launch-fly-2-n-r {
+    0%,
+    54% {
+      rotate: 102.529deg;
+    }
+    55% {
+      rotate: 100.305deg;
+    }
+    56% {
+      rotate: 98.746deg;
+    }
+    57% {
+      rotate: 97.595deg;
+    }
+    58% {
+      rotate: 96.71deg;
+    }
+    59% {
+      rotate: 96.009deg;
+    }
+    60% {
+      rotate: 95.44deg;
+    }
+    61% {
+      rotate: 94.97deg;
+    }
+    62% {
+      rotate: 94.574deg;
+    }
+    63% {
+      rotate: 94.236deg;
+    }
+    64%,
+    100% {
+      rotate: 93.945deg;
+    }
+  }
+
+  /* Devices land: up from slightly small, with a little overshoot. */
+  @keyframes launch-pop-23 {
+    0%,
+    23% {
+      opacity: 0;
+      scale: 0.9;
+      animation-timing-function: var(--landing-ease-swing);
+    }
+    27%,
+    94% {
+      opacity: 1;
+      scale: 1;
+    }
+    98%,
+    100% {
+      opacity: 0;
+      scale: 1;
+    }
+  }
+
+  @keyframes launch-pop-62 {
+    0%,
+    62% {
+      opacity: 0;
+      scale: 0.86;
+      translate: 0 3cqi;
+      animation-timing-function: var(--landing-ease-swing);
+    }
+    66.5%,
+    94% {
+      opacity: 1;
+      scale: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes launch-rise-75 {
+    0%,
+    75% {
+      opacity: 0;
+      translate: 0 3cqi;
+      animation-timing-function: var(--landing-ease-swing);
+    }
+    79%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* Lines and parts appear at their beat, then everything clears for the next loop. */
+  @keyframes launch-at-11 {
+    0%,
+    11% {
+      opacity: 0;
+      translate: 0 0.5cqi;
+    }
+    13%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-13 {
+    0%,
+    13% {
+      opacity: 0;
+      translate: 0 0.5cqi;
+    }
+    15%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-15 {
+    0%,
+    15% {
+      opacity: 0;
+      translate: 0 0.5cqi;
+    }
+    17%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-26 {
+    0%,
+    26% {
+      opacity: 0.25;
+    }
+    28%,
+    94% {
+      opacity: 1;
+    }
+    98%,
+    100% {
+      opacity: 0.25;
+    }
+  }
+  @keyframes launch-at-27 {
+    0%,
+    27% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    30%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-29 {
+    0%,
+    29% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    32%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-31 {
+    0%,
+    31% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    34%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-33 {
+    0%,
+    33% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    36%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-37 {
+    0%,
+    37% {
+      opacity: 0;
+    }
+    37.5%,
+    94% {
+      opacity: 1;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-50 {
+    0%,
+    50% {
+      opacity: 0;
+      translate: 0 0.5cqi;
+    }
+    52%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-52 {
+    0%,
+    52% {
+      opacity: 0;
+      translate: 0 0.5cqi;
+    }
+    54%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-66 {
+    0%,
+    66% {
+      opacity: 0.25;
+    }
+    68%,
+    94% {
+      opacity: 1;
+    }
+    98%,
+    100% {
+      opacity: 0.25;
+    }
+  }
+  @keyframes launch-at-67 {
+    0%,
+    67% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    70%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-69 {
+    0%,
+    69% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    72%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-71 {
+    0%,
+    71% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    74%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes launch-at-73 {
+    0%,
+    73% {
+      opacity: 0;
+      translate: 0 0.8cqi;
+    }
+    76%,
+    94% {
+      opacity: 1;
+      translate: 0 0;
+    }
+    98%,
+    100% {
+      opacity: 0;
+    }
+  }
+}

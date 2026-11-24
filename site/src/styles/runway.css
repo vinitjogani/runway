@@ -315,3 +315,18 @@
 .runway-section .runway-hero__actions {
   justify-content: flex-start;
 }
+
+/* ---- GitHub links ------------------------------------------------------------ */
+
+/* The repository link stays in the header on phones, next to Get started. */
+.header__link--github {
+  display: inline-flex;
+  gap: var(--space-1-5);
+}
+
+.header__icon,
+.button__icon {
+  inline-size: 1.05em;
+  block-size: 1.05em;
+  flex: none;
+}
