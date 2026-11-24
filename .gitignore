@@ -1,3 +1,28 @@
+# SwiftPM / Xcode
 .build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Runway's staging and dependency cache
 .runway/
+
+# Node (site/)
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors and OS
 .DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Local environment
+.env
+.env.*
