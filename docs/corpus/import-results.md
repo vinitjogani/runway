@@ -1,6 +1,6 @@
 # Xcode project import: corpus results
 
-`runway stage` and `runway build` on each Xcode app of the corpus with no
+`runway stage` and `runway build` on each Xcode app of the [corpus](status.md) with no
 configuration (Swift 6.4.2, Linux, 2026-11-10). AeroSpace was run on
 `AeroSpace/xcode` (its XcodeGen-generated project; the repository root is
 a SwiftPM package). KeyboardCowboy is Tuist-only: runway stops and says to
