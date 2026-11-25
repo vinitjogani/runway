@@ -123,8 +123,8 @@ extension View {
 
     public func offset(_ offset: CGSize) -> some View { eachNode("offset") { n, _ in OffsetNode(n, offset) } }
     public func offset(x: CGFloat = 0, y: CGFloat = 0) -> some View { offset(CGSize(width: x, height: y)) }
-    public func position(x: CGFloat = 0, y: CGFloat = 0) -> some View { offset(x: x, y: y) }
-    public func position(_ p: CGPoint) -> some View { offset(x: p.x, y: p.y) }
+    public func position(x: CGFloat = 0, y: CGFloat = 0) -> some View { position(CGPoint(x: x, y: y)) }
+    public func position(_ p: CGPoint) -> some View { eachNode("position") { n, _ in PositionNode(n, p) } }
 
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> some View {
         layered(content(), alignment: alignment, behind: false)

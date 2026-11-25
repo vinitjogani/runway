@@ -184,6 +184,16 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(bg, 900, accuracy: 1)
     }
 
+    func testPositionCentresTheViewAtThePoint() {
+        let (_, root) = render(ZStack(alignment: .topLeading) {
+            Color.clear
+            Text("handle").frame(width: 16, height: 16).position(x: 40, y: 13)
+        }.frame(width: 200, height: 26), size: CGSize(width: 200, height: 26))
+        let handle = root.all.first { $0.kind == .text }
+        XCTAssertEqual(handle?.frame.midX ?? 0, 40, accuracy: 0.5)
+        XCTAssertEqual(handle?.frame.midY ?? 0, 13, accuracy: 0.5)
+    }
+
     func testCodeReviewSymbolsHaveArtwork() {
         for name in ["arrow.triangle.branch", "arrow.triangle.merge", "arrowshape.turn.up.left", "brain", "bubble.left",
                      "checklist", "cloud.fill", "paperclip", "return", "scope", "at", "checkmark.circle.fill", "xmark.circle.fill"] {

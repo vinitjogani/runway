@@ -561,6 +561,27 @@ final class OffsetNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) { child.place(rect.offsetBy(dx: offset.width, dy: offset.height), sink) }
 }
 
+/// `.position(x:y:)`: takes the whole proposed space (the child's size
+/// where a dimension is unspecified) and centres the child at the point.
+final class PositionNode: LayoutNode {
+    let point: CGPoint
+    let child: LayoutNode
+    init(_ child: LayoutNode, _ point: CGPoint) { self.child = child; self.point = point }
+    override var children: [LayoutNode] { [child] }
+    override func sizeThatFits(_ p: ProposedSize) -> CGSize {
+        let c = child.size(p)
+        func fill(_ v: CGFloat?, _ fallback: CGFloat) -> CGFloat {
+            guard let v else { return fallback }
+            return v.isFinite ? v : fallback
+        }
+        return CGSize(width: fill(p.width, c.width), height: fill(p.height, c.height))
+    }
+    override func place(_ rect: CGRect, _ sink: PlacementSink) {
+        let c = child.size(ProposedSize(width: rect.width, height: rect.height))
+        child.place(CGRect(x: rect.minX + point.x - c.width / 2, y: rect.minY + point.y - c.height / 2, width: c.width, height: c.height), sink)
+    }
+}
+
 /// Rotates drawing in the subtree while leaving its layout proposal unchanged.
 final class DrawingRotationNode: LayoutNode {
     let child: LayoutNode

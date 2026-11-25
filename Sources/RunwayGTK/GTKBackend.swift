@@ -1355,10 +1355,13 @@ final class WorkBox {
 /// label area), as a container the layer above can address.
 @MainActor final class CanvasRef: NativeWidget {
     let canvas: GW
-    unowned let owner: GtkBox
+    /// Weak: a freed widget's canvas address can be reused by a new one,
+    /// so a cached ref must not outlive (or vouch for) its owner.
+    weak var owner: GtkBox?
     private init(_ c: GW, owner: GtkBox) { canvas = c; self.owner = owner }
     private static var refs: [UnsafeMutableRawPointer: CanvasRef] = [:]
     static func wrap(_ c: GW, owner: GtkBox) -> CanvasRef {
+        if refs.count > 256 { refs = refs.filter { $0.value.owner != nil } }
         if let r = refs[raw(c)], r.owner === owner { return r }
         let r = CanvasRef(c, owner: owner)
         refs[raw(c)] = r

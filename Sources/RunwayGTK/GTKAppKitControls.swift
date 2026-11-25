@@ -417,6 +417,9 @@ extension GTKBackend: AppKitBackend {
         connectState(UnsafeMutableRawPointer(drag), "drag-update", unsafeBitCast(dragUpdateCB, to: GCallback.self), w)
         connectState(UnsafeMutableRawPointer(drag), "drag-end", unsafeBitCast(dragEndCB, to: GCallback.self), w)
         gtk_widget_add_controller(w, drag)
+        // One group: claiming the press for the click gesture would
+        // otherwise deny the drag gesture, so a drag never updated.
+        gtk_gesture_group(click, drag)
         let motion = gtk_event_controller_motion_new()!
         connectState(UnsafeMutableRawPointer(motion), "motion", unsafeBitCast(motionCB, to: GCallback.self), w)
         connectState(UnsafeMutableRawPointer(motion), "leave", unsafeBitCast(leaveCB, to: GCallback.self), w)
