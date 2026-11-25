@@ -1146,6 +1146,15 @@ final class WorkBox {
 
     // MARK: Measuring and placing
 
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? {
+        let b = widget as! GtkBox
+        guard b.kind == .text else { return nil }
+        var first = 0.0, last = 0.0
+        let w = width.flatMap { $0.isFinite ? Int32($0.rounded(.down)) : nil } ?? -1
+        guard runway_label_baselines(b.outer, w, &first, &last) != 0 else { return nil }
+        return (CGFloat(first), CGFloat(last))
+    }
+
     public func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize {
         let b = widget as! GtkBox
         let w = b.outer

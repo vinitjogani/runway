@@ -26,32 +26,98 @@ public protocol AlignmentID {
     static func defaultValue(in context: ViewDimensions) -> CGFloat
 }
 
+/// What an alignment guide is: a fraction of the size (leading, center…),
+/// a text baseline, or a custom AlignmentID.
+enum GuideKind: Hashable, @unchecked Sendable {
+    case fraction, firstBaseline, lastBaseline
+    case custom(CustomGuide)
+}
+
+struct CustomGuide: Hashable, @unchecked Sendable {
+    let id: AlignmentID.Type
+    static func == (a: Self, b: Self) -> Bool { ObjectIdentifier(a.id) == ObjectIdentifier(b.id) }
+    func hash(into h: inout Hasher) { h.combine(ObjectIdentifier(id)) }
+}
+
+/// A guide on one axis.
+struct GuideKey: Hashable, Sendable {
+    let vertical: Bool
+    let kind: GuideKind
+    let fraction: CGFloat
+    /// Its value for a view that sets none: a fraction of the size; the
+    /// bottom edge for a baseline; a custom guide's default.
+    func defaultValue(_ size: CGSize) -> CGFloat {
+        switch kind {
+        case .fraction: return (vertical ? size.height : size.width) * fraction
+        case .firstBaseline, .lastBaseline: return size.height
+        case .custom(let c): return c.id.defaultValue(in: ViewDimensions(width: size.width, height: size.height))
+        }
+    }
+}
+
 public struct ViewDimensions {
     public let width: CGFloat
     public let height: CGFloat
-    public init(width: CGFloat, height: CGFloat) { self.width = width; self.height = height }
-    public subscript(guide: HorizontalAlignment) -> CGFloat { width * guide.fraction }
-    public subscript(guide: VerticalAlignment) -> CGFloat { height * guide.fraction }
-    public subscript(explicit guide: HorizontalAlignment) -> CGFloat? { nil }
-    public subscript(explicit guide: VerticalAlignment) -> CGFloat? { nil }
+    let explicit: (GuideKey) -> CGFloat?
+    public init(width: CGFloat, height: CGFloat) { self.init(width: width, height: height) { _ in nil } }
+    init(width: CGFloat, height: CGFloat, explicit: @escaping (GuideKey) -> CGFloat?) {
+        self.width = width; self.height = height; self.explicit = explicit
+    }
+    private var size: CGSize { CGSize(width: width, height: height) }
+    public subscript(guide: HorizontalAlignment) -> CGFloat { explicit(guide.guide) ?? guide.guide.defaultValue(size) }
+    public subscript(guide: VerticalAlignment) -> CGFloat { explicit(guide.guide) ?? guide.guide.defaultValue(size) }
+    public subscript(explicit guide: HorizontalAlignment) -> CGFloat? { explicit(guide.guide) }
+    public subscript(explicit guide: VerticalAlignment) -> CGFloat? { explicit(guide.guide) }
 }
 
 extension HorizontalAlignment {
-    /// A custom alignment: where its default value falls across a unit width.
     public init(_ id: AlignmentID.Type) {
-        self.init(fraction: id.defaultValue(in: ViewDimensions(width: 1, height: 1)))
+        self.init(fraction: id.defaultValue(in: ViewDimensions(width: 1, height: 1)), kind: .custom(CustomGuide(id: id)))
     }
 }
 
 extension VerticalAlignment {
     public init(_ id: AlignmentID.Type) {
-        self.init(fraction: id.defaultValue(in: ViewDimensions(width: 1, height: 1)))
+        self.init(fraction: id.defaultValue(in: ViewDimensions(width: 1, height: 1)), kind: .custom(CustomGuide(id: id)))
     }
 }
 
 extension View {
-    public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View { self }
-    public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View { self }
+    /// Sets the view's value for a guide (where stacks, frames and overlays
+    /// line it up with its siblings), computed from its dimensions.
+    public func alignmentGuide(_ g: HorizontalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View {
+        eachNode("alignmentGuide") { n, _ in AlignmentGuideNode(n, g.guide, computeValue) }
+    }
+    public func alignmentGuide(_ g: VerticalAlignment, computeValue: @escaping (ViewDimensions) -> CGFloat) -> some View {
+        eachNode("alignmentGuide") { n, _ in AlignmentGuideNode(n, g.guide, computeValue) }
+    }
+}
+
+/// `.alignmentGuide`: an explicit value for one guide.
+final class AlignmentGuideNode: LayoutNode {
+    let child: LayoutNode
+    let key: GuideKey
+    let compute: (ViewDimensions) -> CGFloat
+    init(_ child: LayoutNode, _ key: GuideKey, _ compute: @escaping (ViewDimensions) -> CGFloat) {
+        self.child = child; self.key = key; self.compute = compute
+        super.init()
+        layoutPriority = child.layoutPriority
+        tag = child.tag
+        tagValue = child.tagValue
+    }
+    override var children: [LayoutNode] { [child] }
+    override var textContent: String? { child.textContent }
+    override var menuItem: MenuItemSpec? { child.menuItem }
+    override var isSpacer: Bool { child.isSpacer }
+    override var guideChild: LayoutNode? { child }
+    override var guidesInfo: (has: Bool, stable: Bool) { (true, true) }
+    override func sizeThatFits(_ p: ProposedSize) -> CGSize { child.size(p) }
+    override func place(_ rect: CGRect, _ sink: PlacementSink) { child.place(rect, sink) }
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        guard g == key else { return child.explicitGuide(g, size) }
+        let child = self.child
+        return compute(ViewDimensions(width: size.width, height: size.height) { child.explicitGuide($0, size) })
+    }
 }
 
 // MARK: Layout
@@ -213,11 +279,11 @@ public struct HStackLayout: Layout {
     public var spacing: CGFloat?
     public init(alignment: VerticalAlignment = .center, spacing: CGFloat? = nil) { self.alignment = alignment; self.spacing = spacing }
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: spacing, children: subviews.items.map(\.node)).size(proposal.proposedSize)
+        StackNode(axis: .horizontal, guide: alignment.guide, spacing: spacing, children: subviews.items.map(\.node)).size(proposal.proposedSize)
     }
     public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard let sink = subviews.items.first?.sink() else { return }
-        StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: spacing, children: subviews.items.map(\.node)).place(bounds, sink)
+        StackNode(axis: .horizontal, guide: alignment.guide, spacing: spacing, children: subviews.items.map(\.node)).place(bounds, sink)
     }
 }
 
@@ -226,11 +292,11 @@ public struct VStackLayout: Layout {
     public var spacing: CGFloat?
     public init(alignment: HorizontalAlignment = .center, spacing: CGFloat? = nil) { self.alignment = alignment; self.spacing = spacing }
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        StackNode(axis: .vertical, alignment: alignment.fraction, spacing: spacing, children: subviews.items.map(\.node)).size(proposal.proposedSize)
+        StackNode(axis: .vertical, guide: alignment.guide, spacing: spacing, children: subviews.items.map(\.node)).size(proposal.proposedSize)
     }
     public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard let sink = subviews.items.first?.sink() else { return }
-        StackNode(axis: .vertical, alignment: alignment.fraction, spacing: spacing, children: subviews.items.map(\.node)).place(bounds, sink)
+        StackNode(axis: .vertical, guide: alignment.guide, spacing: spacing, children: subviews.items.map(\.node)).place(bounds, sink)
     }
 }
 

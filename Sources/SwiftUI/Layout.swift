@@ -48,6 +48,9 @@ public struct EdgeInsets: Hashable, Sendable {
 
 public struct HorizontalAlignment: Hashable, Sendable {
     let fraction: CGFloat
+    var kind: GuideKind = .fraction
+    init(fraction: CGFloat, kind: GuideKind = .fraction) { self.fraction = fraction; self.kind = kind }
+    var guide: GuideKey { GuideKey(vertical: false, kind: kind, fraction: fraction) }
     public static let leading = HorizontalAlignment(fraction: 0)
     public static let center = HorizontalAlignment(fraction: 0.5)
     public static let trailing = HorizontalAlignment(fraction: 1)
@@ -57,11 +60,15 @@ public struct HorizontalAlignment: Hashable, Sendable {
 
 public struct VerticalAlignment: Hashable, Sendable {
     let fraction: CGFloat
+    var kind: GuideKind = .fraction
+    init(fraction: CGFloat, kind: GuideKind = .fraction) { self.fraction = fraction; self.kind = kind }
+    var guide: GuideKey { GuideKey(vertical: true, kind: kind, fraction: fraction) }
     public static let top = VerticalAlignment(fraction: 0)
     public static let center = VerticalAlignment(fraction: 0.5)
     public static let bottom = VerticalAlignment(fraction: 1)
-    public static let firstTextBaseline = VerticalAlignment(fraction: 0.5)
-    public static let lastTextBaseline = VerticalAlignment(fraction: 0.5)
+    /// Views without text put their baselines at their bottom edge.
+    public static let firstTextBaseline = VerticalAlignment(fraction: 1, kind: .firstBaseline)
+    public static let lastTextBaseline = VerticalAlignment(fraction: 1, kind: .lastBaseline)
 }
 
 public struct Alignment: Hashable, Sendable {
@@ -77,12 +84,26 @@ public struct Alignment: Hashable, Sendable {
     public static let topTrailing = Alignment(horizontal: .trailing, vertical: .top)
     public static let bottomLeading = Alignment(horizontal: .leading, vertical: .bottom)
     public static let bottomTrailing = Alignment(horizontal: .trailing, vertical: .bottom)
-    public static let leadingFirstTextBaseline = Alignment.leading
-    public static let centerFirstTextBaseline = Alignment.center
+    public static let leadingFirstTextBaseline = Alignment(horizontal: .leading, vertical: .firstTextBaseline)
+    public static let centerFirstTextBaseline = Alignment(horizontal: .center, vertical: .firstTextBaseline)
+    public static let trailingFirstTextBaseline = Alignment(horizontal: .trailing, vertical: .firstTextBaseline)
+    public static let leadingLastTextBaseline = Alignment(horizontal: .leading, vertical: .lastTextBaseline)
+    public static let centerLastTextBaseline = Alignment(horizontal: .center, vertical: .lastTextBaseline)
+    public static let trailingLastTextBaseline = Alignment(horizontal: .trailing, vertical: .lastTextBaseline)
 
     func origin(of size: CGSize, in rect: CGRect) -> CGPoint {
         CGPoint(x: rect.minX + (rect.width - size.width) * horizontal.fraction,
                 y: rect.minY + (rect.height - size.height) * vertical.fraction)
+    }
+
+    /// Where `child` (of `size`) goes in `rect` so its guides meet the
+    /// rect's: the child's own guide values (a text baseline, an
+    /// alignmentGuide) where it has them, the plain fractions otherwise.
+    func origin(of child: LayoutNode, size: CGSize, in rect: CGRect) -> CGPoint {
+        let h = horizontal.guide, v = vertical.guide
+        guard h.kind != .fraction || v.kind != .fraction || child.hasGuides else { return origin(of: size, in: rect) }
+        return CGPoint(x: rect.minX + h.defaultValue(rect.size) - child.guide(h, size),
+                       y: rect.minY + v.defaultValue(rect.size) - child.guide(v, size))
     }
 }
 
@@ -152,8 +173,13 @@ let defaultSpacing: CGFloat = 8
     /// Layout work done (RUNWAY_METRICS): size requests, misses, backend measures.
     static var sizeCalls = 0, sizeMisses = 0, measures = 0
 
+    /// Proxies that only forward to another node don't keep sizes of
+    /// their own (the node they forward to does).
+    var cachesSizes: Bool { true }
+
     public func size(_ p: ProposedSize) -> CGSize {
         if RunwayMetrics.enabled { LayoutNode.sizeCalls += 1 }
+        guard cachesSizes else { return sizeThatFits(p) }
         if let o = owner, o.layoutEpoch != cacheEpoch {
             cacheEpoch = o.layoutEpoch
             clearSizeCache()
@@ -177,6 +203,56 @@ let defaultSpacing: CGFloat = 8
 
     func sizeThatFits(_ p: ProposedSize) -> CGSize { .zero }
     func place(_ rect: CGRect, _ sink: PlacementSink) {}
+
+    /// The proposal this node was last measured for that gave `size`, if
+    /// any: a container placed at a size it measured places its children
+    /// as it measured them, as SwiftUI's do, rather than proposing the
+    /// final size again (which would hand a greedy child, measured under an
+    /// unspecified height, a share of the space).
+    func proposal(measuredAs size: CGSize) -> ProposedSize? {
+        func same(_ a: CGSize) -> Bool { abs(a.width - size.width) < 0.5 && abs(a.height - size.height) < 0.5 }
+        guard hasFirst, owner.map({ $0.layoutEpoch == cacheEpoch }) ?? true else { return nil }
+        for (q, s) in moreSizes.reversed() where same(s) { return q }
+        return same(firstSize) ? firstProposal : nil
+    }
+
+    // MARK: Alignment guides
+
+    /// A child laid out in this node's whole frame, whose guides are this
+    /// node's (modifiers that don't move their content).
+    var guideChild: LayoutNode? { nil }
+
+    /// This node's own value for a guide at `size` (a text baseline, an
+    /// alignmentGuide, one passed up from its content), or nil for the
+    /// guide's default.
+    func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        guideChild?.explicitGuide(g, size)
+    }
+
+    /// The guide's value at `size`: explicit, or the default.
+    final func guide(_ g: GuideKey, _ size: CGSize) -> CGFloat {
+        explicitGuide(g, size) ?? g.defaultValue(size)
+    }
+
+    /// Whether an alignmentGuide is set anywhere below (so fraction
+    /// alignments must ask for explicit values).
+    var hasGuides: Bool { guidesInfo.has }
+    /// Whether there are guides below, and whether that can't change (no
+    /// scope below, whose body can run again with other content): only
+    /// then is it remembered.
+    var guidesInfo: (has: Bool, stable: Bool) {
+        if let cached = guidesCache { return (cached, true) }
+        var has = false, stable = true
+        for c in children {
+            let i = c.guidesInfo
+            has = has || i.has
+            stable = stable && i.stable
+            if has { break }
+        }
+        if stable || has { guidesCache = has }
+        return (has, stable)
+    }
+    private var guidesCache: Bool?
 
     /// For tests and `runway run --headless`.
     public var debugName: String { String(describing: type(of: self)) }
@@ -240,6 +316,16 @@ final class WidgetNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         if let widget { sink.add(widget, rect) }
     }
+
+    /// Text reports where its first and last lines sit.
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        guard let widget, g.vertical, g.kind == .firstBaseline || g.kind == .lastBaseline else { return nil }
+        let width: CGFloat? = size.width.isFinite ? size.width : nil
+        if baselines?.width != width { baselines = (width, backend.textBaselines(widget, width: width)) }
+        guard let b = baselines?.value else { return nil }
+        return g.kind == .firstBaseline ? b.first : b.last
+    }
+    private var baselines: (width: CGFloat?, value: (first: CGFloat, last: CGFloat)?)?
 }
 
 /// The kind of each native widget a host made (for layout decisions that
@@ -275,16 +361,43 @@ final class SpacerNode: LayoutNode {
 final class StackNode: LayoutNode {
     let axis: Axis
     let alignmentFraction: CGFloat
+    /// The cross-axis guide children line up on.
+    let crossGuide: GuideKey
     let spacing: CGFloat?
     let items: [LayoutNode]
     init(axis: Axis, alignment: CGFloat, spacing: CGFloat?, children: [LayoutNode]) {
         self.axis = axis
         self.alignmentFraction = alignment
+        self.crossGuide = GuideKey(vertical: axis == .horizontal, kind: .fraction, fraction: alignment)
         self.spacing = spacing
         self.items = children
     }
+    init(axis: Axis, guide: GuideKey, spacing: CGFloat?, children: [LayoutNode]) {
+        self.axis = axis
+        self.alignmentFraction = guide.fraction
+        self.crossGuide = guide
+        self.spacing = spacing
+        self.items = children
+    }
+    /// Children line up on guide values (text baselines, custom guides,
+    /// alignmentGuide), not just fractions of their sizes.
+    private var alignsByGuides: Bool { crossGuide.kind != .fraction || items.contains { $0.hasGuides } }
+
+    /// Each child's cross-axis offset from the stack's cross start, and the
+    /// stack's cross size: the guide values line up.
+    private func crossOffsets(_ sizes: [CGSize]) -> (offsets: [CGFloat], extent: CGFloat) {
+        var above: CGFloat = 0, below: CGFloat = 0
+        var values = [CGFloat](repeating: 0, count: sizes.count)
+        for (i, c) in items.enumerated() {
+            let v = c.guide(crossGuide, sizes[i])
+            values[i] = v
+            above = max(above, v)
+            below = max(below, cross(sizes[i]) - v)
+        }
+        return (values.map { above - $0 }, above + below)
+    }
     convenience init(axis: Axis, alignment: HorizontalAlignment, spacing: CGFloat?, children: [LayoutNode]) {
-        self.init(axis: axis, alignment: alignment.fraction, spacing: spacing, children: children)
+        self.init(axis: axis, guide: alignment.guide, spacing: spacing, children: children)
     }
     override var children: [LayoutNode] { items }
 
@@ -366,28 +479,64 @@ final class StackNode: LayoutNode {
     override func sizeThatFits(_ p: ProposedSize) -> CGSize {
         let sizes = distribute(p)
         let m = sizes.map(main).reduce(0, +) + gapTotal
-        let c = sizes.map(cross).max() ?? 0
+        let c = alignsByGuides ? crossOffsets(sizes).extent : (sizes.map(cross).max() ?? 0)
         return axis == .horizontal ? CGSize(width: m, height: c) : CGSize(width: c, height: m)
     }
 
-    override func place(_ rect: CGRect, _ sink: PlacementSink) {
-        let p = ProposedSize(width: rect.width, height: rect.height)
+    /// Where each child goes in `rect`.
+    private func frames(in rect: CGRect) -> [CGRect] {
+        // Along the stack, the space is shared as it was when measured (an
+        // unspecified length stays unspecified); across it, children are
+        // offered the width (or height) the stack was given.
+        var p = ProposedSize(width: rect.width, height: rect.height)
+        if let measured = proposal(measuredAs: rect.size) {
+            if axis == .vertical { p.height = measured.height } else { p.width = measured.width }
+        }
         let sizes = distribute(p)
         var pos = axis == .horizontal ? rect.minX : rect.minY
         let gap = spacing ?? defaultSpacing
-        for (i, child) in items.enumerated() {
+        var guided: (offsets: [CGFloat], start: CGFloat)?
+        if alignsByGuides {
+            let (offsets, extent) = crossOffsets(sizes)
+            let room = (axis == .horizontal ? rect.height : rect.width) - extent
+            // A baseline row sits at the top of extra room; fractions keep
+            // their place in it.
+            let lead = crossGuide.kind == .fraction ? room * crossGuide.fraction : 0
+            guided = (offsets, (axis == .horizontal ? rect.minY : rect.minX) + max(0, lead))
+        }
+        var out: [CGRect] = []
+        out.reserveCapacity(items.count)
+        for i in items.indices {
             let s = sizes[i]
-            let frame: CGRect
             if axis == .horizontal {
-                frame = CGRect(x: pos, y: rect.minY + (rect.height - s.height) * alignmentFraction, width: s.width, height: s.height)
+                let y = guided.map { $0.start + $0.offsets[i] } ?? rect.minY + (rect.height - s.height) * alignmentFraction
+                out.append(CGRect(x: pos, y: y, width: s.width, height: s.height))
                 pos += s.width
             } else {
-                frame = CGRect(x: rect.minX + (rect.width - s.width) * alignmentFraction, y: pos, width: s.width, height: s.height)
+                let x = guided.map { $0.start + $0.offsets[i] } ?? rect.minX + (rect.width - s.width) * alignmentFraction
+                out.append(CGRect(x: x, y: pos, width: s.width, height: s.height))
                 pos += s.height
             }
-            child.place(frame, sink)
             if i < items.count - 1 { pos += gap }
         }
+        return out
+    }
+
+    /// Text baselines along the stack come from its first or last line of
+    /// text; other guides from the first child that has its own value.
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        guard !items.isEmpty, g.kind != .fraction || hasGuides else { return nil }
+        let f = frames(in: CGRect(origin: .zero, size: size))
+        let order: [Int] = g.kind == .lastBaseline && (axis == .vertical) == g.vertical
+            ? Array(items.indices.reversed()) : Array(items.indices)
+        for i in order {
+            if let v = items[i].explicitGuide(g, f[i].size) { return v + (g.vertical ? f[i].minY : f[i].minX) }
+        }
+        return nil
+    }
+
+    override func place(_ rect: CGRect, _ sink: PlacementSink) {
+        for (child, frame) in zip(items, frames(in: rect)) { child.place(frame, sink) }
     }
 }
 
@@ -403,8 +552,20 @@ final class ZStackNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         for c in items {
             let s = c.size(ProposedSize(width: rect.width, height: rect.height))
-            c.place(CGRect(origin: alignment.origin(of: s, in: rect), size: s), sink)
+            c.place(CGRect(origin: alignment.origin(of: c, size: s, in: rect), size: s), sink)
         }
+    }
+    /// The first child with a value of its own passes it up.
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        let rect = CGRect(origin: .zero, size: size)
+        for c in items {
+            let s = c.size(ProposedSize(width: size.width, height: size.height))
+            if let v = c.explicitGuide(g, s) {
+                let o = alignment.origin(of: c, size: s, in: rect)
+                return v + (g.vertical ? o.y : o.x)
+            }
+        }
+        return nil
     }
 }
 
@@ -421,6 +582,10 @@ final class PaddingNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         child.place(CGRect(x: rect.minX + insets.leading, y: rect.minY + insets.top,
                            width: max(0, rect.width - insets.horizontal), height: max(0, rect.height - insets.vertical)), sink)
+    }
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        let inner = CGSize(width: max(0, size.width - insets.horizontal), height: max(0, size.height - insets.vertical))
+        return child.explicitGuide(g, inner).map { $0 + (g.vertical ? insets.top : insets.leading) }
     }
 }
 
@@ -472,9 +637,16 @@ final class FrameNode: LayoutNode {
     override func sizeThatFits(_ p: ProposedSize) -> CGSize { layout(p).size }
 
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
+        child.place(childFrame(in: rect), sink)
+    }
+    private func childFrame(in rect: CGRect) -> CGRect {
         let (cp, _) = layout(ProposedSize(width: rect.width, height: rect.height))
         let s = child.size(cp)
-        child.place(CGRect(origin: alignment.origin(of: s, in: rect), size: s), sink)
+        return CGRect(origin: alignment.origin(of: child, size: s, in: rect), size: s)
+    }
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        let f = childFrame(in: CGRect(origin: .zero, size: size))
+        return child.explicitGuide(g, f.size).map { $0 + (g.vertical ? f.minY : f.minX) }
     }
 }
 
@@ -491,6 +663,11 @@ final class FixedSizeNode: LayoutNode {
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         let s = child.size(adjust(ProposedSize(width: rect.width, height: rect.height)))
         child.place(CGRect(origin: Alignment.center.origin(of: s, in: rect), size: s), sink)
+    }
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        let s = child.size(adjust(ProposedSize(width: size.width, height: size.height)))
+        let o = Alignment.center.origin(of: s, in: CGRect(origin: .zero, size: size))
+        return child.explicitGuide(g, s).map { $0 + (g.vertical ? o.y : o.x) }
     }
 }
 
@@ -538,12 +715,13 @@ final class LayerNode: LayoutNode {
     override var children: [LayoutNode] { [primary] + secondary }
     override var textContent: String? { primary.textContent }
     override var menuItem: MenuItemSpec? { primary.menuItem }
+    override var guideChild: LayoutNode? { primary }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize { primary.size(p) }
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         func placeSecondary() {
             for s in secondary {
                 let size = s.size(ProposedSize(width: rect.width, height: rect.height))
-                s.place(CGRect(origin: alignment.origin(of: size, in: rect), size: size), sink)
+                s.place(CGRect(origin: alignment.origin(of: s, size: size, in: rect), size: size), sink)
             }
         }
         if behind { placeSecondary() }
@@ -556,6 +734,7 @@ final class OffsetNode: LayoutNode {
     let offset: CGSize
     let child: LayoutNode
     init(_ child: LayoutNode, _ offset: CGSize) { self.child = child; self.offset = offset }
+    override var guideChild: LayoutNode? { child }
     override var children: [LayoutNode] { [child] }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize { child.size(p) }
     override func place(_ rect: CGRect, _ sink: PlacementSink) { child.place(rect.offsetBy(dx: offset.width, dy: offset.height), sink) }
@@ -596,6 +775,7 @@ final class DrawingRotationNode: LayoutNode {
         tagValue = child.tagValue
     }
 
+    override var guideChild: LayoutNode? { child }
     override var children: [LayoutNode] { [child] }
     override var menuItem: MenuItemSpec? { child.menuItem }
     override var isSpacer: Bool { child.isSpacer }
@@ -614,6 +794,7 @@ final class DrawingRotationNode: LayoutNode {
 final class PriorityNode: LayoutNode {
     let child: LayoutNode
     init(_ child: LayoutNode, _ priority: Double) { self.child = child; super.init(); layoutPriority = priority; tag = child.tag; tagValue = child.tagValue }
+    override var guideChild: LayoutNode? { child }
     override var children: [LayoutNode] { [child] }
     override var textContent: String? { child.textContent }
     override var isSpacer: Bool { child.isSpacer }
@@ -625,6 +806,7 @@ final class PriorityNode: LayoutNode {
 final class TaggedNode: LayoutNode {
     let child: LayoutNode
     init(_ child: LayoutNode) { self.child = child }
+    override var guideChild: LayoutNode? { child }
     override var children: [LayoutNode] { [child] }
     override var textContent: String? { child.textContent }
     override var menuItem: MenuItemSpec? { child.menuItem }
@@ -646,6 +828,16 @@ final class ContainerNode: LayoutNode {
     var item: MenuItemSpec?
     init(widget: NativeWidget?, backend: Backend, content: LayoutNode, sizing: Sizing, insets: EdgeInsetsValue = .zero) {
         self.widget = widget; self.backend = backend; self.content = content; self.sizing = sizing; self.insets = insets
+    }
+    /// Hugging containers (modifier wrappers, buttons with custom labels)
+    /// pass their content's guides up, offset by the chrome.
+    override func explicitGuide(_ g: GuideKey, _ size: CGSize) -> CGFloat? {
+        guard case .hug = sizing else { return nil }
+        let inner = CGRect(x: insets.leading, y: insets.top, width: max(0, size.width - insets.leading - insets.trailing),
+                           height: max(0, size.height - insets.top - insets.bottom))
+        let cs = content.size(ProposedSize(width: inner.width, height: inner.height))
+        let o = Alignment.center.origin(of: cs, in: inner)
+        return content.explicitGuide(g, cs).map { $0 + (g.vertical ? o.y : o.x) }
     }
     override var children: [LayoutNode] { [content] }
     override var textContent: String? { content.textContent }

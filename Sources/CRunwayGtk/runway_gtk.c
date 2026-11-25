@@ -834,3 +834,37 @@ void runway_timeout(unsigned ms, RunwayVoidFunc fn, void *user_data) {
     g_timeout_add(ms, timeout_trampoline, pair);
 }
 #endif
+
+/* A label's first and last baselines (from its top, in points) when laid out
+   `width` points wide (-1: its natural width): GTK's measured baseline for
+   the first line, and Pango's line positions for the distance to the last. */
+int runway_label_baselines(GtkWidget *w, int width, double *first, double *last) {
+    if (!GTK_IS_LABEL(w)) return 0;
+    int min = 0, nat = 0, min_base = -1, nat_base = -1;
+    gtk_widget_measure(w, GTK_ORIENTATION_VERTICAL, width, &min, &nat, &min_base, &nat_base);
+    if (nat_base < 0) return 0;
+    PangoLayout *layout = pango_layout_copy(gtk_label_get_layout(GTK_LABEL(w)));
+    if (width >= 0) {
+        int mw = 0, nw = 0;
+        gtk_widget_measure(w, GTK_ORIENTATION_HORIZONTAL, -1, &mw, &nw, NULL, NULL);
+        // The layout's width is the label's less its padding and border.
+        int chrome = nw - 0;
+        PangoRectangle ink, logical;
+        pango_layout_set_width(layout, -1);
+        pango_layout_get_pixel_extents(layout, &ink, &logical);
+        chrome = nw - logical.width;
+        if (chrome < 0) chrome = 0;
+        pango_layout_set_width(layout, (width - chrome) * PANGO_SCALE);
+    } else {
+        pango_layout_set_width(layout, -1);
+    }
+    PangoLayoutIter *it = pango_layout_get_iter(layout);
+    int base0 = pango_layout_iter_get_baseline(it);
+    int baseN = base0;
+    while (pango_layout_iter_next_line(it)) baseN = pango_layout_iter_get_baseline(it);
+    pango_layout_iter_free(it);
+    g_object_unref(layout);
+    *first = nat_base;
+    *last = nat_base + (double)(baseN - base0) / PANGO_SCALE;
+    return 1;
+}

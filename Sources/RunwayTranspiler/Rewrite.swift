@@ -641,6 +641,34 @@ final class Rewriter: SyntaxVisitor {
         return .visitChildren
     }
 
+    /// A macOS developer-tool path written as a literal (the Command Line
+    /// Tools' git, Xcode's swift) finds the host's tool of that name at run
+    /// time. Only plain literals in expressions; not patterns or raw values.
+    override func visit(_ node: StringLiteralExprSyntax) -> SyntaxVisitorContinueKind {
+        // Interpolations hold expressions that other rules rewrite.
+        guard node.segments.count == 1, let seg = node.segments.first?.as(StringSegmentSyntax.self),
+              node.openingPounds == nil else { return .visitChildren }
+        let text = seg.content.text
+        guard Self.developerToolPrefixes.contains(where: { text.hasPrefix($0) && text.count > $0.count && !text.dropFirst($0.count).contains("/") })
+        else { return .visitChildren }
+        var p: Syntax? = node.parent
+        while let q = p {
+            if q.is(EnumCaseElementSyntax.self) || q.is(SwitchCaseLabelSyntax.self) || q.is(AttributeSyntax.self)
+                || q.is(ExpressionPatternSyntax.self) || q.is(MacroExpansionExprSyntax.self) { return .visitChildren }
+            if q.is(CodeBlockItemSyntax.self) || q.is(MemberBlockItemSyntax.self) { break }
+            p = q.parent
+        }
+        replace(node, "RunwayObjC.MacPaths.hostTool(\(node.trimmedDescription))")
+        return .skipChildren
+    }
+
+    /// Mirrors RunwayObjC.MacPaths.developerToolPrefixes.
+    static let developerToolPrefixes = [
+        "/Library/Developer/CommandLineTools/usr/bin/",
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/",
+    ]
+
     /// `Darwin.write(…)`: Mac code qualifies C library calls with the Darwin
     /// module, which Foundation re-exports there; Foundation re-exports the
     /// platform's C library everywhere, and RunwayFoundation re-exports

@@ -211,6 +211,10 @@ final class ScopeNode: LayoutNode {
     override var menuItem: MenuItemSpec? { target.menuItem }
     override var isSpacer: Bool { target.isSpacer }
     override var isEmptyLayout: Bool { target.isEmptyLayout }
+    override var guideChild: LayoutNode? { target }
+    override var cachesSizes: Bool { false }
+    /// Not remembered above it: the target changes when the scope's body runs again.
+    override var guidesInfo: (has: Bool, stable: Bool) { (target.guidesInfo.has, false) }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize { target.size(p) }
     override func place(_ rect: CGRect, _ sink: PlacementSink) { target.place(rect, sink) }
     override var debugName: String { target.debugName }
@@ -481,7 +485,10 @@ final class ScopeNode: LayoutNode {
     func resolveLate(owner: Scope? = nil, reader: AnyObject? = nil, _ body: () -> [LayoutNode]) -> [LayoutNode] {
         let outer = currentScope, outerBuilding = LayoutNode.buildingScope, outerSink = lateSink
         currentScope = nil
-        LayoutNode.buildingScope = nil
+        // Nodes made here belong to the owner: when a scope inside it runs
+        // again alone and changes size, the owner's epoch moves on and they
+        // measure afresh (instead of placing what follows at old sizes).
+        LayoutNode.buildingScope = owner
         lateDepth += 1
         lateSink = ([], [])
         defer {

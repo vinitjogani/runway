@@ -67,7 +67,8 @@ public enum RunwayTranspiler {
     /// Cheap check: does the file mention anything this rewrites?
     static func mightNeedWork(_ s: String) -> Bool {
         let needles = ["@objc", "#selector", "dynamic", "@IB", "@NSManaged", "#keyPath", "os(macOS)", "os(OSX)", "macCatalyst",
-                       "observe(", "Timer(", "#Preview", "ApplicationDelegateAdaptor", "@Model", "@Entry", "removeObserver", "observeValue", "validate", "?(", "class ", "override", "required", "Darwin.", "ProcessInfo()", "@convention", "]?[", "forKey:"]
+                       "observe(", "Timer(", "#Preview", "ApplicationDelegateAdaptor", "@Model", "@Entry", "removeObserver", "observeValue", "validate", "?(", "class ", "override", "required", "Darwin.", "ProcessInfo()", "@convention", "]?[", "forKey:",
+                       "/Developer/CommandLineTools/usr/bin/", "/Contents/Developer/"]
         return needles.contains { s.contains($0) } || usesRuntimeAPI(s) || importsSubmodule(s)
     }
 

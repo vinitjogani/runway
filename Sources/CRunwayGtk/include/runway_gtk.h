@@ -23,6 +23,8 @@ void runway_canvas_set_pass_through(GtkWidget *canvas, int pass);
 /// Whether a point (canvas coordinates) belongs to the canvas itself when
 /// picking (its children are asked first). Replaces any earlier function.
 int runway_widget_is_canvas(GtkWidget *w);
+/* A label's first and last baselines from its top at a width (-1: natural); 0 if not a label. */
+int runway_label_baselines(GtkWidget *w, int width, double *first, double *last);
 typedef gboolean (*RunwayContainsFunc)(double x, double y, void *data);
 void runway_canvas_set_contains(GtkWidget *canvas, RunwayContainsFunc fn, void *data, GDestroyNotify notify);
 /// The smallest the canvas may be made (-1, -1: its content size): a

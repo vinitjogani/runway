@@ -263,6 +263,8 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     /// The widget's size for a proposal: its natural size, wrapped to the
     /// proposed width where it can wrap.
     func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize
+    /// Text baselines from the widget's top at a width (see the default).
+    func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)?
     /// The chrome a button or scroll view adds around its content.
     func contentInsets(_ widget: NativeWidget) -> EdgeInsetsValue
     /// The container children go in: the widget itself for containers and
@@ -285,6 +287,13 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
 
     // Platform services AppKit-style code expects.
     var services: PlatformServices { get }
+}
+
+extension Backend {
+    /// Where a text widget's first and last lines sit (their baselines,
+    /// from the widget's top) at a width; nil for widgets without text or
+    /// backends that can't tell. Used for text-baseline alignment.
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? { nil }
 }
 
 public struct EdgeInsetsValue: Hashable, Sendable {

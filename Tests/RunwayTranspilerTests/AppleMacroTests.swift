@@ -16,6 +16,21 @@ final class AppleMacroTests: XCTestCase {
         for n in needles { XCTAssertTrue(out.contains(n), "missing \(n) in:\n\(out)", file: file, line: line) }
     }
 
+    func testDeveloperToolLiteralsFindTheHostTool() {
+        let src = """
+        import Foundation
+        enum Tool: String { case git = "/Library/Developer/CommandLineTools/usr/bin/git" }
+        let paths = ["/Library/Developer/CommandLineTools/usr/bin/git",
+                     "/Applications/Xcode.app/Contents/Developer/usr/bin/git", "/usr/bin/git"]
+        """
+        let out = t(src)
+        XCTAssertTrue(out.contains(#"RunwayObjC.MacPaths.hostTool("/Library/Developer/CommandLineTools/usr/bin/git")"#), out)
+        XCTAssertTrue(out.contains(#"RunwayObjC.MacPaths.hostTool("/Applications/Xcode.app/Contents/Developer/usr/bin/git")"#), out)
+        XCTAssertTrue(out.contains(#"case git = "/Library/Developer/CommandLineTools/usr/bin/git""#), out)
+        XCTAssertTrue(out.contains(#", "/usr/bin/git"]"#), out)
+        XCTAssertTrue(out.contains("import RunwayObjC"), out)
+    }
+
     func testPreviewMacroIsBlankedKeepingLines() {
         let out = t("""
         import SwiftUI

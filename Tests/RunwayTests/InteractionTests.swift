@@ -6,6 +6,32 @@ import RunwayCore
 @testable import SwiftUI
 
 @MainActor @Observable private final class SheetModel { var open = false }
+@MainActor @Observable private final class ChatModel { var entries: [String] = ["Hello"] }
+
+@MainActor @Observable private final class LiveText { var text = "Hi" }
+
+private struct ChatReply: View, Equatable {
+    let text: String
+    var live: LiveText? = nil
+    var body: some View { Text(live?.text ?? text).frame(maxWidth: .infinity, alignment: .leading) }
+    static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.live === b.live }
+}
+
+private struct Chat: View {
+    let model: ChatModel
+    var body: some View {
+        GeometryReader { _ in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(model.entries.enumerated()), id: \.offset) { _, text in
+                        ChatReply(text: text).equatable()
+                    }
+                    Text("FOOTER")
+                }
+            }
+        }
+    }
+}
 
 private struct OverlayHost: View {
     let model: SheetModel
@@ -182,6 +208,156 @@ final class InteractionTests: XCTestCase {
         // The background spans the row.
         let bg = (host.container as! HeadlessWidget).all.filter { $0.kind == .canvas }.map(\.frame.width).max() ?? 0
         XCTAssertEqual(bg, 900, accuracy: 1)
+    }
+
+    func testFirstTextBaselineLinesUpTextOfDifferentSizes() {
+        let (_, root) = render(HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text("•").font(.system(size: 20))
+            Text("A long item that wraps onto a second line here").font(.system(size: 12)).frame(width: 120)
+        })
+        let t = root.all.filter { $0.kind == .text }
+        XCTAssertEqual(t.count, 2)
+        let bullet = backend.textBaselines(t[0], width: t[0].frame.width)!.first + t[0].windowFrame.minY
+        let item = backend.textBaselines(t[1], width: t[1].frame.width)!.first + t[1].windowFrame.minY
+        XCTAssertEqual(bullet, item, accuracy: 0.5)
+        // The bullet sits with the first line, not the middle of the item.
+        XCTAssertLessThan(t[0].windowFrame.midY, t[1].windowFrame.midY)
+    }
+
+    func testAlignmentGuideOverridesAndCustomGuidesCrossStacks() {
+        struct Mid: AlignmentID { static func defaultValue(in d: ViewDimensions) -> CGFloat { d[VerticalAlignment.center] } }
+        let mid = VerticalAlignment(Mid.self)
+        let (_, root) = render(HStack(alignment: mid, spacing: 0) {
+            Color.red.frame(width: 10, height: 10)
+            VStack(spacing: 0) {
+                Color.green.frame(width: 10, height: 30)
+                Color.blue.frame(width: 10, height: 10).alignmentGuide(mid) { d in d[VerticalAlignment.center] }
+            }
+        }, size: CGSize(width: 100, height: 200))
+        let shapes = root.all.filter { $0.kind == .canvas }.map(\.windowFrame)
+        let small = shapes.filter { $0.height == 10 }.sorted { $0.minX < $1.minX }
+        guard small.count == 2 else { return XCTFail(root.dump()) }
+        let red = small[0], blue = small[1]
+        XCTAssertEqual(red.midY, blue.midY, accuracy: 0.5)
+
+        let (_, r2) = render(HStack(alignment: .top, spacing: 0) {
+            Color.red.frame(width: 10, height: 10).alignmentGuide(.top) { _ in -20 }
+            Color.blue.frame(width: 10, height: 10)
+        }, size: CGSize(width: 100, height: 200))
+        let s2 = r2.all.filter { $0.kind == .canvas }.map(\.windowFrame).sorted { $0.minX < $1.minX }
+        XCTAssertEqual(s2[0].minY - s2[1].minY, 20, accuracy: 0.5)
+    }
+
+    func testRowsBelowAGrowingEntryMoveDown() {
+        let model = ChatModel()
+        let (host, root) = render(Chat(model: model), size: CGSize(width: 200, height: 400))
+        func footerY() -> CGFloat { root.all.first { $0.kind == .text && $0.props.text?.plain == "FOOTER" }?.windowFrame.minY ?? -1 }
+        let before = footerY()
+        model.entries[0] = String(repeating: "word ", count: 60)
+        backend.drain()
+        host.renderIfNeeded()
+        XCTAssertGreaterThan(footerY(), before + 30)
+        model.entries.append("Second")
+        backend.drain()
+        let entry = root.all.first { $0.kind == .text && $0.props.text?.plain == "Second" }!.windowFrame
+        XCTAssertGreaterThanOrEqual(footerY(), entry.maxY)
+    }
+
+    func testRowsBelowAnEntryThatGrowsOnItsOwnMoveDown() {
+        struct Live: View {
+            let live: LiveText
+            var body: some View {
+                GeometryReader { _ in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ChatReply(text: "", live: live).equatable()
+                            Text("FOOTER")
+                        }
+                    }
+                }
+            }
+        }
+        let live = LiveText()
+        let (_, root) = render(Live(live: live), size: CGSize(width: 200, height: 400))
+        func y(_ s: String) -> CGRect? { root.all.first { $0.kind == .text && $0.props.text?.plain == s }?.windowFrame }
+        let before = y("FOOTER")!.minY
+        live.text = String(repeating: "word ", count: 60)
+        backend.drain()
+        let reply = y(live.text)!
+        XCTAssertGreaterThan(y("FOOTER")!.minY, before + 30)
+        XCTAssertGreaterThanOrEqual(y("FOOTER")!.minY, reply.maxY)
+    }
+
+    func testStacksPlaceChildrenAsTheyMeasuredThem() {
+        // A horizontal scroll view (greedy in height) in a column inside a
+        // vertical scroll view: measured under an unspecified height, it is
+        // as tall as its content, and stays so when placed.
+        let (_, root) = render(ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(repeating: "word ", count: 40))
+                    ScrollView(.horizontal) { Text("let x = 1").fixedSize().padding(8) }
+                    Text("after the code")
+                }
+                Text("FOOTER")
+            }
+        }, size: CGSize(width: 200, height: 600))
+        func f(_ s: String) -> CGRect { root.all.first { $0.kind == .text && $0.props.text?.plain == s }!.windowFrame }
+        XCTAssertGreaterThanOrEqual(f("FOOTER").minY, f("after the code").maxY)
+    }
+
+    func testStreamedReplyKeepsTheRowsBelowItClear() {
+        struct Blocks: View {
+            let text: String
+            var body: some View {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(text.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, block in
+                        if block.hasPrefix("```") {
+                            ScrollView(.horizontal) { Text(block).fixedSize(horizontal: true, vertical: false).padding(8) }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else if block.hasPrefix("- ") {
+                            ForEach(Array(block.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                                HStack(alignment: .firstTextBaseline, spacing: 6) { Text("•"); Text(line.dropFirst(2)) }
+                            }
+                        } else {
+                            Text(block)
+                        }
+                    }
+                }
+            }
+        }
+        struct Reply: View, Equatable {
+            let text: String
+            var body: some View { Blocks(text: text).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+        struct Chat: View {
+            let model: ChatModel
+            var body: some View {
+                GeometryReader { _ in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 13) {
+                            ForEach(Array(model.entries.enumerated()), id: \.offset) { _, t in Reply(text: t).equatable() }
+                            Text("FOOTER")
+                        }
+                    }
+                }
+            }
+        }
+        let full = "This PR makes Merge run on Linux through Runway, with a longer opening line.\n\n- real popovers anchored to their views\n- local event monitors that can consume a press\n- bindings that re-render the views that read them\n\n```swift\n.popover(isPresented: $open) { Picker() }\n```\n\nWant me to leave a comment on the file?"
+        let model = ChatModel()
+        model.entries = ["Hi", ""]
+        let (_, root) = render(Chat(model: model), size: CGSize(width: 300, height: 700))
+        var i = full.startIndex
+        while i < full.endIndex {
+            i = full.index(i, offsetBy: 24, limitedBy: full.endIndex) ?? full.endIndex
+            model.entries[1] = String(full[..<i])
+            backend.drain()
+        }
+        model.entries.append("after")
+        backend.drain()
+        func f(_ s: String) -> CGRect? { root.all.first { $0.kind == .text && $0.props.text?.plain == s }?.windowFrame }
+        let last = f("Want me to leave a comment on the file?")!
+        XCTAssertGreaterThanOrEqual(f("after")!.minY, last.maxY, root.dump())
     }
 
     func testPositionCentresTheViewAtThePoint() {

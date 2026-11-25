@@ -13,7 +13,7 @@ public struct VStack<Content: View>: View, PrimitiveView {
     }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let kids = ctx.with { $0._stackAxis = .vertical }.resolve(content, "v")
-        return [StackNode(axis: .vertical, alignment: alignment, spacing: spacing, children: kids)]
+        return [StackNode(axis: .vertical, guide: alignment.guide, spacing: spacing, children: kids)]
     }
 }
 
@@ -27,7 +27,7 @@ public struct HStack<Content: View>: View, PrimitiveView {
     }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let kids = ctx.with { $0._stackAxis = .horizontal }.resolve(content, "h")
-        return [StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: spacing, children: kids)]
+        return [StackNode(axis: .horizontal, guide: alignment.guide, spacing: spacing, children: kids)]
     }
 }
 
@@ -187,7 +187,7 @@ public struct GridRow<Content: View>: View, PrimitiveView {
     let content: Content
     public init(alignment: VerticalAlignment? = nil, @ViewBuilder content: () -> Content) { self.alignment = alignment ?? .center; self.content = content() }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
-        [StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: nil, children: ctx.with { $0._stackAxis = .horizontal }.resolve(content, "row"))]
+        [StackNode(axis: .horizontal, guide: alignment.guide, spacing: nil, children: ctx.with { $0._stackAxis = .horizontal }.resolve(content, "row"))]
     }
 }
 
