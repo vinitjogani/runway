@@ -23,6 +23,8 @@ What each Apple API is backed by on each platform. "(to do)" marks gaps.
 | `NSApp.mainMenu`, `NSMenu.popUp` | GtkPopoverMenuBar per window, in its titlebar row; GtkPopoverMenu | key equivalents |
 | Titlebar, `NSToolbar`, full-size content | client-side titlebar row (traffic lights, menu bar, title) and a toolbar band; safe areas | (to do) |
 | `NSScreen` | GDK monitors | one screen |
+| Focus, `onKeyPress`, hover, context menus, drags | GTK focus and event controllers (see [below](#swiftui-interaction)) | (to do) |
+| `Table`, `NSViewRepresentable` | SwiftUI table; representables join the hosting view's AppKit hierarchy | table only |
 
 For the Windows backend's controls, look and services in detail, see the
 [Win32 backend README](../../Sources/RunwayWin32/README.md).
@@ -39,6 +41,40 @@ storage as tags:
   text;
 - keys, typing (input method), clicks, selection, undo and the pasteboard go
   through AppKit's methods.
+
+## SwiftUI interaction
+
+SwiftUI's input modifiers ride on the backend's AppKit extras (event
+containers, native focus), so they work wherever AppKit's do:
+
+- **Focus.** `@FocusState` with `.focused(_:equals:)` follows the toolkit's
+  keyboard focus both ways: a text field or editor gaining focus sets the
+  state, and setting the state moves focus (to a field, or to a view made
+  `.focusable()`). A focused view that goes away leaves focus nowhere, as on
+  the Mac.
+- **Keys.** `.onKeyPress` handlers see a key pressed in the focused view or
+  inside it, innermost first, before the control handles it. A focused
+  SwiftUI text input keeps typing and editing keys even in an AppKit window.
+- **Pointer.** `onHover`, `onContinuousHover`, `contextMenu` (secondary
+  click), `DragGesture` (with `@GestureState`), `onTapGesture(count:)` and
+  `pointerStyle` wrap their content in an event container that sees the
+  pointer without taking clicks from controls inside it.
+- **Hit testing.** As in SwiftUI, only content takes hits: text, images,
+  controls, filled shapes and `contentShape`. Containers, clear shapes and
+  views with `allowsHitTesting(false)` let the pointer through. An NSView's
+  widget is picked only where its `hitTest(_:)` answers that view, so an
+  AppKit overlay that returns nil doesn't hide what's under it.
+- **Tables.** `Table` sorts by clicking headers (`KeyPathComparator`
+  order), resizes columns by dragging header dividers, selects rows
+  (⌘ and ⇧ extend), moves the selection with the arrow keys, and opens rows
+  and shows menus through `contextMenu(forSelectionType:menu:primaryAction:)`.
+- **Representables.** An `NSViewRepresentable` in an `NSHostingView` is a
+  subview of it for AppKit: it gets `window` and `viewDidMoveToWindow`, takes
+  part in hit testing, layout, display and the responder chain, and is
+  dismantled when it leaves.
+- **Scrolling.** `ScrollViewReader.scrollTo`, `defaultScrollAnchor` and
+  `scrollIndicators` work; `TextEditor(text:selection:)` reports and sets
+  the selection.
 
 ## Window chrome on Linux
 
