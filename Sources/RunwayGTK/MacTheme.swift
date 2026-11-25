@@ -204,6 +204,7 @@ enum MacTheme {
         button label:disabled { color: inherit; }
         .rw-tap { all: unset; }
         .rw-container { background: none; }
+        scrolledwindow.rw-clear-background, scrolledwindow.rw-clear-background textview, scrolledwindow.rw-clear-background textview > text { background: none; }
         scrolledwindow.rw-scroll { background: none; }
         undershoot, overshoot { background: none; }
 
@@ -372,6 +373,7 @@ enum MacTheme {
 
         /* Multi-line text (TextEditor). */
         scrolledwindow.rw-editor { background-color: \(p.textBackground); }
+        scrolledwindow.rw-editor.rw-clear-background { background: none; }
         textview, textview > text { background-color: transparent; color: \(p.text); caret-color: \(p.accent); }
         textview > border { background: none; }
 

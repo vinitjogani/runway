@@ -47,6 +47,9 @@ public struct RawEvent: Sendable {
     public var characters: String = ""
     public var charactersIgnoringModifiers: String = ""
     public var isRepeat = false
+    /// Keys: a native text input (a SwiftUI text field or editor, say) has
+    /// keyboard focus, so typing and its editing keys are the toolkit's.
+    public var nativeTextFocus = false
     public init(kind: Kind) { self.kind = kind }
 }
 

@@ -431,7 +431,8 @@ extension View {
     public func glassEffectID<ID: Hashable>(_ id: ID, in namespace: Namespace.ID) -> some View { self }
     public func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectStyle?, for edges: Edge.Set) -> some View { self }
     public func scrollBounceBehavior(_ behavior: ScrollBounceBehavior, axes: Axis.Set = [.vertical]) -> some View { self }
-    public func scrollContentBackground(_ visibility: Visibility) -> some View { self }
+    /// Text editors (and lists) inside draw no background of their own.
+    public func scrollContentBackground(_ visibility: Visibility) -> some View { environment { $0._scrollContentBackgroundHidden = visibility == .hidden } }
     /// Scroll views inside hide their scroll bars (still scrolling by wheel and keys).
     public func scrollIndicators(_ visibility: ScrollIndicatorVisibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View {
         environment { env in
@@ -560,4 +561,9 @@ extension EnvironmentValues {
     var _scrollIndicatorsHorizontal: ScrollIndicatorVisibility { get { self[ScrollIndicatorsHKey.self] } set { self[ScrollIndicatorsHKey.self] = newValue } }
     public var horizontalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsHorizontal }
     public var verticalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsVertical }
+}
+
+struct ScrollContentBackgroundHiddenKey: EnvironmentKey { static var defaultValue: Bool { false } }
+extension EnvironmentValues {
+    var _scrollContentBackgroundHidden: Bool { get { self[ScrollContentBackgroundHiddenKey.self] } set { self[ScrollContentBackgroundHiddenKey.self] = newValue } }
 }

@@ -25,6 +25,7 @@ typedef struct {
     const char *keyname;
     const char *chars;
     int is_repeat;
+    int native_text_focus;   /* keys: a native text input has keyboard focus */
 } RunwayAppKitEvent;
 
 typedef gboolean (*RunwayAppKitEventFunc)(const RunwayAppKitEvent *e, void *data);

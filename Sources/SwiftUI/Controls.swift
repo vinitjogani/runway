@@ -372,6 +372,8 @@ public struct TextEditor: View, PrimitiveView {
         events.onText = { if text.wrappedValue != $0 { text.wrappedValue = $0 } }
         var p = ctx.baseProps()
         p.string = text.wrappedValue
+        p.clearBackground = ctx.env._scrollContentBackgroundHidden
+        if let font = ctx.env.font { p.text = Text(verbatim: "").font(font).styled(ctx.env) }
         if let selection {
             let string = text.wrappedValue
             p.selection = selection.wrappedValue.map { $0.scalarRange(in: string) }

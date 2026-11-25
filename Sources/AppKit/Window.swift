@@ -859,7 +859,9 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                 if h.handleKey(KeyPress(key: legacyKeyName(raw), command: flags.contains(.command), shift: flags.contains(.shift), option: flags.contains(.option))) { return true }
             }
             KeyDispatch.unhandled = false
-            let nativeFocus = (firstResponder as? NSView)?.usesNativeKeyboardFocus ?? false
+            // A SwiftUI text field or editor isn't a responder AppKit knows:
+            // the toolkit says when native text input has focus.
+            let nativeFocus = ((firstResponder as? NSView)?.usesNativeKeyboardFocus ?? false) || raw.nativeTextFocus
             if nativeFocus, type == .keyDown, let tv = firstResponder as? NSTextView, tv.takesKeyEvents,
                flags.contains(.command) || KeyBindings.selector(for: e) != nil {
                 // A text view takes its commands as events (keyDown(with:) →

@@ -692,6 +692,8 @@ final class WorkBox {
             b.setClass("rw-plain", !p.bordered)
             if old.text != p.text || b.props == WidgetProps() { applyEntryFont(b, p.text?.runs.first) }
         case .textEditor:
+            b.setClass("rw-clear-background", p.clearBackground)
+            if old.text != p.text { applyEntryFont(b, p.text?.runs.first) }
             if let tv = b.inner, let buffer = gtk_text_view_get_buffer(typed(tv)) {
                 var start = GtkTextIter(), end = GtkTextIter()
                 gtk_text_buffer_get_bounds(buffer, &start, &end)
@@ -1028,6 +1030,7 @@ final class WorkBox {
             colorRules[name] = """
             entry.\(name), entry.\(name) > text { \(font) \(color) }
             entry.\(name) > text > placeholder { \(font) }
+            scrolledwindow.\(name) textview, scrolledwindow.\(name) textview > text { \(font) \(color) }
             """
             loadColorRules()
         }

@@ -62,6 +62,7 @@ private let eventTrampoline: @convention(c) (UnsafePointer<RunwayAppKitEvent>?, 
     e.characters = chars
     e.charactersIgnoringModifiers = chars
     e.isRepeat = c.is_repeat != 0
+    e.nativeTextFocus = c.native_text_focus != 0
     return MainActor.assumeIsolated { box.f(e) } ? 1 : 0
 }
 

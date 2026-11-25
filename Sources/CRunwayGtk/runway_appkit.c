@@ -123,6 +123,9 @@ static gboolean key_common(EventTarget *t, guint keyval, guint keycode, GdkModif
         return FALSE;
     }
     e.kind = press ? RUNWAY_EV_KEY_DOWN : RUNWAY_EV_KEY_UP;
+    GtkRoot *root = gtk_widget_get_root(t->content);
+    GtkWidget *focus = root ? gtk_root_get_focus(root) : NULL;
+    e.native_text_focus = focus && (GTK_IS_TEXT(focus) || GTK_IS_TEXT_VIEW(focus)) && gtk_widget_is_sensitive(focus);
     // Repeats: a press for a key that's already down.
     int found = -1;
     for (int i = 0; i < t->n_down; i++) if (t->down_keys[i] == keycode) found = i;
