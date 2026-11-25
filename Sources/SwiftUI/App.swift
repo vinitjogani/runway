@@ -7,6 +7,7 @@
 @_exported import Observation
 // On macOS, SwiftUI re-exports AppKit (NSView, NSViewRepresentable hosts…).
 @_exported import AppKit
+@_spi(Runway) import AppKit
 // iOS SwiftUI source likewise sees UIKit types without an explicit import.
 @_exported @_spi(Runway) import UIKit
 import RunwayCore
@@ -655,8 +656,13 @@ open class NSHostingView<Content: View>: NSView, KeyHandling {
         let container = Runway.backend.makeWidget(.container)
         host = ViewHost(rootView, container: container)
         super.init(frame: .zero)
+        host.hostingView = self
         Runway.backend.setChildren(widget, [(container, .zero)], contentSize: .zero)
     }
+
+    /// Top-left origin, as SwiftUI lays out (NSViewRepresentable views are
+    /// framed in it).
+    open override var isFlipped: Bool { true }
     public required init?(coder: NSCoder) { fatalError("NSCoder isn't supported") }
 
     open override var managesOwnContent: Bool { true }
@@ -731,12 +737,16 @@ public protocol NSViewRepresentable: View where Body == Never {
     func updateNSView(_ nsView: NSViewType, context: Context)
     func makeCoordinator() -> Coordinator
     static func dismantleNSView(_ nsView: NSViewType, coordinator: Coordinator)
+    /// The view's size for a proposal; nil for its intrinsic size (or the
+    /// proposal where it has none).
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSViewType, context: Context) -> CGSize?
     typealias Context = NSViewRepresentableContext<Self>
 }
 
 extension NSViewRepresentable {
     public var body: Never { fatalError() }
     public static func dismantleNSView(_ nsView: NSViewType, coordinator: Coordinator) {}
+    public func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSViewType, context: Context) -> CGSize? { nil }
 }
 extension NSViewRepresentable where Coordinator == Void {
     public func makeCoordinator() {}
@@ -813,22 +823,41 @@ extension NSViewRepresentable {
             box.value = RepresentableState(view: makeNSView(context: context), coordinator: coordinator)
         }
         let state = box.value!
-        updateNSView(state.view, context: NSViewRepresentableContext<Self>(coordinator: state.coordinator, environment: ctx.env))
-        return [RepresentedNode(state.view)]
+        let context = NSViewRepresentableContext<Self>(coordinator: state.coordinator, environment: ctx.env)
+        updateNSView(state.view, context: context)
+        // Leaving the tree: out of the AppKit hierarchy, then dismantled.
+        ctx.host.appear(key + "#dismantle", onAppear: nil, onDisappear: { [weak host = ctx.host] in
+            host?.hostingView?.detachHostedSubview(state.view)
+            Self.dismantleNSView(state.view, coordinator: state.coordinator)
+        })
+        let node = RepresentedNode(state.view)
+        let representable = self
+        node.fits = { p in representable.sizeThatFits(ProposedViewSize(width: p.width, height: p.height), nsView: state.view, context: context) }
+        return [node]
     }
 }
 
 /// Places an NSView's container and sizes the view to its frame.
 final class RepresentedNode: LayoutNode {
     let view: NSView
+    /// The representable's own sizeThatFits, when it has one.
+    var fits: ((ProposedSize) -> CGSize?)?
     init(_ view: NSView) { self.view = view }
+    /// Its own answer, else its intrinsic size on axes that have one, else
+    /// the proposal (flexible, infinity included, as SwiftUI's).
     override func sizeThatFits(_ p: ProposedSize) -> CGSize {
+        if let s = fits?(p) { return s }
         let i = view.intrinsicContentSize
-        return CGSize(width: p.width.flatMap { $0.isFinite ? $0 : nil } ?? (i.width > 0 ? i.width : 10),
-                      height: p.height.flatMap { $0.isFinite ? $0 : nil } ?? (i.height > 0 ? i.height : 10))
+        return CGSize(width: i.width > 0 ? i.width : p.width ?? 10, height: i.height > 0 ? i.height : p.height ?? 10)
     }
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
-        if view.frame.size != rect.size { view.frame = CGRect(origin: .zero, size: rect.size) }
+        if let hosting = sink.host?.hostingView, hosting !== view {
+            let inHost = CGRect(x: sink.hostOrigin.x + rect.minX - sink.offset.x, y: sink.hostOrigin.y + rect.minY - sink.offset.y,
+                                width: rect.width, height: rect.height)
+            hosting.attachHostedSubview(view, topLeftFrame: inHost)
+        } else if view.frame.size != rect.size {
+            view.frame = CGRect(origin: .zero, size: rect.size)
+        }
         sink.add(view.widget, rect)
     }
 }

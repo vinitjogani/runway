@@ -153,6 +153,9 @@ public struct WidgetProps: Equatable, Sendable {
     public var selection: Range<Int>?
     public var backdropBlur: BackdropBlur?
     public var clips = false
+    /// A canvas that takes pointer events where it's drawn (SwiftUI's
+    /// filled shapes); canvases are otherwise transparent to the pointer.
+    public var hitTestable = false
     public init() {}
 }
 

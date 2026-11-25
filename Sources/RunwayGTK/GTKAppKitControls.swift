@@ -440,6 +440,19 @@ extension GTKBackend: AppKitBackend {
         }
     }
 
+    public func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?) {
+        guard let c = (container as? GtkBox)?.canvas, runway_widget_is_canvas(c) != 0 else { return }
+        guard let owns else { runway_canvas_set_contains(c, nil, nil, nil); return }
+        let box = OwnsPointBox(owns)
+        runway_canvas_set_contains(c, { x, y, data in
+            guard let data else { return 1 }
+            let f = Unmanaged<OwnsPointBox>.fromOpaque(data).takeUnretainedValue().f
+            return MainActor.assumeIsolated { f(CGPoint(x: x, y: y)) } ? 1 : 0
+        }, Unmanaged.passRetained(box).toOpaque(), { data in
+            if let data { Unmanaged<OwnsPointBox>.fromOpaque(data).release() }
+        })
+    }
+
     public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {
         gtk_widget_set_can_target(box(widget).outer, testable ? 1 : 0)
     }
@@ -994,5 +1007,9 @@ extension GTKBackend: AppKitBackend {
         }
     }
     private static var menuActions: GTKMenuActions?
+}
+final class OwnsPointBox {
+    let f: @MainActor (CGPoint) -> Bool
+    init(_ f: @escaping @MainActor (CGPoint) -> Bool) { self.f = f }
 }
 #endif

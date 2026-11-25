@@ -362,7 +362,7 @@ extension NSView {
     func constraintsInvolvingOutside() -> [NSLayoutConstraint] {
         var out: [NSLayoutConstraint] = []
         var ids = Set<ObjectIdentifier>()
-        func collect(_ v: NSView) { ids.insert(ObjectIdentifier(v)); v._layoutGuides.forEach { ids.insert(ObjectIdentifier($0)) }; v.subviews.forEach(collect) }
+        func collect(_ v: NSView) { ids.insert(ObjectIdentifier(v)); v._layoutGuides.forEach { ids.insert(ObjectIdentifier($0)) }; v.treeChildren.forEach(collect) }
         collect(self)
         var a = superview
         while let cur = a {
@@ -482,7 +482,7 @@ extension NSView {
     }
 
     public func updateConstraintsForSubtreeIfNeeded() {
-        for s in subviews { s.updateConstraintsForSubtreeIfNeeded() }
+        for s in treeChildren { s.updateConstraintsForSubtreeIfNeeded() }
         if _needsUpdateConstraints {
             if let vc = _viewController, vc.isViewLoaded, vc.view === self { vc.updateViewConstraints() } else { updateConstraints() }
             _needsUpdateConstraints = false
@@ -524,12 +524,12 @@ extension NSView {
             layout()
             vc?.viewDidLayout()
         }
-        for s in subviews { s.layoutPass(&any) }
+        for s in treeChildren { s.layoutPass(&any) }
     }
 
     func subtreeUsesConstraints() -> Bool {
         if !_constraints.isEmpty { return true }
-        return subviews.contains { $0.subtreeUsesConstraints() }
+        return treeChildren.contains { $0.subtreeUsesConstraints() }
     }
 
     /// The smallest size satisfying the constraints this view's subtree holds.

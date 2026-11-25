@@ -20,6 +20,11 @@ void runway_canvas_set_content_size(GtkWidget *canvas, int width, int height);
 /// do: what's under its empty parts gets the clicks (a toolbar over
 /// full-size content).
 void runway_canvas_set_pass_through(GtkWidget *canvas, int pass);
+/// Whether a point (canvas coordinates) belongs to the canvas itself when
+/// picking (its children are asked first). Replaces any earlier function.
+int runway_widget_is_canvas(GtkWidget *w);
+typedef gboolean (*RunwayContainsFunc)(double x, double y, void *data);
+void runway_canvas_set_contains(GtkWidget *canvas, RunwayContainsFunc fn, void *data, GDestroyNotify notify);
 /// The smallest the canvas may be made (-1, -1: its content size): a
 /// window's content, so the window can be resized smaller than it opened.
 void runway_canvas_set_min_size(GtkWidget *canvas, int width, int height);

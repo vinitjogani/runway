@@ -5,6 +5,19 @@ import XCTest
 import RunwayCore
 @testable import SwiftUI
 
+private final class ProbeView: NSView {
+    var movedToWindow = 0
+    override func viewDidMoveToWindow() { movedToWindow += 1 }
+}
+
+private struct Probe: NSViewRepresentable {
+    let view: ProbeView
+    let dismantled: () -> Void
+    func makeNSView(context: Context) -> ProbeView { view }
+    func updateNSView(_ nsView: ProbeView, context: Context) {}
+    static func dismantleNSView(_ nsView: ProbeView, coordinator: ()) { }
+}
+
 private struct WrappingLabelStyle: LabelStyle {
     let inner: _Style
     func makeBody(configuration: Configuration) -> some View { Label(configuration).labelStyle(inner) }
@@ -101,5 +114,27 @@ final class InteractionTests: XCTestCase {
         }.frame(width: 300))
         let label = root.all.first { $0.kind == .text }
         XCTAssertGreaterThan(label?.frame.width ?? 0, 200)
+    }
+
+    func testRepresentableJoinsTheHostingViewHierarchy() {
+        let probe = ProbeView()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: VStack(spacing: 0) {
+            Color.red.frame(height: 50)
+            Probe(view: probe, dismantled: {}).frame(width: 100, height: 40)
+            Spacer()
+        })
+        window.contentView = hosting
+        hosting.frame = NSRect(x: 0, y: 0, width: 300, height: 200)
+        hosting.layoutSubtreeIfNeeded()
+        hosting.host.render()
+        XCTAssertTrue(probe.superview === hosting)
+        XCTAssertTrue(probe.window === window)
+        XCTAssertEqual(probe.movedToWindow, 1)
+        // Framed where SwiftUI put it, in the hosting view's top-left coordinates.
+        XCTAssertEqual(probe.frame, NSRect(x: 100, y: 50, width: 100, height: 40))
+        // hitTest takes the superview's (here the window's) coordinates.
+        XCTAssertTrue(hosting.hitTest(hosting.convert(NSPoint(x: 150, y: 70), to: nil)) === probe)
+        XCTAssertFalse(hosting.hitTest(hosting.convert(NSPoint(x: 150, y: 10), to: nil)) === probe)
     }
 }

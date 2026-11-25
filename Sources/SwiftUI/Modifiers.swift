@@ -277,8 +277,6 @@ extension View {
     public func onLongPressGesture(minimumDuration: Double = 0.5, perform action: @escaping () -> Void) -> some View { self }
     public func onDrag(_ data: @escaping () -> NSItemProvider) -> some View { self }
     public func onDrag<V: View>(_ data: @escaping () -> NSItemProvider, @ViewBuilder preview: () -> V) -> some View { self }
-    public func contentShape<S: Shape>(_ shape: S, eoFill: Bool = false) -> some View { self }
-    public func contentShape<K, S: Shape>(_ kind: K, _ shape: S, eoFill: Bool = false) -> some View { self }
     public func onOpenURL(perform action: @escaping (URL) -> Void) -> some View { self }
     public func onExitCommand(perform action: (() -> Void)?) -> some View {
         nodes("exit") { ns, ctx in

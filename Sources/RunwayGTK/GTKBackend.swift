@@ -742,6 +742,7 @@ final class WorkBox {
                 updateImage(b, p)
             }
         case .canvas, .divider:
+            if old.hitTestable != p.hitTestable { gtk_widget_set_can_target(w, p.hitTestable ? 1 : 0) }
             if old.backdropBlur != p.backdropBlur {
                 runway_widget_set_backdrop_blur(w, Float(p.backdropBlur?.radius ?? 0), Float(p.backdropBlur?.cornerRadius ?? 0))
             }

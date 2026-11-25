@@ -159,6 +159,9 @@ extension ViewHost {
                                               pointer: { [weak handlers] e in handlers?.pointer(e) ?? false },
                                               key: { [weak handlers] k in handlers?.key(k) ?? false })
             if focusable { appKit.observeFocus(w) { [weak handlers] gained in handlers?.focus(gained) } }
+            // Like other SwiftUI containers it sees the pointer over its
+            // content (text, filled shapes, a contentShape), not its gaps.
+            appKit.setPassesThrough(w, true)
             return w
         }
         return (w, handlers)
@@ -620,4 +623,34 @@ extension ContainerNode {
         n.tagValue = content.tagValue
         return n
     }
+}
+
+// MARK: Content shapes
+
+extension View {
+    /// The view's whole frame takes hits (taps, hover, context menus), not
+    /// only what it draws.
+    public func contentShape<S: Shape>(_ shape: S, eoFill: Bool = false) -> some View {
+        nodes("cshape") { ns, ctx in
+            guard !ctx.dryRun, let w = ctx.widget(.container, "shape") else { return ns }
+            (ctx.host.backend as? AppKitBackend)?.setPassesThrough(w, false)
+            ctx.host.backend.update(w, props: WidgetProps(), events: WidgetEvents())
+            let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
+            return [ContainerNode.modifier(w, ctx.host.backend, inner)]
+        }
+    }
+    public func contentShape<S: Shape>(_ kind: ContentShapeKinds, _ shape: S, eoFill: Bool = false) -> some View {
+        Group { if kind.contains(.interaction) || kind.contains(.hoverEffect) { contentShape(shape, eoFill: eoFill) } else { self } }
+    }
+}
+
+public struct ContentShapeKinds: OptionSet, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let interaction = Self(rawValue: 1)
+    public static let dragPreview = Self(rawValue: 2)
+    public static let contextMenuPreview = Self(rawValue: 4)
+    public static let hoverEffect = Self(rawValue: 8)
+    public static let focusEffect = Self(rawValue: 16)
+    public static let accessibility = Self(rawValue: 32)
 }

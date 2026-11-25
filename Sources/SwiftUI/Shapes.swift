@@ -356,6 +356,9 @@ public struct _ShapeView<S: Shape>: View, PrimitiveView {
         let shape = self.shape
         var p = WidgetProps()
         p.tooltip = env._help
+        // A filled shape takes hits where it's drawn, as in SwiftUI (a clear
+        // one doesn't: that's what contentShape is for).
+        p.hitTestable = paints.contains { paint, stroke, _ in stroke == nil && paint.averageColor.a > 0.001 }
         return [ShapeNode(widget: ctx.widget(.canvas), backend: ctx.host.backend, props: p, events: WidgetEvents()) { rect in
             paints.map { paint, stroke, inset in
                 if let stroke {

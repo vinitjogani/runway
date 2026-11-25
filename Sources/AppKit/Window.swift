@@ -1010,7 +1010,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             func walk(_ v: NSView) {
                 guard !v.isHidden else { return }
                 trackingCache += v.trackingAreas
-                v.subviews.forEach(walk)
+                v.treeChildren.forEach(walk)
             }
             contentView.map(walk)
         }
@@ -1110,7 +1110,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                 v.discardCursorRects()
                 v.resetCursorRects()
                 for (r, c) in v.cursorRects { cursorRectList.append((v.convert(r, to: nil).intersection(v.convert(v.visibleRect, to: nil)), c)) }
-                v.subviews.forEach(walk)
+                v.treeChildren.forEach(walk)
             }
             contentView.map(walk)
         }

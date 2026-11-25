@@ -212,6 +212,9 @@ final class ScopeNode: LayoutNode {
     public var baseEnvironment: EnvironmentValues
     public private(set) var size: CGSize = .zero
     weak var window: NativeWindow?
+    /// The NSHostingView showing this host, if any: NSViewRepresentable
+    /// views join its view hierarchy.
+    weak var hostingView: NSView?
     /// Called when the ideal size changes (windows sized to content).
     var onIdealSizeChange: ((CGSize) -> Void)?
     var onTitleChange: ((String) -> Void)?
@@ -284,6 +287,7 @@ final class ScopeNode: LayoutNode {
         let backend = backend ?? Runway.backend
         self.backend = backend
         self.container = container ?? backend.makeWidget(.container)
+        (backend as? AppKitBackend)?.setPassesThrough(self.container, true)
         self.baseEnvironment = environment
         self.root = { ctx in ctx.resolve(view, "root") }
     }
@@ -517,6 +521,8 @@ final class ScopeNode: LayoutNode {
             destroy(w)
         }
         let w = backend.makeWidget(kind)
+        // SwiftUI's containers take no hits themselves, only their content.
+        if kind == .container { (backend as? AppKitBackend)?.setPassesThrough(w, true) }
         widgets[key] = (kind, w)
         WidgetKinds.set(w, kind)
         return w
@@ -887,6 +893,9 @@ struct UncheckedScopeRef: @unchecked Sendable {
     /// The enclosing scroll view's document, and this container's origin in it.
     weak var scrollDocument: NativeWidget?
     var documentOrigin: CGPoint = .zero
+    /// This container's origin in the host's root container (as currently
+    /// scrolled).
+    var hostOrigin: CGPoint = .zero
     var items: [(NativeWidget, CGRect)] = []
     init(container: NativeWidget, backend: Backend, host: ViewHost? = nil) { self.container = container; self.backend = backend; self.host = host }
 
@@ -900,6 +909,7 @@ struct UncheckedScopeRef: @unchecked Sendable {
         s.offset = origin
         s.scrollDocument = scrollDocument
         s.documentOrigin = documentOrigin
+        s.hostOrigin = hostOrigin
         return s
     }
 

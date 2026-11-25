@@ -18,6 +18,11 @@ struct _RunwayCanvas {
     // a scroll redraws the (culled) children.
     GtkAdjustment *hadj, *vadj;
     gboolean pass_through;
+    // Whether a point (in the canvas) is the widget's own: an AppKit view
+    // answers as its hitTest(_:) does.
+    RunwayContainsFunc contains_fn;
+    void *contains_data;
+    GDestroyNotify contains_notify;
     unsigned backdrop_count;
     // A window's content: the smallest it may get (-1: its content size,
     // as for any canvas), so the window can still be made smaller.
@@ -229,6 +234,7 @@ static void runway_canvas_dispose(GObject *object) {
     RunwayCanvas *self = RUNWAY_CANVAS(object);
     canvas_watch(self, &self->hadj, NULL);
     canvas_watch(self, &self->vadj, NULL);
+    runway_canvas_set_contains(GTK_WIDGET(object), NULL, NULL, NULL);
     GtkWidget *w = GTK_WIDGET(object);
     GtkWidget *c;
     while ((c = gtk_widget_get_first_child(w))) gtk_widget_unparent(c);
@@ -238,8 +244,21 @@ static void runway_canvas_dispose(GObject *object) {
 // Picking asks the children first, then whether the widget itself
 // contains the point: a pass-through canvas never does.
 static gboolean runway_canvas_contains(GtkWidget *widget, double x, double y) {
-    if (RUNWAY_CANVAS(widget)->pass_through) return FALSE;
-    return GTK_WIDGET_CLASS(runway_canvas_parent_class)->contains(widget, x, y);
+    RunwayCanvas *self = RUNWAY_CANVAS(widget);
+    if (self->pass_through) return FALSE;
+    if (!GTK_WIDGET_CLASS(runway_canvas_parent_class)->contains(widget, x, y)) return FALSE;
+    if (self->contains_fn) return self->contains_fn(x, y, self->contains_data);
+    return TRUE;
+}
+
+int runway_widget_is_canvas(GtkWidget *w) { return RUNWAY_IS_CANVAS(w); }
+
+void runway_canvas_set_contains(GtkWidget *canvas, RunwayContainsFunc fn, void *data, GDestroyNotify notify) {
+    RunwayCanvas *self = RUNWAY_CANVAS(canvas);
+    if (self->contains_notify && self->contains_data) self->contains_notify(self->contains_data);
+    self->contains_fn = fn;
+    self->contains_data = data;
+    self->contains_notify = notify;
 }
 
 void runway_canvas_set_pass_through(GtkWidget *canvas, int pass) {
@@ -287,7 +306,14 @@ void runway_canvas_place(GtkWidget *canvas, GtkWidget *child, int x, int y, int 
     }
     gboolean changed = r->x != x || r->y != y || r->w != width || r->h != height;
     r->x = x; r->y = y; r->w = width; r->h = height;
-    if (gtk_widget_get_parent(child) != canvas) {
+    GtkWidget *old_parent = gtk_widget_get_parent(child);
+    if (old_parent != canvas) {
+        // A view that moved to another container this render (a modifier
+        // wrapper came or went) leaves the old one first.
+        if (old_parent) {
+            if (RUNWAY_IS_CANVAS(old_parent)) runway_canvas_remove(old_parent, child);
+            else gtk_widget_unparent(child);
+        }
         gtk_widget_set_parent(child, canvas);
         if (widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count++;
         changed = TRUE;

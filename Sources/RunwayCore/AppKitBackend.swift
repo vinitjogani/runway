@@ -170,6 +170,12 @@ public struct StatusItemSpec {
     func resignFocus(_ widget: NativeWidget)
     /// Whether a widget and what's inside it take pointer events.
     func setHitTestable(_ widget: NativeWidget, _ testable: Bool)
+    /// Which points of a container are its own when the toolkit picks the
+    /// widget under the pointer (what's inside it is asked first): an
+    /// AppKit view answers as its `hitTest(_:)` does, so a view that lets
+    /// clicks through doesn't hide the controls beneath it. Points are in
+    /// the container's top-left coordinates.
+    func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?)
     /// Focus entering (true) or leaving a focusable container.
     func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void)
     func setCursor(_ widget: NativeWidget, _ cursor: CursorKind)
@@ -312,6 +318,7 @@ extension AppKitBackend {
 
     public func resignFocus(_ widget: NativeWidget) {}
     public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {}
+    public func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?) {}
     /// Backends without interactive moves leave the window where it is.
     public func beginWindowMove(_ window: NativeWindow, button: Int, at point: CGPoint, timestamp: TimeInterval) {}
     /// Backends that route input themselves needn't do anything.

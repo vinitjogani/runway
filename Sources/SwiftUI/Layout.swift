@@ -660,9 +660,16 @@ final class ContainerNode: LayoutNode {
         sink.add(widget, rect)
         let inner = backend.childContainer(widget)
         let s = sink.nested(inner, origin: .zero)
+        let chromeOrigin = inner !== widget ? CGPoint(x: insets.leading, y: insets.top) : .zero
+        s.hostOrigin = CGPoint(x: sink.hostOrigin.x + rect.minX - sink.offset.x + chromeOrigin.x,
+                               y: sink.hostOrigin.y + rect.minY - sink.offset.y + chromeOrigin.y)
         if case .scroll(_, _, true) = sizing {
             s.scrollDocument = widget
             s.documentOrigin = .zero
+            if let scrolled = (backend as? AppKitBackend)?.scrollOffset(widget) {
+                s.hostOrigin.x -= scrolled.x
+                s.hostOrigin.y -= scrolled.y
+            }
         } else {
             let chrome = inner !== widget ? CGPoint(x: insets.leading, y: insets.top) : .zero
             s.documentOrigin = CGPoint(x: sink.documentOrigin.x + rect.minX - sink.offset.x + chrome.x,
