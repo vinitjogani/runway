@@ -473,6 +473,15 @@ extension Array {
 
     func relayout() {
         guard let toolbar else { return }
+        // The selected item (preference-style toolbars) follows the toolbar's
+        // selectedItemIdentifier, not just the one selected when it was made.
+        for item in toolbar.items {
+            guard let b = itemViews[ObjectIdentifier(item)] as? NSButton, item.view == nil else { continue }
+            let on = toolbar.selectedItemIdentifier == item.itemIdentifier
+            if on { b.setButtonType(.pushOnPushOff) }
+            let state: NSControl.StateValue = on ? .on : .off
+            if b.state != state { b.state = state }
+        }
         let w = bounds.width, h = bounds.height
         if let win = hostWindowRef {
             titleLabel.stringValue = win.titleVisibility == .visible ? win.title : ""

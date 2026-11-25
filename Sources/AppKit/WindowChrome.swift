@@ -73,6 +73,7 @@ extension NSWindow {
     func updateTitlebarTitle() {
         guard let n = nativeWindow else { return }
         Runway.appKit?.setTitlebarShowsTitle(n, titleVisibility == .visible && toolbarBandHeight == 0)
+        Runway.appKit?.setContentUnderToolbarBand(n, styleMask.contains(.fullSizeContentView))
         Runway.appKit?.setToolbarBand(n, height: toolbarBandHeight)
     }
 

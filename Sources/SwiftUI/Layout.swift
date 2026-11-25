@@ -230,6 +230,10 @@ final class WidgetNode: LayoutNode {
         var w = natural.width, h = natural.height
         if flexibleWidth, let pw { w = max(pw, minWidth) }
         if flexibleHeight, let ph { h = ph }
+        // Flexible controls take an infinite offer too, so stacks see how
+        // far they can grow.
+        if flexibleWidth, p.width == .infinity { w = .infinity }
+        if flexibleHeight, p.height == .infinity { h = .infinity }
         return CGSize(width: w, height: h)
     }
 

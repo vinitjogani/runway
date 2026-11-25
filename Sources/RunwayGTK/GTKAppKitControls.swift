@@ -943,6 +943,10 @@ extension GTKBackend: AppKitBackend {
     public func setToolbarBand(_ window: NativeWindow, height: CGFloat) {
         (window as? GtkNativeWindow)?.setBandHeight(height)
     }
+    public func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool) {
+        (window as? GtkNativeWindow)?.setContentUnderBand(under)
+    }
+
     public func windowButtonFrames(_ window: NativeWindow) -> [CGRect]? {
         (window as? GtkNativeWindow)?.windowButtonFrames
     }

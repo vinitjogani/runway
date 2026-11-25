@@ -206,8 +206,17 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         updateMerge()
     }
 
+    private var contentUnderBand = false
+    func setContentUnderBand(_ under: Bool) {
+        guard under != contentUnderBand else { return }
+        contentUnderBand = under
+        updateMerge()
+    }
+
     private func updateMerge() {
-        let inBand = bandHeight > 0 && titlebar != nil
+        // In the band when the row would hold nothing else (global menu), or
+        // when the content runs under the band and has room for them.
+        let inBand = bandHeight > 0 && titlebar != nil && (globalMenu || contentUnderBand)
         let hideRow = inBand && globalMenu
         if let floatingControls {
             gtk_widget_set_margin_top(floatingControls, Int32(((bandHeight - Self.lightSize) / 2).rounded()))
@@ -698,7 +707,19 @@ final class WorkBox {
                 gtk_check_button_set_label(typed(w), p.title.isEmpty ? nil : p.title)
                 if gtk_check_button_get_active(typed(w)) != (p.isOn ? 1 : 0) { gtk_check_button_set_active(typed(w), p.isOn ? 1 : 0) }
             case .button:
-                gtk_button_set_label(typed(w), p.title)
+                // An image button that stays pressed (a preferences toolbar's
+                // selected tab): its content goes in a canvas, as a button's.
+                if p.hasContent {
+                    if b.canvas == nil {
+                        let c = runway_canvas_new()!
+                        gtk_button_set_child(typed(w), c)
+                        b.canvas = c
+                    }
+                    b.setClass("rw-content", true)
+                } else {
+                    gtk_button_set_label(typed(w), p.title)
+                }
+                b.setClass("flat", !p.bordered)
                 if gtk_toggle_button_get_active(typed(w)) != (p.isOn ? 1 : 0) { gtk_toggle_button_set_active(typed(w), p.isOn ? 1 : 0) }
             }
         case .textField:
@@ -1167,7 +1188,7 @@ final class WorkBox {
         if b.kind == .menuButton, b.canvas != nil {
             return EdgeInsetsValue(top: 0, leading: 10, bottom: 0, trailing: 10)
         }
-        guard b.kind == .button, let c = b.canvas else { return .zero }
+        guard b.kind == .button || b.kind == .toggle(.button), let c = b.canvas else { return .zero }
         // The chrome is the button's size around an empty label area.
         runway_canvas_set_content_size(c, 0, 0)
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
@@ -1182,7 +1203,7 @@ final class WorkBox {
     /// the button's minimum size.
     public func labelAreaInsets(_ widget: NativeWidget) -> EdgeInsetsValue {
         let b = widget as! GtkBox
-        guard b.kind == .button, let c = b.canvas else { return .zero }
+        guard b.kind == .button || b.kind == .toggle(.button), let c = b.canvas else { return .zero }
         let big: Int32 = 400
         runway_canvas_set_content_size(c, big, big)
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
@@ -1218,7 +1239,7 @@ final class WorkBox {
             if let inner = b.inner, b.kind == .image {
                 runway_canvas_place(b.outer, inner, 0, 0, Int32(frame.width), Int32(frame.height))
             }
-            if b.kind == .button, let c = b.canvas {
+            if b.kind == .button || b.kind == .toggle(.button), let c = b.canvas {
                 let ins = contentInsets(b)
                 runway_canvas_set_content_size(c, Int32(max(0, frame.width - ins.leading - ins.trailing)), Int32(max(0, frame.height - ins.top - ins.bottom)))
             }

@@ -247,6 +247,9 @@ public struct StatusItemSpec {
     /// may float them at the band's leading edge, as a Mac window with a
     /// unified toolbar has them.
     func setToolbarBand(_ window: NativeWindow, height: CGFloat)
+    /// Whether the content runs under the toolbar band (full-size content):
+    /// apps then leave room at its leading edge for the window buttons.
+    func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool)
     /// The close, minimise and zoom buttons' frames in the window's canvas
     /// (y down from its top) while they're over the content; nil while they
     /// have a titlebar row of their own.
@@ -325,6 +328,7 @@ extension AppKitBackend {
     public func setPassesThrough(_ container: NativeWidget, _ passes: Bool) {}
     public func setTitlebarShowsTitle(_ window: NativeWindow, _ shows: Bool) {}
     public func setToolbarBand(_ window: NativeWindow, height: CGFloat) {}
+    public func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool) {}
     public func windowButtonFrames(_ window: NativeWindow) -> [CGRect]? { nil }
     public func labelAreaInsets(_ widget: NativeWidget) -> EdgeInsetsValue { contentInsets(widget) }
 }

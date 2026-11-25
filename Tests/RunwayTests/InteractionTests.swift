@@ -191,4 +191,35 @@ final class InteractionTests: XCTestCase {
         backend.drain()
         XCTAssertEqual(Counted.made, 2, "a new view, as SwiftUI makes one for new identity")
     }
+
+    func testSystemNSColorsBridgeToSwiftUI() {
+        var env = EnvironmentValues()
+        env.colorScheme = .light
+        let c = Color(nsColor: .windowBackgroundColor).resolve(env)
+        XCTAssertGreaterThan(c.a, 0.99)
+        XCTAssertGreaterThan(c.r, 0.8)
+    }
+
+    func testTextEditorFillsAStack() {
+        let (_, root) = render(VStack(alignment: .leading, spacing: 9) {
+            Text("Default review instructions")
+            ZStack(alignment: .topLeading) {
+                Text("Placeholder")
+                TextEditor(text: .constant("")).scrollContentBackground(.hidden).padding(5)
+            }
+            .font(.system(size: 12))
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
+            .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(Color.gray) }
+            .onChange(of: 1) { _, _ in }
+        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity), size: CGSize(width: 560, height: 378))
+        let editor = root.all.first { $0.kind == .textEditor }
+        XCTAssertGreaterThan(editor?.frame.height ?? 0, 250)
+    }
+
+    func testLinkSymbolImage() {
+        XCTAssertNotNil(SymbolArt.svg("link"))
+        let img = NSImage(systemSymbolName: "link", accessibilityDescription: nil)
+        XCTAssertNotNil(img)
+        XCTAssertNotNil(NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil))
+    }
 }

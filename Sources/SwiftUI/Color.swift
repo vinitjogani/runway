@@ -118,7 +118,11 @@ public struct Color: Hashable, Sendable, ShapeStyle {
         providers[next] = f
         return next
     }
-    nonisolated static func resolve(_ id: Int, dark: Bool) -> RGBA { providers[id]?(dark) ?? .black }
+    /// Negative ids are NSColors made before SwiftUI loaded (AppKit's
+    /// system colours): AppKit keeps those.
+    nonisolated static func resolve(_ id: Int, dark: Bool) -> RGBA {
+        providers[id]?(dark) ?? ColorProviderRegistry.resolvePending(id, dark: dark) ?? .black
+    }
     public nonisolated static func color(id: Int) -> Color { Color(.provider(id: id)) }
 }
 
