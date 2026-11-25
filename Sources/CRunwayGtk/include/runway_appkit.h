@@ -27,6 +27,7 @@ typedef struct {
     int is_repeat;
     int native_text_focus;   /* keys: a native text input has keyboard focus */
     int native_control;      /* presses: on a native control (a button, a field, a tap area) */
+    int monitor_phase;       /* buttons and drags, before native widgets: for local event monitors */
 } RunwayAppKitEvent;
 
 typedef gboolean (*RunwayAppKitEventFunc)(const RunwayAppKitEvent *e, void *data);
@@ -35,7 +36,9 @@ typedef void (*RunwayBoolFunc)(gboolean value, void *data);
 typedef int (*RunwayDropFunc)(int kind, double x, double y, const char *uris, const char *text, void *data);
 
 /// Mouse, scroll and crossing events on `content` (bubble phase, after
-/// native widgets), keys on `window` (capture phase, before them).
+/// native widgets), keys on `window` (capture phase, before them). Button
+/// presses, releases and drags also come first in the capture phase with
+/// `monitor_phase` set; returning TRUE then keeps them from native widgets.
 /// `notify` releases `data` when the window goes.
 /// Marks a widget as a control that takes its own clicks (a tap area), so
 /// a press on it isn't taken for the window's (a title bar drag).
@@ -44,6 +47,7 @@ void runway_appkit_install_events(GtkWidget *window, GtkWidget *content, RunwayA
 /// Starts an interactive move of the window (as dragging its title bar),
 /// from a press of `button` (1-based) at (x, y) in the window's surface.
 void runway_appkit_begin_move(GtkWidget *window, int button, double x, double y, guint32 timestamp);
+void runway_popover_focus_initial(GtkWidget *popover);
 /// Calls `fn` when the window becomes or stops being the active one.
 void runway_appkit_install_activation(GtkWidget *window, RunwayBoolFunc fn, void *data, GDestroyNotify notify);
 /// File and text drops on `content`.

@@ -28,7 +28,7 @@ public struct State<Value>: DynamicPropertyLink, DynamicProperty {
 
     public var projectedValue: Binding<Value> {
         let link = _link
-        return Binding(get: { link.box?.value ?? link.initial },
+        return Binding(get: { link.box?.read() ?? link.initial },
                        set: { v in if let b = link.box { MainActor.assumeIsolated { b.set(v) } } else { link.initial = v } })
     }
 
@@ -223,7 +223,7 @@ public struct FocusState<Value: Hashable>: DynamicPropertyLink, DynamicProperty 
         let unfocused: Value
         weak var state: StateBox<Value>?
         init(_ v: Value) { value = v; unfocused = v }
-        var current: Value { state?.value ?? value }
+        var current: Value { state?.read() ?? value }
         @MainActor func set(_ v: Value) {
             if let state {
                 guard state.value != v else { return }

@@ -70,17 +70,41 @@ import RunwayCore
     }
 }
 
+/// The scope whose body is running, for reads that register a dependency.
+enum ScopeReads {
+    nonisolated(unsafe) static weak var current: Scope?
+}
+
 /// Storage a dynamic property links to, kept per path across renders.
 final class StateBox<Value>: @unchecked Sendable {
     var value: Value
     weak var host: ViewHost?
     /// The scope whose body reads it (re-run when it changes).
     weak var scope: Scope?
+    /// Other scopes that read it while their bodies ran, through a Binding
+    /// passed down: re-run too, as SwiftUI tracks a binding's reads.
+    private var readers: [WeakScope] = []
     init(_ value: Value, host: ViewHost) { self.value = value; self.host = host }
+
+    /// The value, noting the running body (if not the owner's) as a reader.
+    func read() -> Value {
+        if let s = ScopeReads.current, s !== scope, !readers.contains(where: { $0.scope === s }) {
+            readers.removeAll { $0.scope == nil }
+            readers.append(WeakScope(s))
+        }
+        return value
+    }
+
     @MainActor func set(_ v: Value) {
         value = v
         host?.invalidate(scope: scope)
+        for r in readers { if let s = r.scope { host?.invalidate(scope: s) } }
     }
+}
+
+final class WeakScope: @unchecked Sendable {
+    weak var scope: Scope?
+    init(_ s: Scope) { scope = s }
 }
 
 /// Implemented by @State, @Environment, @Bindable…: linked before a body runs.
@@ -246,7 +270,9 @@ final class ScopeNode: LayoutNode {
     private var generation = 0
     /// The scope whose body is being resolved (state, widgets and effects
     /// touched now belong to it).
-    private var currentScope: Scope?
+    private var currentScope: Scope? {
+        didSet { ScopeReads.current = currentScope }
+    }
     /// GeometryReader resolves its content during layout: a size change
     /// must run bodies again.
     var readsGeometry = false
@@ -870,8 +896,13 @@ final class ScopeNode: LayoutNode {
         return lastRoot.map(idealSize) ?? .zero
     }
 
+    /// The ideal width, then the height at that width (text that wraps
+    /// at a fixed width is taller than its unwrapped ideal).
     private func idealSize(_ node: LayoutNode) -> CGSize {
-        node.size(.unspecified)
+        let ideal = node.size(.unspecified)
+        guard ideal.width.isFinite, ideal.width > 0 else { return ideal }
+        let fitted = node.size(ProposedSize(width: ideal.width, height: nil))
+        return CGSize(width: ideal.width, height: max(ideal.height, fitted.height.isFinite ? fitted.height : ideal.height))
     }
 
     /// Handles a key press: shortcuts first, then Return and Escape.

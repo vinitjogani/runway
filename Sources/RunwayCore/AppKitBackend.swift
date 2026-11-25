@@ -235,6 +235,9 @@ public struct StatusItemSpec {
     func showPopover(_ content: NativeWidget, size: CGSize, anchor: NativeWidget, rect: CGRect, edge: PopoverEdge,
                      transient: Bool, onClose: @escaping @MainActor () -> Void) -> AnyObject
     func setPopoverSize(_ popover: AnyObject, _ size: CGSize)
+    /// Key presses in the popover, before its controls see them (a rect of
+    /// `.zero` in showPopover points at the whole anchor).
+    func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool)
     func closePopover(_ popover: AnyObject)
 
     // Window chrome.
@@ -329,6 +332,7 @@ extension AppKitBackend {
     public func setTitlebarShowsTitle(_ window: NativeWindow, _ shows: Bool) {}
     public func setToolbarBand(_ window: NativeWindow, height: CGFloat) {}
     public func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool) {}
+    public func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool) {}
     public func windowButtonFrames(_ window: NativeWindow) -> [CGRect]? { nil }
     public func labelAreaInsets(_ widget: NativeWidget) -> EdgeInsetsValue { contentInsets(widget) }
 }

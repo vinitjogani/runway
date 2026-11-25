@@ -301,6 +301,9 @@ private let timeoutCB: @convention(c) (UnsafeMutableRawPointer?) -> Void = { dat
     let content: GtkBox
     let onClose: () -> Void
     var isOpen = true
+    /// Points at the whole anchor, measured when it pops up.
+    var pointsAtAnchor = false
+    var keys: KeyHandlerBox?
     init(popover: GW, content: GtkBox, onClose: @escaping () -> Void) { self.popover = popover; self.content = content; self.onClose = onClose }
     func closed() {
         guard isOpen else { return }
@@ -917,6 +920,7 @@ extension GTKBackend: AppKitBackend {
         gtk_popover_set_position(typed(pop), pos)
         gtk_popover_set_autohide(typed(pop), transient ? 1 : 0)
         let handle = GTKPopover(popover: pop, content: c, onClose: onClose)
+        handle.pointsAtAnchor = rect == .zero
         Self.openPopovers.append(handle)
         _ = g_signal_connect_data(UnsafeMutableRawPointer(pop), "closed", unsafeBitCast(popoverClosedCB, to: GCallback.self),
                                   Unmanaged.passUnretained(handle).toOpaque(), nil, GConnectFlags(rawValue: 0))
@@ -927,8 +931,14 @@ extension GTKBackend: AppKitBackend {
     static func popUpWhenMapped(_ p: GTKPopover, anchor: GW, tries: Int) {
         guard p.isOpen else { return }
         if gtk_widget_get_mapped(anchor) != 0 {
+            if p.pointsAtAnchor {
+                var r = GdkRectangle(x: 0, y: 0, width: max(1, gtk_widget_get_width(anchor)), height: max(1, gtk_widget_get_height(anchor)))
+                gtk_popover_set_pointing_to(typed(p.popover), &r)
+            }
             gtk_popover_popup(typed(p.popover))
             gtk_widget_queue_allocate(anchor)
+            // GTK focuses the first focusable child once the popover maps.
+            current?.after(0.03) { if p.isOpen { runway_popover_focus_initial(p.popover) } }
             return
         }
         guard tries > 0 else { return }
@@ -938,6 +948,10 @@ extension GTKBackend: AppKitBackend {
     public func setPopoverSize(_ popover: AnyObject, _ size: CGSize) {
         guard let p = popover as? GTKPopover else { return }
         runway_canvas_set_content_size(p.content.outer, Int32(size.width), Int32(size.height))
+    }
+    public func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool) {
+        guard let p = popover as? GTKPopover else { return }
+        p.keys = addCaptureKeyHandler(p.popover) { key in MainActor.assumeIsolated { handler(key) } }
     }
     public func closePopover(_ popover: AnyObject) {
         guard let p = popover as? GTKPopover, p.isOpen else { return }

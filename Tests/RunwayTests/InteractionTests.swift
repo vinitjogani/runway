@@ -260,6 +260,50 @@ final class InteractionTests: XCTestCase {
         XCTAssertGreaterThan(c.r, 0.8)
     }
 
+    func testChildWithABindingSeesItsValueChange() {
+        struct Input: View {
+            @Binding var text: String
+            var body: some View {
+                ZStack {
+                    if text.isEmpty { Text("Placeholder") }
+                    TextEditor(text: $text)
+                }
+            }
+        }
+        struct Sheet: View {
+            @State var body_ = ""
+            var body: some View {
+                Input(text: $body_).onAppear { body_ = "A description" }
+            }
+        }
+        let (_, root) = render(Sheet())
+        backend.drain()
+        XCTAssertEqual(root.all.first { $0.kind == .textEditor }?.props.string, "A description")
+        XCTAssertFalse(texts(root).contains("Placeholder"))
+    }
+
+    func testTextSetOnAppearReachesATextEditorBehindAPlaceholder() {
+        struct Sheet: View {
+            @State var title = ""
+            @State var body_ = ""
+            var body: some View {
+                VStack {
+                    TextField("Title", text: $title)
+                    ZStack(alignment: .topLeading) {
+                        if body_.isEmpty { Text("Describe the change").allowsHitTesting(false) }
+                        TextEditor(text: $body_).scrollContentBackground(.hidden)
+                    }
+                }
+                .onAppear { title = "A title"; body_ = "A description" }
+            }
+        }
+        let (_, root) = render(Sheet())
+        backend.drain()
+        XCTAssertEqual(root.all.first { if case .textField = $0.kind { true } else { false } }?.props.string, "A title")
+        XCTAssertEqual(root.all.first { $0.kind == .textEditor }?.props.string, "A description")
+        XCTAssertFalse(texts(root).contains("Describe the change"))
+    }
+
     func testTextEditorFillsAStack() {
         let (_, root) = render(VStack(alignment: .leading, spacing: 9) {
             Text("Default review instructions")

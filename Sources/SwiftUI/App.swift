@@ -438,7 +438,7 @@ extension EnvironmentValues {
 // MARK: Sheets and alerts
 
 /// A modal window presented from a view (sheet, alert, confirmation dialog).
-@MainActor final class Presentation {
+@MainActor class Presentation {
     var content: () -> AnyView
     var onDismiss: () -> Void
     var environment: EnvironmentValues
@@ -457,7 +457,7 @@ extension EnvironmentValues {
         windowHost?.host.baseEnvironment = presentationEnvironment
         windowHost?.host.setRoot(content())
     }
-    private var presentationEnvironment: EnvironmentValues {
+    var presentationEnvironment: EnvironmentValues {
         var env = environment
         env.dismiss = DismissAction { [weak self] in self?.onDismiss() }
         env.isPresented = true
@@ -477,6 +477,77 @@ extension EnvironmentValues {
         let w = windowHost
         windowHost = nil
         w?.window.close()
+    }
+}
+
+public enum PopoverAttachmentAnchor {
+    public enum Rect { case bounds; case rect(CGRect) }
+    case rect(Rect)
+    case point(UnitPoint)
+}
+
+/// A popover's content, hosted in the toolkit's popover over an anchor widget.
+@MainActor final class PopoverPresentation: Presentation {
+    let anchor: NativeWidget
+    let edge: PopoverEdge
+    private var host: ViewHost?
+    private var handle: AnyObject?
+    private var size = CGSize.zero
+
+    init(anchor: NativeWidget, edge: PopoverEdge, environment: EnvironmentValues, content: @escaping () -> AnyView, onDismiss: @escaping () -> Void) {
+        self.anchor = anchor
+        self.edge = edge
+        super.init(title: "", environment: environment, content: content, onDismiss: onDismiss)
+    }
+
+    override func update(_ other: Presentation) {
+        environment = other.environment
+        content = other.content
+        onDismiss = other.onDismiss
+        host?.baseEnvironment = presentationEnvironment
+        host?.setRoot(content())
+    }
+
+    override func open(parent: NativeWindow?) {
+        guard let appKit = Runway.appKit else { return super.open(parent: parent) }
+        let backend = Runway.backend
+        let container = backend.makeWidget(.container)
+        let h = ViewHost(content(), backend: backend, container: container, environment: presentationEnvironment)
+        h.window = parent
+        host = h
+        size = Self.rounded(h.idealSize())
+        h.setSize(size)
+        h.onIdealSizeChange = { [weak self] s in
+            guard let self, let handle = self.handle else { return }
+            let r = Self.rounded(s)
+            guard r != self.size else { return }
+            self.size = r
+            appKit.setPopoverSize(handle, r)
+            self.host?.setSize(r)
+        }
+        h.render()
+        handle = appKit.showPopover(container, size: size, anchor: anchor, rect: .zero, edge: edge, transient: true) { [weak self] in
+            guard let self, self.handle != nil else { return }
+            self.handle = nil
+            self.host?.tearDown()
+            self.host = nil
+            self.onDismiss()
+        }
+        if let handle {
+            appKit.setPopoverKeyHandler(handle) { [weak self] key in self?.host?.handleKey(key) ?? false }
+        }
+    }
+
+    override func dismissWindow() {
+        guard let handle else { return }
+        self.handle = nil
+        Runway.appKit?.closePopover(handle)
+        host?.tearDown()
+        host = nil
+    }
+
+    private static func rounded(_ s: CGSize) -> CGSize {
+        CGSize(width: max(1, s.width.rounded(.up)), height: max(1, s.height.rounded(.up)))
     }
 }
 
@@ -505,8 +576,47 @@ extension View {
         }
     }
 
-    public func popover<Content: View>(isPresented: Binding<Bool>, attachmentAnchor: Any? = nil, arrowEdge: Edge? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
-        sheet(isPresented: isPresented, content: content)
+    /// A popover pointing at this view: sized to its content, closed by a
+    /// click outside or Escape (and by setting `isPresented` to false).
+    /// Without a popover-capable backend it presents as a sheet.
+    public func popover<Content: View>(isPresented: Binding<Bool>, attachmentAnchor: PopoverAttachmentAnchor = .rect(.bounds), arrowEdge: Edge? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
+        nodes("popover") { ns, ctx in
+            guard !ctx.dryRun, Runway.appKit != nil else {
+                if isPresented.wrappedValue, !ctx.dryRun {
+                    ctx.host.present(ctx.path, Presentation(title: "", environment: ctx.env, content: { AnyView(content()) }, onDismiss: {
+                        if isPresented.wrappedValue { isPresented.wrappedValue = false }
+                    }))
+                }
+                return ns
+            }
+            let anchor = ctx.host.customWidget(ctx.path + "#anchor", fresh: false) {
+                let w = ctx.host.backend.makeWidget(.container)
+                Runway.appKit?.setPassesThrough(w, true)
+                return w
+            }
+            if isPresented.wrappedValue {
+                // The anchor's edge the popover hangs from.
+                let edge: PopoverEdge = switch arrowEdge ?? .bottom {
+                case .top: .top
+                case .bottom: .bottom
+                case .leading: .leading
+                case .trailing: .trailing
+                }
+                ctx.host.present(ctx.path, PopoverPresentation(anchor: anchor, edge: edge, environment: ctx.env,
+                                                               content: { AnyView(content()) }, onDismiss: {
+                    if isPresented.wrappedValue { isPresented.wrappedValue = false }
+                }))
+            }
+            let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
+            return [ContainerNode.modifier(anchor, ctx.host.backend, inner)]
+        }
+    }
+
+    public func popover<Item: Identifiable, Content: View>(item: Binding<Item?>, attachmentAnchor: PopoverAttachmentAnchor = .rect(.bounds), arrowEdge: Edge? = nil, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+        let shown = Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } })
+        return popover(isPresented: shown, attachmentAnchor: attachmentAnchor, arrowEdge: arrowEdge) {
+            if let value = item.wrappedValue { content(value).id(value.id) }
+        }
     }
 
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>, @ViewBuilder actions: @escaping () -> A) -> some View {

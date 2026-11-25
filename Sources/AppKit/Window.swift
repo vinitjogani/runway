@@ -814,6 +814,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             if NSCursor.hideUntilMove, raw.kind == .mouseMoved { NSCursor.hideUntilMove = false; NSCursor.unhide() }
         }
         guard !ignoresMouseEvents || raw.kind == .keyDown || raw.kind == .keyUp || raw.kind == .flagsChanged else { return false }
+        if raw.monitorPhase { return offerToMonitors(raw, loc, flags) }
         defer { ViewSystem.flush() }
         switch raw.kind {
         case .mouseDown:
@@ -821,25 +822,15 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             // of the window from its title bar.
             pressOnNativeControl = raw.onNativeControl
             defer { pressOnNativeControl = false }
-            NSEvent.pressedMouseButtons |= 1 << raw.button
-            var count = 1
-            if let l = lastClick, l.button == raw.button, raw.timestamp - l.time < NSEvent.doubleClickInterval,
-               abs(l.location.x - loc.x) < 5, abs(l.location.y - loc.y) < 5 { count = l.count + 1 }
-            lastClick = (raw.timestamp, loc, raw.button, count)
-            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseDown : raw.button == 1 ? .rightMouseDown : .otherMouseDown
-            dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: count, buttonNumber: raw.button, eventNumber: eventCounter))
+            if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             return true
         case .mouseUp:
-            NSEvent.pressedMouseButtons &= ~(1 << raw.button)
-            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseUp : raw.button == 1 ? .rightMouseUp : .otherMouseUp
-            dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: lastClick?.count ?? 1, buttonNumber: raw.button, eventNumber: eventCounter))
+            if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             return true
         case .mouseMoved:
             let buttons = NSEvent.pressedMouseButtons
             if buttons != 0 {
-                let b = buttons & 1 != 0 ? 0 : buttons & 2 != 0 ? 1 : 2
-                let type: NSEvent.EventType = b == 0 ? .leftMouseDragged : b == 1 ? .rightMouseDragged : .otherMouseDragged
-                dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, buttonNumber: b, eventNumber: eventCounter))
+                if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             } else {
                 dispatch(NSEvent(type: .mouseMoved, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, eventNumber: eventCounter))
             }
@@ -909,6 +900,60 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         var n = 0
         while let cur = r, n < 256 { if let h = cur as? KeyHandling { return h }; r = cur.nextResponder; n += 1 }
         return nil
+    }
+
+    /// The NSEvent for a press, release or drag, updating the button and
+    /// click-count state (once per event, whichever phase builds it).
+    private func buttonEvent(_ raw: RawEvent, _ loc: CGPoint, _ flags: NSEvent.ModifierFlags) -> NSEvent? {
+        switch raw.kind {
+        case .mouseDown:
+            NSEvent.pressedMouseButtons |= 1 << raw.button
+            var count = 1
+            if let l = lastClick, l.button == raw.button, raw.timestamp - l.time < NSEvent.doubleClickInterval,
+               abs(l.location.x - loc.x) < 5, abs(l.location.y - loc.y) < 5 { count = l.count + 1 }
+            lastClick = (raw.timestamp, loc, raw.button, count)
+            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseDown : raw.button == 1 ? .rightMouseDown : .otherMouseDown
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: count, buttonNumber: raw.button, eventNumber: eventCounter)
+        case .mouseUp:
+            NSEvent.pressedMouseButtons &= ~(1 << raw.button)
+            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseUp : raw.button == 1 ? .rightMouseUp : .otherMouseUp
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: lastClick?.count ?? 1, buttonNumber: raw.button, eventNumber: eventCounter)
+        case .mouseMoved:
+            let buttons = NSEvent.pressedMouseButtons
+            guard buttons != 0 else { return nil }
+            let b = buttons & 1 != 0 ? 0 : buttons & 2 != 0 ? 1 : 2
+            let type: NSEvent.EventType = b == 0 ? .leftMouseDragged : b == 1 ? .rightMouseDragged : .otherMouseDragged
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, buttonNumber: b, eventNumber: eventCounter)
+        default:
+            return nil
+        }
+    }
+
+    /// An event the local monitors have already seen, before native
+    /// widgets did: delivered after them without running the monitors again.
+    private var monitored: (time: TimeInterval, kind: RawEvent.Kind, button: Int, event: NSEvent)?
+
+    private func takeMonitored(_ raw: RawEvent) -> NSEvent? {
+        guard let m = monitored else { return nil }
+        monitored = nil
+        guard m.time == raw.timestamp, m.kind == raw.kind, m.kind == .mouseMoved || m.button == raw.button else { return nil }
+        EventMonitors.alreadyFiltered = m.event
+        return m.event
+    }
+
+    /// A press, release or drag before the views under it get it: local
+    /// monitors may take it (return nil), which keeps it from native
+    /// controls too, as AppKit's monitors keep it from views.
+    private func offerToMonitors(_ raw: RawEvent, _ loc: CGPoint, _ flags: NSEvent.ModifierFlags) -> Bool {
+        monitored = nil
+        guard EventMonitors.watches(raw.kind) else { return false }
+        if raw.kind == .mouseMoved, NSEvent.pressedMouseButtons == 0 { return false }
+        guard let e = buttonEvent(raw, loc, flags) else { return false }
+        NSApp.setCurrentEvent(e)
+        defer { NSApp.setCurrentEvent(nil); ViewSystem.flush() }
+        guard let result = EventMonitors.filter(e) else { return true }
+        monitored = (raw.timestamp, raw.kind, raw.button, result)
+        return false
     }
 
     private func dispatch(_ e: NSEvent) {

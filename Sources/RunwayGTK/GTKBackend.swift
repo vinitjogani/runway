@@ -359,6 +359,17 @@ final class KeyHandlerBox {
     init(_ f: @escaping (KeyPress) -> Bool) { self.f = f }
 }
 
+/// Routes `widget`'s key presses (captured before its children see them)
+/// to `f`; keep the returned box alive as long as the widget.
+@MainActor func addCaptureKeyHandler(_ widget: GW, _ f: @escaping (KeyPress) -> Bool) -> KeyHandlerBox {
+    let keys = KeyHandlerBox(f)
+    let controller = gtk_event_controller_key_new()!
+    gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE)
+    _ = runway_connect(UnsafeMutableRawPointer(controller), "key-pressed", unsafeBitCast(keyCallback, to: GCallback.self), Unmanaged.passUnretained(keys).toOpaque())
+    gtk_widget_add_controller(widget, controller)
+    return keys
+}
+
 private let closeRequestCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> gboolean = { _, data in
     guard let data else { return 0 }
     Unmanaged<Handler>.fromOpaque(data).takeUnretainedValue().fire(nil)
@@ -408,6 +419,15 @@ final class WorkBox {
     public init() {
         gtk_init()
         colorScheme = runway_prefers_dark() != 0 ? .dark : .light
+        if let s = gtk_settings_get_default() {
+            // Focusing selectable text (the first focusable view in a
+            // popover or sheet) doesn't select it all, as on the Mac.
+            var v = GValue()
+            g_value_init(&v, GType(5 << 2))   // G_TYPE_BOOLEAN
+            g_value_set_boolean(&v, 0)
+            g_object_set_property(UnsafeMutablePointer<GObject>(s), "gtk-label-select-on-focus", &v)
+            g_value_unset(&v)
+        }
         if colorScheme == .dark, let s = gtk_settings_get_default() {
             var v = GValue()
             g_value_init(&v, GType(5 << 2))   // G_TYPE_BOOLEAN

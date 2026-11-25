@@ -238,7 +238,22 @@ public let NSCarriageReturnCharacter = 0x0d, NSBackTabCharacter = 0x19, NSDelete
         return m
     }
     static func remove(_ m: Any) { monitors.removeAll { $0 === (m as AnyObject) } }
+    /// An event the monitors saw before native widgets did; sendEvent
+    /// passes it through without running them again.
+    static var alreadyFiltered: NSEvent?
+    /// Whether any monitor takes this kind of pointer event.
+    static func watches(_ kind: RawEvent.Kind) -> Bool {
+        let mask: NSEvent.EventTypeMask = switch kind {
+        case .mouseDown: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        case .mouseUp: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        case .mouseMoved: [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        default: []
+        }
+        return monitors.contains { !$0.mask.intersection(mask).isEmpty }
+    }
     static func filter(_ e: NSEvent) -> NSEvent? {
+        if let f = alreadyFiltered, f === e { alreadyFiltered = nil; return e }
+        alreadyFiltered = nil
         var cur: NSEvent? = e
         for m in monitors where m.mask.contains(NSEvent.EventTypeMask(type: e.type)) {
             guard let c = cur else { return nil }

@@ -53,7 +53,7 @@ public enum SymbolArt {
     }
 
     struct Parts: Equatable { var base: String; var fill = false; var enclosure: Enclosure? = nil; var slash = false }
-    enum Enclosure: Equatable { case circle, square }
+    enum Enclosure: Equatable { case circle, square, bubble }
 
     /// Splits an SF name into a mapped base and its variants, or nil when
     /// nothing in it is mapped.
@@ -75,6 +75,8 @@ public enum SymbolArt {
             switch last {
             case "circle" where parts.enclosure == nil: parts.enclosure = .circle
             case "square" where parts.enclosure == nil: parts.enclosure = .square
+            // checkmark.bubble: a glyph in a speech bubble.
+            case "bubble" where parts.enclosure == nil: parts.enclosure = .bubble
             case "slash": parts.slash = true
             default: break  // badge, 2, rtl, ar, trianglebadge.exclamationmark…
             }
@@ -96,10 +98,15 @@ public enum SymbolArt {
             body = "<g fill=\"\(p.fill ? ink : "none")\">\(filled(glyph))</g>"
             if p.slash { body += "<path d=\"M3 3l18 18\"/>" }
         case let shape?:
-            let outline = shape == .circle ? "<circle cx=\"12\" cy=\"12\" r=\"10\"/>" : "<rect x=\"2.5\" y=\"2.5\" width=\"19\" height=\"19\" rx=\"5\"/>"
+            let outline = switch shape {
+            case .circle: "<circle cx=\"12\" cy=\"12\" r=\"10\"/>"
+            case .square: "<rect x=\"2.5\" y=\"2.5\" width=\"19\" height=\"19\" rx=\"5\"/>"
+            case .bubble: "<path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\"/>"
+            }
             // The glyph at about half size, its stroke kept at the outline's weight.
-            let k = 0.55
-            let inner = "<g transform=\"translate(12 12) scale(\(k)) translate(-12 -12)\" stroke-width=\"\(sw / k)\">\(filled(glyph))</g>"
+            let k = shape == .bubble ? 0.5 : 0.55
+            let (cx, cy) = shape == .bubble ? (12.6, 11.4) : (12.0, 12.0)
+            let inner = "<g transform=\"translate(\(cx) \(cy)) scale(\(k)) translate(-12 -12)\" stroke-width=\"\(sw / k)\">\(filled(glyph))</g>"
             if p.fill {
                 // Knocked out: the shape filled, the glyph cut through it.
                 let id = "k\(abs(name.hashValue) % 100000)"

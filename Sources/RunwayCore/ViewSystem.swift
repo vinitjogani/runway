@@ -53,6 +53,10 @@ public struct RawEvent: Sendable {
     /// Presses: on a native control that handles the click itself (a
     /// SwiftUI button in a hosting view), not on AppKit's own views.
     public var onNativeControl = false
+    /// Presses, releases and drags offered before native widgets see them,
+    /// for local event monitors; the same event comes again afterwards
+    /// unless the handler returned true (consumed).
+    public var monitorPhase = false
     public init(kind: Kind) { self.kind = kind }
 }
 
