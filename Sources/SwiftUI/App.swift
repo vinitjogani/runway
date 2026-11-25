@@ -399,7 +399,9 @@ extension EnvironmentValues {
         host = ViewHost(view, backend: backend, container: content, environment: environment)
         let ideal = size == nil ? host.idealSize() : .zero
         let initial = size ?? CGSize(width: max(ideal.width, 200).rounded(.up), height: max(ideal.height, 80).rounded(.up))
-        window = backend.makeWindow(WindowOptions(title: title, size: initial, resizable: !sizedToContent, modal: modal), parent: parent)
+        // A modal window over another is a sheet: no titlebar row, as on the Mac.
+        window = backend.makeWindow(WindowOptions(title: title, size: initial, resizable: !sizedToContent, modal: modal,
+                                                  titlebar: modal && parent != nil ? .none : .standard), parent: parent)
         host.window = window
         backend.setChildren(window.content, [(content, CGRect(origin: .zero, size: initial))], contentSize: initial)
         host.setSize(initial)

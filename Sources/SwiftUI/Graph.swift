@@ -218,6 +218,9 @@ final class ScopeNode: LayoutNode {
     /// The NSHostingView showing this host, if any: NSViewRepresentable
     /// views join its view hierarchy.
     weak var hostingView: NSView?
+    /// The window sheets and alerts present over: the host's own, or the
+    /// AppKit window of the NSHostingView showing it.
+    var presentingWindow: NativeWindow? { window ?? hostingView?.window?.nativeWindow }
     /// Called when the ideal size changes (windows sized to content).
     var onIdealSizeChange: ((CGSize) -> Void)?
     var onTitleChange: ((String) -> Void)?
@@ -621,7 +624,7 @@ final class ScopeNode: LayoutNode {
             existing.update(p)
         } else {
             presentations[key] = p
-            effects.append { [weak self] in self?.presentations[key]?.open(parent: self?.window) }
+            effects.append { [weak self] in self?.presentations[key]?.open(parent: self?.presentingWindow) }
         }
     }
 
