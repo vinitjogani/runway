@@ -967,7 +967,7 @@ protocol MemoComparable {
         var collected: [Field] = []
         var linked: [Link] = []
         let isClass = type is AnyClass
-        let reflected = !isClass && _forEachField(of: type, options: [.ignoreUnknown]) { name, offset, fieldType, kind in
+        var reflected = !isClass && _forEachField(of: type, options: [.ignoreUnknown]) { name, offset, fieldType, kind in
             if fieldType is DynamicPropertyLink.Type || fieldType is DynamicProperty.Type {
                 linked.append(Link(offset: offset, label: String(cString: name), load: Self.loader(fieldType)))
             }
@@ -986,6 +986,10 @@ protocol MemoComparable {
             collected.append(Field(offset: offset, compare: c))
             return true
         }
+        // Enums (Optional among them) reflect as having no fields, which
+        // would make all their values equal; a struct with no fields has
+        // no size.
+        if reflected, collected.isEmpty, Self.size(type) > 0 { reflected = false }
         if reflected {
             isStruct = true
             fields = collected

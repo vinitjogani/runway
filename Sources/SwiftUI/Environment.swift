@@ -20,9 +20,17 @@ public struct EnvironmentValues: @unchecked Sendable {
             // Writing what's already there would copy the storage (it's
             // shared with the parent's environment) and make every view
             // below look like it got a new environment.
-            if MainThread.isCurrent, let old = values[ObjectIdentifier(key)], MainActor.assumeIsolated({ FieldLayout.equalAny(old, newValue) }) { return }
+            if MainThread.isCurrent, let old = values[ObjectIdentifier(key)], MainActor.assumeIsolated({ FieldLayout.equalAny(old, newValue) }),
+               Self.nilness(old) == Self.nilness(newValue) { return }
             values[ObjectIdentifier(key)] = newValue
         }
+    }
+
+    /// Whether an optional value is nil (nil for non-optionals): values that
+    /// compare as view inputs do (closures ignored) still differ in this.
+    static func nilness(_ v: Any) -> Bool? {
+        let m = Mirror(reflecting: v)
+        return m.displayStyle == .optional ? m.children.isEmpty : nil
     }
 
     /// Whether two environments hold the same values (a view resolved in
