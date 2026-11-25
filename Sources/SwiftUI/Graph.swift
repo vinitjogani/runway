@@ -132,7 +132,7 @@ extension DynamicProperty { public mutating func update() {} }
 }
 
 struct StorageKey {
-    enum Kind: UInt8 { case state, widget, appear, task, value, presentation }
+    enum Kind: UInt8 { case state, widget, appear, task, value, presentation, interaction }
     let kind: Kind
     let key: String
 }
@@ -220,7 +220,7 @@ final class ScopeNode: LayoutNode {
     private var visitedStates: Set<String> = []
     private var widgets: [String: (WidgetKind, NativeWidget)] = [:]
     private var usedWidgets: Set<String> = []
-    private var scheduled = false
+    private(set) var scheduled = false
     private var rendering = false
     private(set) var renderCount = 0
     /// How many renders ran bodies from the root, spliced scopes, or only
@@ -258,11 +258,24 @@ final class ScopeNode: LayoutNode {
     /// Window-level actions bodies register; any change marks the scope
     /// being resolved as volatile (see Scope.volatile).
     private var effectStamp = 0
-    var shortcuts: [(KeyPress, () -> Void)] = [] { didSet { effectStamp += 1 } }
+    var shortcuts: [(RunwayCore.KeyPress, () -> Void)] = [] { didSet { effectStamp += 1 } }
     var defaultAction: (() -> Void)? { didSet { effectStamp += 1 } }
     var cancelAction: (() -> Void)? { didSet { effectStamp += 1 } }
     var presentations: [String: Presentation] = [:]
     private var visitedPresentations: Set<String> = []
+    /// Focus targets and key handlers registered by modifiers, by path
+    /// (see Interaction.swift); kept alive like state.
+    var interactions: [String: AnyObject] = [:]
+    var visitedInteractions: Set<String> = []
+    /// The path of the view holding keyboard focus in this host, if any.
+    var keyFocusPath: String?
+    var focusSyncScheduled = false
+    var focusSyncRequested = false
+    /// Where views with an `.id` were last placed: their scroll view and
+    /// frame in its document.
+    var idFrames: [AnyHashable: (scroll: ObjectIdentifier, frame: CGRect)] = [:]
+    var scrollViews: [ObjectIdentifier: ScrollRecord] = [:]
+    var lastDispatchedKey: (key: RunwayCore.KeyPress, path: String, handled: Bool)?
     var title: String? { didSet { effectStamp += 1 } }
     public private(set) var lastRoot: LayoutNode?
 
@@ -405,10 +418,11 @@ final class ScopeNode: LayoutNode {
         case .appear: visitedAppear.insert(k.key)
         case .task: visitedTasks.insert(k.key)
         case .presentation: visitedPresentations.insert(k.key)
+        case .interaction: visitedInteractions.insert(k.key)
         }
     }
 
-    private func record(_ kind: StorageKey.Kind, _ key: String) {
+    func record(_ kind: StorageKey.Kind, _ key: String) {
         currentScope?.ownKeys.append(StorageKey(kind: kind, key: key))
     }
 
@@ -508,6 +522,19 @@ final class ScopeNode: LayoutNode {
         return w
     }
 
+    /// A widget the caller makes itself (an event container), kept by key
+    /// like `widget(_:_:)`.
+    func customWidget(_ key: String, fresh: Bool, make: () -> NativeWidget) -> NativeWidget {
+        usedWidgets.insert(key)
+        record(.widget, key)
+        if let (_, w) = widgets[key], !fresh { return w }
+        if let (_, w) = widgets[key] { destroy(w) }
+        let w = make()
+        widgets[key] = (.container, w)
+        WidgetKinds.set(w, .container)
+        return w
+    }
+
     private func destroy(_ w: NativeWidget) {
         WidgetKinds.set(w, nil)
         committed[ObjectIdentifier(w)] = nil
@@ -604,6 +631,7 @@ final class ScopeNode: LayoutNode {
         let run = effects
         effects.removeAll()
         for e in run { e() }
+        syncFocus()
     }
 
     private func beginPass() {
@@ -613,6 +641,7 @@ final class ScopeNode: LayoutNode {
         visitedAppear.removeAll(keepingCapacity: true)
         visitedTasks.removeAll(keepingCapacity: true)
         visitedPresentations.removeAll(keepingCapacity: true)
+        visitedInteractions.removeAll(keepingCapacity: true)
     }
 
     /// Resolves the whole tree, reusing scopes whose input didn't change.
@@ -719,6 +748,7 @@ final class ScopeNode: LayoutNode {
                 presentations[key] = nil
                 p.dismissWindow()
             }
+            for key in interactions.keys where !visitedInteractions.contains(key) { interactions[key] = nil }
             for (key, s) in scopes where s.generation != generation { scopes[key] = nil }
             for (key, r) in committed where r.generation != commitGeneration { committed[key] = nil }
         case let .partial(keys, oldScopes):
@@ -736,6 +766,8 @@ final class ScopeNode: LayoutNode {
                     if !visitedTasks.contains(k.key), let t = tasks[k.key] { t.task.cancel(); tasks[k.key] = nil }
                 case .presentation:
                     if !visitedPresentations.contains(k.key), let p = presentations[k.key] { presentations[k.key] = nil; p.dismissWindow() }
+                case .interaction:
+                    if !visitedInteractions.contains(k.key) { interactions[k.key] = nil }
                 }
             }
             for s in oldScopes where s.generation != generation && scopes[s.path] === s { scopes[s.path] = nil }
@@ -802,7 +834,9 @@ final class ScopeNode: LayoutNode {
     }
 
     /// Handles a key press: shortcuts first, then Return and Escape.
-    public func handleKey(_ key: KeyPress) -> Bool {
+    public func handleKey(_ key: RunwayCore.KeyPress) -> Bool {
+        // The focused view and the views around it see a key first.
+        if let path = keyFocusPath, dispatchKey(key, from: path) { return true }
         for (k, action) in shortcuts where k == key { action(); return true }
         if key.key == "return", !key.command, let a = defaultAction { a(); return true }
         if key.key == "escape", let a = cancelAction { a(); return true }
@@ -850,6 +884,9 @@ struct UncheckedScopeRef: @unchecked Sendable {
     weak var host: ViewHost?
     var offset: CGPoint = .zero
     var drawingTransform: CGAffineTransform = .identity
+    /// The enclosing scroll view's document, and this container's origin in it.
+    weak var scrollDocument: NativeWidget?
+    var documentOrigin: CGPoint = .zero
     var items: [(NativeWidget, CGRect)] = []
     init(container: NativeWidget, backend: Backend, host: ViewHost? = nil) { self.container = container; self.backend = backend; self.host = host }
 
@@ -861,6 +898,8 @@ struct UncheckedScopeRef: @unchecked Sendable {
     func nested(_ container: NativeWidget, origin: CGPoint) -> PlacementSink {
         let s = PlacementSink(container: container, backend: backend, host: host)
         s.offset = origin
+        s.scrollDocument = scrollDocument
+        s.documentOrigin = documentOrigin
         return s
     }
 

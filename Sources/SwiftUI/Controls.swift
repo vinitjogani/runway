@@ -188,8 +188,20 @@ public struct Label<Title: View, Icon: View>: View, PrimitiveView {
     let title: Title
     let icon: Icon
     public init(@ViewBuilder title: () -> Title, @ViewBuilder icon: () -> Icon) { self.title = title(); self.icon = icon() }
+    public init(_ configuration: LabelStyleConfiguration) where Title == LabelStyleConfiguration.Title, Icon == LabelStyleConfiguration.Icon {
+        title = configuration.title; icon = configuration.icon
+    }
 
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        if let custom = ctx.env._customLabelStyle, !ctx.env._inMenu {
+            // The style lays the label out; a Label(configuration) inside
+            // it lays out plainly.
+            let title = self.title, icon = self.icon
+            let inner = ctx.with { $0._customLabelStyle = nil }
+            let config = LabelStyleConfiguration(title: _StyleContent { c in c.with { $0._customLabelStyle = nil }.resolve(title, "title") },
+                                                 icon: _StyleContent { c in c.with { $0._customLabelStyle = nil }.resolve(icon, "icon") })
+            return inner.resolve(custom.make(config), "style")
+        }
         let style = ctx.env._labelStyle
         let t = style == .iconOnly ? [] : ctx.resolve(title, "title")
         let i = style == .titleOnly ? [] : ctx.resolve(icon, "icon")
@@ -288,6 +300,7 @@ public struct TextField<Label: View>: View, PrimitiveView {
         if env._mobilePreview || env.font != nil { p.text = Text(verbatim: "").styled(env) }
         let w = ctx.widget(.textField(secure: secure))
         if let w { backend.update(w, props: p, events: events) }
+        ctx.adoptFocus(w, textField: true)
         let field = WidgetNode(w, backend: backend)
         field.flexibleWidth = true
         field.idealWidth = 120
@@ -350,15 +363,27 @@ extension SecureField where Label == Text {
 public struct TextEditor: View, PrimitiveView {
     public typealias Body = Never
     let text: Binding<String>
+    var selection: Binding<TextSelection?>?
     public init(text: Binding<String>) { self.text = text }
+    public init(text: Binding<String>, selection: Binding<TextSelection?>) { self.text = text; self.selection = selection }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let text = self.text
         var events = WidgetEvents()
         events.onText = { if text.wrappedValue != $0 { text.wrappedValue = $0 } }
         var p = ctx.baseProps()
         p.string = text.wrappedValue
+        if let selection {
+            let string = text.wrappedValue
+            p.selection = selection.wrappedValue.map { $0.scalarRange(in: string) }
+            events.onSelection = { r in
+                let current = text.wrappedValue
+                let new = TextSelection(scalarRange: r, in: current)
+                if selection.wrappedValue != new { selection.wrappedValue = new }
+            }
+        }
         let w = ctx.widget(.textEditor)
         if let w { ctx.host.backend.update(w, props: p, events: events) }
+        ctx.adoptFocus(w, textField: true)
         let n = WidgetNode(w, backend: ctx.host.backend)
         n.flexibleWidth = true
         n.flexibleHeight = true

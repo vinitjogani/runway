@@ -263,7 +263,7 @@ public struct AnyLayout: Layout {
 extension View {
     public func minimumScaleFactor(_ factor: CGFloat) -> some View { self }
     public func allowsTightening(_ flag: Bool) -> some View { self }
-    public func lineSpacing(_ lineSpacing: CGFloat) -> some View { self }
+    public func lineSpacing(_ lineSpacing: CGFloat) -> some View { environment { $0._lineSpacing = lineSpacing } }
     public func contentMargins(_ edges: Edge.Set = .all, _ insets: EdgeInsets, for placement: ContentMarginPlacement = .automatic) -> some View { self }
     public func contentMargins(_ edges: Edge.Set = .all, _ length: CGFloat?, for placement: ContentMarginPlacement = .automatic) -> some View { self }
     public func contentMargins(_ length: CGFloat, for placement: ContentMarginPlacement = .automatic) -> some View { self }
@@ -279,7 +279,6 @@ extension View {
     public func listItemTint(_ tint: Color?) -> some View { self }
     public func prefersDefaultFocus(_ prefersDefaultFocus: Bool = true, in namespace: Namespace.ID) -> some View { self }
     public func horizontalRadioGroupLayout() -> some View { self }
-    public func pointerStyle(_ style: PointerStyle?) -> some View { self }
     public func submitLabel(_ submitLabel: SubmitLabel) -> some View { self }
     public func toolbarBackgroundVisibility(_ visibility: Visibility, for bars: ToolbarPlacement...) -> some View { self }
     public func onModifierKeysChanged(mask: EventModifiers = .all, initial: Bool = true, _ action: @escaping (EventModifiers, EventModifiers) -> Void) -> some View { self }
@@ -293,11 +292,19 @@ public struct ContentMarginPlacement: Sendable {
 }
 
 public struct PointerStyle: Sendable {
-    public static let `default` = Self(), horizontalText = Self(), verticalText = Self(), link = Self(), grabIdle = Self(),
-                      grabActive = Self(), rectSelection = Self(), zoomIn = Self(), zoomOut = Self()
-    public static func frameResize(position: FrameResizePosition, directions: FrameResizeDirection.Set = .all) -> Self { Self() }
-    public static func columnResize(directions: HorizontalDirection.Set = .all) -> Self { Self() }
-    public static func rowResize(directions: VerticalDirection.Set = .all) -> Self { Self() }
+    let cursor: CursorKind
+    init(_ cursor: CursorKind = .arrow) { self.cursor = cursor }
+    public static let `default` = Self(), horizontalText = Self(.iBeam), verticalText = Self(.iBeam), link = Self(.pointingHand), grabIdle = Self(.pointingHand),
+                      grabActive = Self(.pointingHand), rectSelection = Self(), zoomIn = Self(), zoomOut = Self()
+    public static func frameResize(position: FrameResizePosition, directions: FrameResizeDirection.Set = .all) -> Self {
+        switch position {
+        case .leading, .trailing: Self(.resizeLeftRight)
+        case .top, .bottom: Self(.resizeUpDown)
+        default: Self()
+        }
+    }
+    public static func columnResize(directions: HorizontalDirection.Set = .all) -> Self { Self(.resizeLeftRight) }
+    public static func rowResize(directions: VerticalDirection.Set = .all) -> Self { Self(.resizeUpDown) }
 }
 
 public enum FrameResizePosition: Sendable { case top, leading, bottom, trailing, topLeading, topTrailing, bottomLeading, bottomTrailing }

@@ -79,6 +79,9 @@ public struct EnvironmentValues: @unchecked Sendable {
     public var undoManager: AnyObject? { nil }
     public var scenePhase: ScenePhase { get { self[ScenePhaseKey.self] } set { self[ScenePhaseKey.self] = newValue } }
     public var accessibilityReduceMotion: Bool { false }
+    public var accessibilityReduceTransparency: Bool { false }
+    public var accessibilityDifferentiateWithoutColor: Bool { false }
+    public var accessibilityInvertColors: Bool { false }
     public var colorSchemeContrast: ColorSchemeContrast { .standard }
 
     var _foreground: AnyShapeStyle? { get { self[ForegroundKey.self] } set { self[ForegroundKey.self] = newValue } }
@@ -365,8 +368,8 @@ public struct KeyboardShortcut: Hashable, Sendable {
     public static let cancelAction = KeyboardShortcut(.escape, modifiers: [])
 
     /// ⌘ maps to Ctrl on Linux and Windows.
-    var keyPress: KeyPress {
-        KeyPress(key: key.keyName, command: modifiers.contains(.command), shift: modifiers.contains(.shift),
+    var keyPress: RunwayCore.KeyPress {
+        RunwayCore.KeyPress(key: key.keyName, command: modifiers.contains(.command), shift: modifiers.contains(.shift),
                  option: modifiers.contains(.option), control: modifiers.contains(.control))
     }
 }

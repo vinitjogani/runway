@@ -275,17 +275,10 @@ extension View {
         }
     }
     public func onLongPressGesture(minimumDuration: Double = 0.5, perform action: @escaping () -> Void) -> some View { self }
-    public func onHover(perform action: @escaping (Bool) -> Void) -> some View { self }
-    public func onContinuousHover(perform action: @escaping (HoverPhase) -> Void) -> some View { self }
-    public func onKeyPress(_ key: KeyEquivalent, action: @escaping () -> KeyPressResult) -> some View { self }
-    public func onKeyPress(action: @escaping (KeyPressInfo) -> KeyPressResult) -> some View { self }
     public func onDrag(_ data: @escaping () -> NSItemProvider) -> some View { self }
     public func onDrag<V: View>(_ data: @escaping () -> NSItemProvider, @ViewBuilder preview: () -> V) -> some View { self }
     public func contentShape<S: Shape>(_ shape: S, eoFill: Bool = false) -> some View { self }
     public func contentShape<K, S: Shape>(_ kind: K, _ shape: S, eoFill: Bool = false) -> some View { self }
-    public func allowsHitTesting(_ enabled: Bool) -> some View { self }
-    public func contextMenu<M: View>(@ViewBuilder menuItems: () -> M) -> some View { self }
-    public func contextMenu<I: Hashable, M: View>(forSelectionType itemType: I.Type = I.self, @ViewBuilder menu: @escaping (Set<I>) -> M, primaryAction: ((Set<I>) -> Void)? = nil) -> some View { self }
     public func onOpenURL(perform action: @escaping (URL) -> Void) -> some View { self }
     public func onExitCommand(perform action: (() -> Void)?) -> some View {
         nodes("exit") { ns, ctx in
@@ -299,8 +292,6 @@ extension View {
 }
 
 public enum HoverPhase: Sendable { case active(CGPoint), ended }
-public enum KeyPressResult: Sendable { case handled, ignored }
-public struct KeyPressInfo: Sendable { public let key: KeyEquivalent; public let characters: String; public let modifiers: EventModifiers }
 public enum MoveCommandDirection: Sendable { case up, down, left, right }
 
 // MARK: Effects only Apple's renderer draws (accepted, no-ops)
@@ -412,6 +403,9 @@ public struct AccessibilityTraits: OptionSet, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let isButton = AccessibilityTraits(rawValue: 1), isHeader = AccessibilityTraits(rawValue: 2), isSelected = AccessibilityTraits(rawValue: 4)
+    public static let isModal = AccessibilityTraits(rawValue: 256), isSearchField = AccessibilityTraits(rawValue: 512), isSummaryElement = AccessibilityTraits(rawValue: 1024)
+    public static let playsSound = AccessibilityTraits(rawValue: 2048), startsMediaSession = AccessibilityTraits(rawValue: 4096), allowsDirectInteraction = AccessibilityTraits(rawValue: 8192)
+    public static let causesPageTurn = AccessibilityTraits(rawValue: 16384), isKeyboardKey = AccessibilityTraits(rawValue: 32768), isTabBar = AccessibilityTraits(rawValue: 65536)
     public static let isLink = AccessibilityTraits(rawValue: 8), isImage = AccessibilityTraits(rawValue: 16), isStaticText = AccessibilityTraits(rawValue: 32)
     public static let updatesFrequently = AccessibilityTraits(rawValue: 64), isToggle = AccessibilityTraits(rawValue: 128)
 }
@@ -440,11 +434,17 @@ extension View {
     public func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectStyle?, for edges: Edge.Set) -> some View { self }
     public func scrollBounceBehavior(_ behavior: ScrollBounceBehavior, axes: Axis.Set = [.vertical]) -> some View { self }
     public func scrollContentBackground(_ visibility: Visibility) -> some View { self }
-    public func scrollIndicators(_ visibility: Visibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View { self }
+    /// Scroll views inside hide their scroll bars (still scrolling by wheel and keys).
+    public func scrollIndicators(_ visibility: ScrollIndicatorVisibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View {
+        environment { env in
+            if axes.contains(.vertical) { env._scrollIndicatorsVertical = visibility }
+            if axes.contains(.horizontal) { env._scrollIndicatorsHorizontal = visibility }
+        }
+    }
     public func scrollPosition<ID: Hashable>(id: Binding<ID?>, anchor: UnitPoint? = nil) -> some View { self }
     public func scrollTargetBehavior<T>(_ behavior: T) -> some View { self }
     public func scrollTargetLayout(isEnabled: Bool = true) -> some View { self }
-    public func defaultScrollAnchor(_ anchor: UnitPoint?) -> some View { self }
+
     public func shadow(color: Color = Color(white: 0, opacity: 0.33), radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View { self }
     public func blur(radius: CGFloat, opaque: Bool = false) -> some View { self }
     public func brightness(_ amount: Double) -> some View { self }
@@ -484,7 +484,7 @@ extension View {
     public func accessibilityAction(named name: LocalizedStringKey, _ handler: @escaping () -> Void) -> some View { self }
     public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> some View { self }
     public func accessibilitySortPriority(_ p: Double) -> some View { self }
-    public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { self }
+    public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { environment { $0._textSelectable = S.allowsSelection } }
     @_disfavoredOverload public func textContentType(_ type: Any?) -> some View { self }
     public func autocorrectionDisabled(_ disabled: Bool = true) -> some View { self }
     public func privacySensitive(_ sensitive: Bool = true) -> some View { self }
@@ -546,4 +546,20 @@ public struct Namespace: DynamicProperty, Sendable {
     public struct ID: Hashable, Sendable { let raw = UUID() }
     public init() {}
     public var wrappedValue: ID { ID() }
+}
+
+public struct ScrollIndicatorVisibility: Hashable, Sendable {
+    enum Kind: Hashable, Sendable { case automatic, visible, hidden, never }
+    let kind: Kind
+    public static let automatic = Self(kind: .automatic), visible = Self(kind: .visible), hidden = Self(kind: .hidden), never = Self(kind: .never)
+    var shows: Bool { kind == .automatic || kind == .visible }
+}
+
+struct ScrollIndicatorsVKey: EnvironmentKey { static var defaultValue: ScrollIndicatorVisibility { .automatic } }
+struct ScrollIndicatorsHKey: EnvironmentKey { static var defaultValue: ScrollIndicatorVisibility { .automatic } }
+extension EnvironmentValues {
+    var _scrollIndicatorsVertical: ScrollIndicatorVisibility { get { self[ScrollIndicatorsVKey.self] } set { self[ScrollIndicatorsVKey.self] = newValue } }
+    var _scrollIndicatorsHorizontal: ScrollIndicatorVisibility { get { self[ScrollIndicatorsHKey.self] } set { self[ScrollIndicatorsHKey.self] = newValue } }
+    public var horizontalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsHorizontal }
+    public var verticalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsVertical }
 }

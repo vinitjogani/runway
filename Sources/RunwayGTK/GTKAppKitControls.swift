@@ -429,10 +429,27 @@ extension GTKBackend: AppKitBackend {
         _ = gtk_widget_grab_focus(b.inner ?? b.outer)
     }
 
+    public func resignFocus(_ widget: NativeWidget) {
+        let b = box(widget)
+        let w = b.inner ?? b.outer
+        guard let root = gtk_widget_get_root(w), let focused = gtk_root_get_focus(root) else { return }
+        // Only when focus is in this widget: another may have taken it already.
+        let f = UnsafeMutableRawPointer(focused).assumingMemoryBound(to: GtkWidget.self)
+        if f == w || gtk_widget_is_ancestor(f, w) != 0 || f == b.outer || gtk_widget_is_ancestor(f, b.outer) != 0 {
+            gtk_root_set_focus(root, nil)
+        }
+    }
+
+    public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {
+        gtk_widget_set_can_target(box(widget).outer, testable ? 1 : 0)
+    }
+
     public func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void) {
         let w = box(widget).outer
-        akState(w).focus = changed
-        addFocusController(w)
+        let s = akState(w)
+        let first = s.focus == nil
+        s.focus = changed
+        if first { addFocusController(w) }
     }
 
     private func addFocusController(_ w: GW) {

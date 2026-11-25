@@ -160,6 +160,11 @@ extension HeadlessBackend: AppKitBackend {
         Self.focused = w
         if let w { Self.record(w).onFocus?(true); Self.record(w).textFocus?(true) }
     }
+    public func resignFocus(_ widget: NativeWidget) {
+        guard let old = Self.focused, old === widget else { return }
+        Self.focused = nil
+        Self.record(old).onFocus?(false); Self.record(old).textFocus?(false)
+    }
     public func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void) { Self.record(widget).onFocus = changed }
     public func setCursor(_ widget: NativeWidget, _ cursor: CursorKind) { Self.record(widget).cursor = cursor }
 

@@ -92,6 +92,23 @@ open class NSEvent: NSObject, @unchecked Sendable {
     public let charactersIgnoringModifiers: String?
     public let isARepeat: Bool
     public let keyCode: UInt16
+    /// The characters the key types with `modifiers` instead of the ones
+    /// held (a US layout's Shift for symbols).
+    open func characters(byApplyingModifiers modifiers: ModifierFlags) -> String? {
+        guard let base = charactersIgnoringModifiers else { return nil }
+        let lowered = base.lowercased()
+        guard modifiers.contains(.shift) else {
+            // Undo Shift on a symbol.
+            if let i = Self.shifted.firstIndex(where: { String($0.value) == base }) { return String(Self.shifted[i].key) }
+            return lowered
+        }
+        if let c = lowered.first, let up = Self.shifted[c] { return String(up) }
+        return base.uppercased()
+    }
+    static let shifted: [Character: Character] = [
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+        "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+    ]
     open var specialKey: SpecialKey? {
         guard let c = charactersIgnoringModifiers?.unicodeScalars.first else { return nil }
         let v = Int(c.value)

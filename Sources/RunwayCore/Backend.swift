@@ -65,9 +65,14 @@ public struct TextRun: Hashable, Sendable {
     public var underline: Bool = false
     public var strikethrough: Bool = false
     public var tracking: CGFloat
-    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false, tracking: CGFloat = 0) {
+    /// A highlight behind the run.
+    public var background: RGBA?
+    /// A link the run opens when clicked.
+    public var link: String?
+    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false, tracking: CGFloat = 0,
+                background: RGBA? = nil, link: String? = nil) {
         self.string = string; self.font = font; self.color = color; self.underline = underline; self.strikethrough = strikethrough
-        self.tracking = tracking
+        self.tracking = tracking; self.background = background; self.link = link
     }
 }
 
@@ -76,6 +81,10 @@ public struct StyledText: Hashable, Sendable {
     public var alignment: TextAlignmentValue = .leading
     public var lineLimit: Int?
     public var truncation: TruncationValue = .tail
+    /// The user can select and copy the text.
+    public var selectable = false
+    /// Extra space between lines (points).
+    public var lineSpacing: CGFloat = 0
     public init(runs: [TextRun], alignment: TextAlignmentValue = .leading, lineLimit: Int? = nil, truncation: TruncationValue = .tail) {
         self.runs = runs; self.alignment = alignment; self.lineLimit = lineLimit; self.truncation = truncation
     }
@@ -139,6 +148,9 @@ public struct WidgetProps: Equatable, Sendable {
     public var imagePointSize: CGFloat = 13
     // Canvas.
     public var drawing: [DrawCommand] = []
+    /// A text editor's selection to apply (Unicode scalar offsets); nil
+    /// leaves the user's.
+    public var selection: Range<Int>?
     public var backdropBlur: BackdropBlur?
     public var clips = false
     public init() {}
@@ -155,6 +167,8 @@ public struct WidgetProps: Equatable, Sendable {
     public var onSelect: ((Int) -> Void)?
     public var onColor: ((RGBA) -> Void)?
     public var onFocus: ((Bool) -> Void)?
+    /// A text editor's selection changed (Unicode scalar offsets).
+    public var onSelection: ((Range<Int>) -> Void)?
     public var menu: [MenuItemSpec] = []
     public init() {}
 }

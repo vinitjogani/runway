@@ -388,7 +388,7 @@ extension EnvironmentValues {
     let window: NativeWindow
     let host: ViewHost
     var onClose: (() -> Void)?
-    var extraKeys: ((KeyPress) -> Bool)?
+    var extraKeys: ((RunwayCore.KeyPress) -> Bool)?
 
     init(title: String, view: AnyView, size: CGSize?, sizedToContent: Bool, parent: NativeWindow? = nil, modal: Bool = false, environment: EnvironmentValues = EnvironmentValues()) {
         let backend = Runway.backend
@@ -607,6 +607,10 @@ struct AlertBody: View {
 open class NSHostingController<Content: View>: NSViewController {
     public var rootView: Content { didSet { hostingView.rootView = rootView } }
     public var sizingOptions: NSHostingSizingOptions = [.minSize, .intrinsicContentSize, .maxSize]
+    /// The safe area the hosted view respects. A window here has no safe
+    /// area insets of its own (no notch, no titlebar over full-size
+    /// content), so any choice lays out the same.
+    public var safeAreaRegions: SafeAreaRegions = .all
     private lazy var hostingView = NSHostingView(rootView: rootView)
 
     public init(rootView: Content) {
@@ -669,7 +673,7 @@ open class NSHostingView<Content: View>: NSView, KeyHandling {
     }
     open override var intrinsicContentSize: CGSize { fittingSize }
 
-    public func handleKey(_ key: KeyPress) -> Bool { host.handleKey(key) }
+    public func handleKey(_ key: RunwayCore.KeyPress) -> Bool { host.handleKey(key) }
 }
 
 extension Color {

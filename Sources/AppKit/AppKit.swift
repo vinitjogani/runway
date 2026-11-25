@@ -94,6 +94,7 @@ open class NSApplication: NSResponder {
         super.init()
         RunwayPlatform.installDefaultBackend()
         AppKitRuntime.install()
+        RunwaySignals.ignoreBrokenPipes()
     }
 
     /// Runs the main loop (callable from main.swift's top-level code).
@@ -240,6 +241,8 @@ open class NSApplication: NSResponder {
     open func showHelp(_ sender: Any?) {}
     open func toggleTouchBarCustomizationPalette(_ sender: Any?) {}
     /// The object that handles the app's Services (its `NSServices` methods).
+    /// The Services menu's provider. Linux and Windows have no Services
+    /// menu; the provider is kept.
     open var servicesProvider: Any?
 
     public struct AboutPanelOptionKey: RawRepresentable, Hashable, Sendable {
@@ -327,3 +330,6 @@ public protocol NSUserInterfaceItemIdentification: AnyObject {
 @preconcurrency @MainActor public protocol KeyHandling: AnyObject {
     func handleKey(_ key: KeyPress) -> Bool
 }
+
+/// Refreshes the Services menu (none on Linux and Windows).
+@MainActor public func NSUpdateDynamicServices() {}

@@ -166,6 +166,10 @@ public struct StatusItemSpec {
                             key: @escaping @MainActor (KeyPress) -> Bool) -> NativeWidget
     /// Gives a widget keyboard focus.
     func focus(_ widget: NativeWidget)
+    /// Takes keyboard focus away from a widget (its window keeps none).
+    func resignFocus(_ widget: NativeWidget)
+    /// Whether a widget and what's inside it take pointer events.
+    func setHitTestable(_ widget: NativeWidget, _ testable: Bool)
     /// Focus entering (true) or leaving a focusable container.
     func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void)
     func setCursor(_ widget: NativeWidget, _ cursor: CursorKind)
@@ -306,6 +310,8 @@ extension AppKitBackend {
         return TextCharacterLayout(rect: r, lineTop: r.minY, lineBottom: r.maxY, baseline: r.minY + r.height * 0.8)
     }
 
+    public func resignFocus(_ widget: NativeWidget) {}
+    public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {}
     /// Backends without interactive moves leave the window where it is.
     public func beginWindowMove(_ window: NativeWindow, button: Int, at point: CGPoint, timestamp: TimeInterval) {}
     /// Backends that route input themselves needn't do anything.

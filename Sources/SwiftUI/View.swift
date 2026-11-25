@@ -209,7 +209,13 @@ struct IDView<Content: View, ID: Hashable>: View, PrimitiveView {
     typealias Body = Never
     let content: Content
     let id: ID
-    func resolve(in ctx: ResolveContext) -> [LayoutNode] { ctx.resolve(content, "#id=\(id)") }
+    func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        let nodes = ctx.resolve(content, "#id=\(id)")
+        guard !ctx.dryRun else { return nodes }
+        let key = AnyHashable(id)
+        // Where it's placed, so ScrollViewProxy can scroll to it.
+        return nodes.map { IDMarkerNode($0, id: key) }
+    }
 }
 
 extension View {

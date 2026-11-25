@@ -175,7 +175,8 @@ private final class RegistryScanner: SyntaxVisitor {
         }
         classes[i].inits.append(Initializer(
             labels: labels, convenience: node.modifiers.contains { $0.name.text == "convenience" },
-            failable: node.optionalMark != nil,
+            failable: node.optionalMark != nil
+                || node.signature.effectSpecifiers?.throwsClause != nil || node.signature.effectSpecifiers?.asyncSpecifier != nil,
             isPrivate: node.modifiers.contains { $0.name.text == "private" || $0.name.text == "fileprivate" }
                 || node.attributes.trimmedDescription.contains("unavailable")))
         return .skipChildren

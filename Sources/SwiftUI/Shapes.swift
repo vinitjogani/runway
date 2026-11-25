@@ -484,6 +484,13 @@ public struct Image: View, PrimitiveView, Equatable {
     /// RGBA8 pixels (what CGImage and NSImage hold here).
     public init(width: Int, height: Int, rgba: [UInt8]) { source = .pixels(width, height, rgba) }
     init(file path: String) { source = .file(path) }
+    /// A Core Graphics image (its pixels shown at one point per pixel).
+    public init(_ cgImage: CGImage, scale: CGFloat, orientation: Orientation = .up, label: Text) {
+        source = .pixels(cgImage.width, cgImage.height, cgImage.pixels)
+    }
+    public init(decorative cgImage: CGImage, scale: CGFloat, orientation: Orientation = .up) {
+        source = .pixels(cgImage.width, cgImage.height, cgImage.pixels)
+    }
 
     public enum ResizingMode: Sendable { case tile, stretch }
     public enum TemplateRenderingMode: Sendable { case template, original }

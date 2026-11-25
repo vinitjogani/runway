@@ -715,6 +715,8 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     open func setAccessibilityTitle(_ title: String?) { accessibility.title = title }
     open func accessibilityHelp() -> String? { accessibility.help ?? toolTip }
     open func setAccessibilityHelp(_ help: String?) { accessibility.help = help }
+    open func accessibilityPlaceholderValue() -> String? { accessibility.placeholderValue }
+    open func setAccessibilityPlaceholderValue(_ value: String?) { accessibility.placeholderValue = value }
     open func accessibilityIdentifier() -> String { accessibility.identifier ?? identifier?.rawValue ?? "" }
     open func setAccessibilityIdentifier(_ identifier: String?) { accessibility.identifier = identifier }
     open func accessibilityRole() -> NSAccessibility.Role? { accessibility.role ?? .group }

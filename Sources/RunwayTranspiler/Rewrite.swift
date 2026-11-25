@@ -643,9 +643,11 @@ final class Rewriter: SyntaxVisitor {
 
     /// `Darwin.write(…)`: Mac code qualifies C library calls with the Darwin
     /// module, which Foundation re-exports there; Foundation re-exports the
-    /// platform's C library everywhere, so the qualifier becomes Foundation.
+    /// platform's C library everywhere, and RunwayFoundation re-exports
+    /// Foundation beside its Darwin-shaped overloads (`socket` taking
+    /// Glibc's socket types), so the qualifier becomes RunwayFoundation.
     override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
-        if let base = node.base?.as(DeclReferenceExprSyntax.self), base.baseName.text == "Darwin" { replace(base, "Foundation", runtime: false) }
+        if let base = node.base?.as(DeclReferenceExprSyntax.self), base.baseName.text == "Darwin" { replace(base, "RunwayFoundation", runtime: false) }
         return .visitChildren
     }
 

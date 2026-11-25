@@ -120,9 +120,14 @@ extension NSWorkspace {
 
     private func launch(_ app: URL, arguments: [String], completionHandler: ((NSRunningApplication?, Error?) -> Void)?) {
         let p = Process()
-        if app.pathExtension == "desktop" {
+        // A desktop entry, or the stand-in bundle urlForApplication returns for one.
+        let entry = app.pathExtension == "desktop" ? app.path : Bundle(url: app)?.object(forInfoDictionaryKey: "RunwayDesktopEntry") as? String
+        if let entry {
             p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            p.arguments = ["gtk-launch", app.deletingPathExtension().lastPathComponent] + arguments
+            p.arguments = ["gio", "launch", entry] + arguments
+        } else if app.hasDirectoryPath, let exe = Bundle(url: app)?.executableURL {
+            p.executableURL = exe
+            p.arguments = arguments
         } else {
             p.executableURL = app
             p.arguments = arguments

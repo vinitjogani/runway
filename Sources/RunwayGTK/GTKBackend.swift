@@ -518,6 +518,13 @@ final class WorkBox {
                 b.events.onText?(String(cString: c))
                 g_free(c)
             }
+            b.connect(UnsafeMutableRawPointer(buffer), "notify::cursor-position", arity: 1) { [unowned b] _ in
+                guard !b.updating, let report = b.events.onSelection else { return }
+                var start = GtkTextIter(), end = GtkTextIter()
+                gtk_text_buffer_get_selection_bounds(buffer, &start, &end)
+                let a = Int(gtk_text_iter_get_offset(&start)), z = Int(gtk_text_iter_get_offset(&end))
+                report(min(a, z)..<max(a, z))
+            }
             return b
         case .slider:
             let s = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.001)!
@@ -691,6 +698,13 @@ final class WorkBox {
                 let c = gtk_text_buffer_get_text(buffer, &start, &end, 0)!
                 if String(cString: c) != p.string { gtk_text_buffer_set_text(buffer, p.string, -1) }
                 g_free(c)
+                if let r = p.selection, r != old.selection {
+                    var a = GtkTextIter(), z = GtkTextIter()
+                    gtk_text_buffer_get_iter_at_offset(buffer, &a, Int32(r.lowerBound))
+                    gtk_text_buffer_get_iter_at_offset(buffer, &z, Int32(r.upperBound))
+                    gtk_text_buffer_select_range(buffer, &z, &a)
+                    gtk_text_view_scroll_mark_onscreen(typed(tv), gtk_text_buffer_get_insert(buffer))
+                }
             }
         case .slider:
             applyTint(b, p.tint)
@@ -816,6 +830,10 @@ final class WorkBox {
                 attrs += " foreground=\"\(String(c.hexString.prefix(7)))\" alpha=\"\(max(1, Int((c.a * 100).rounded())))%\""
             }
             if f.monospacedDigit { attrs += " font_features=\"tnum\"" }
+            if t.lineSpacing > 0, t.lineLimit != 1 {
+                // An absolute line height (Pango units), as AppKit adds spacing below each line.
+                attrs += " line_height=\"\(Int(((f.size * 1.2 + t.lineSpacing) * CGFloat(PANGO_SCALE)).rounded()))\""
+            }
             if run.underline { attrs += " underline=\"single\"" }
             if run.strikethrough { attrs += " strikethrough=\"true\"" }
             if run.tracking.isFinite, run.tracking != 0 {
@@ -823,9 +841,18 @@ final class WorkBox {
                 let tracking = Int32(max(CGFloat(Int32.min), min(CGFloat(Int32.max), units.rounded())))
                 attrs += " letter_spacing=\"\(tracking)\""
             }
+            if let bg = run.background {
+                attrs += " background=\"\(String(bg.hexString.prefix(7)))\" bgalpha=\"\(max(1, Int((bg.a * 100).rounded())))%\""
+            }
             let escaped = g_markup_escape_text(run.string, -1)!
-            out += "<span \(attrs)>\(String(cString: escaped))</span>"
+            var span = "<span \(attrs)>\(String(cString: escaped))</span>"
             g_free(escaped)
+            if let link = run.link {
+                let href = g_markup_escape_text(link, -1)!
+                span = "<a href=\"\(String(cString: href))\">\(span)</a>"
+                g_free(href)
+            }
+            out += span
         }
         return out
     }
@@ -839,6 +866,11 @@ final class WorkBox {
         }
         let x: Float = t.alignment == .center ? 0.5 : t.alignment == .trailing ? 1 : 0
         gtk_label_set_xalign(l, x)
+        if (gtk_label_get_selectable(l) != 0) != t.selectable {
+            gtk_label_set_selectable(l, t.selectable ? 1 : 0)
+            // Selecting shouldn't put a focus ring on every label clicked.
+            if t.selectable { gtk_widget_set_focus_on_click(b.outer, 0) }
+        }
         gtk_label_set_justify(l, t.alignment == .center ? GTK_JUSTIFY_CENTER : t.alignment == .trailing ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT)
         let ell: PangoEllipsizeMode = t.truncation == .head ? PANGO_ELLIPSIZE_START : t.truncation == .middle ? PANGO_ELLIPSIZE_MIDDLE : PANGO_ELLIPSIZE_END
         if t.lineLimit == 1 {

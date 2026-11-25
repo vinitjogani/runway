@@ -99,18 +99,34 @@ public struct ScrollView<Content: View>: View, PrimitiveView {
         let scrollContent = clearance > 0 ? PaddingNode(EdgeInsets(bottom: clearance), inner) : inner
         let widget = ctx.widget(enabled ? .scroll(horizontal: h, vertical: v) : .container)
         if let widget { ctx.host.backend.update(widget, props: WidgetProps(), events: WidgetEvents()) }
+        if enabled, let widget, let appKit = ctx.host.backend as? AppKitBackend {
+            let showsV = v && showsIndicators && ctx.env._scrollIndicatorsVertical.shows
+            let showsH = h && showsIndicators && ctx.env._scrollIndicatorsHorizontal.shows
+            if !(showsV == v && showsH == h) {
+                appKit.setScrollers(widget, horizontal: showsH, vertical: showsV, autohides: true, bordered: false)
+            }
+            ctx.host.registerScrollView(widget, anchor: ctx.env._defaultScrollAnchor)
+        }
         return [ContainerNode(widget: widget, backend: ctx.host.backend, content: scrollContent, sizing: .scroll(horizontal: h, vertical: v, enabled: enabled))]
     }
 }
 
+/// Scrolls the scroll views around a `ScrollViewReader` to views by `.id`.
 public struct ScrollViewProxy {
-    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {}
+    weak var host: ViewHost?
+    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {
+        let key = AnyHashable(id)
+        MainActor.assumeIsolated { host?.scrollTo(key, anchor: anchor) }
+    }
 }
 
-public struct ScrollViewReader<Content: View>: View {
+public struct ScrollViewReader<Content: View>: View, PrimitiveView {
+    public typealias Body = Never
     let content: (ScrollViewProxy) -> Content
     public init(@ViewBuilder content: @escaping (ScrollViewProxy) -> Content) { self.content = content }
-    public var body: some View { content(ScrollViewProxy()) }
+    func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        ctx.resolve(content(ScrollViewProxy(host: ctx.dryRun ? nil : ctx.host)), "reader")
+    }
 }
 
 public struct GridItem: Hashable, Sendable {

@@ -6,7 +6,10 @@
 //   FileManager.trashItem(at:resultingItemURL:)  the freedesktop Trash
 //   CFData, CFString, CFDictionary…          the toll-free bridged names
 
-import Foundation
+// Re-exported so `RunwayFoundation.write(…)` (what `Darwin.write(…)`
+// becomes) finds the C library through Foundation, and the Darwin-shaped
+// overloads declared here beside it.
+@_exported import Foundation
 #if os(Linux)
 import CRunwayZlib
 // DistributedNotificationCenter: Foundation has it on the Mac, corelibs doesn't.

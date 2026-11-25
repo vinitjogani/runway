@@ -660,6 +660,14 @@ final class ContainerNode: LayoutNode {
         sink.add(widget, rect)
         let inner = backend.childContainer(widget)
         let s = sink.nested(inner, origin: .zero)
+        if case .scroll(_, _, true) = sizing {
+            s.scrollDocument = widget
+            s.documentOrigin = .zero
+        } else {
+            let chrome = inner !== widget ? CGPoint(x: insets.leading, y: insets.top) : .zero
+            s.documentOrigin = CGPoint(x: sink.documentOrigin.x + rect.minX - sink.offset.x + chrome.x,
+                                       y: sink.documentOrigin.y + rect.minY - sink.offset.y + chrome.y)
+        }
         let local: CGRect
         switch sizing {
         case .hug:
@@ -678,6 +686,7 @@ final class ContainerNode: LayoutNode {
             let csPlaced = content.size(ProposedSize(width: h ? cs.width : rect.width, height: v ? cs.height : rect.height))
             content.place(CGRect(origin: Alignment.top.origin(of: csPlaced, in: CGRect(origin: .zero, size: size)), size: csPlaced), s)
             s.commit(contentSize: size)
+            sink.host?.scrollPlaced(widget, document: size, viewport: rect.size)
         }
     }
 }

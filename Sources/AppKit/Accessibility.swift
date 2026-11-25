@@ -83,6 +83,7 @@ public enum NSAccessibility {
 /// What a view says about itself to assistive technology.
 struct AccessibilityAttributes {
     var element: Bool?
+    var placeholderValue: String?
     var label: String?
     var title: String?
     var help: String?

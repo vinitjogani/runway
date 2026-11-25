@@ -212,35 +212,51 @@ extension AppStorage {
 
 extension AppStorage: @unchecked Sendable {}
 
-// MARK: Focus (accepted; focus follows the platform's own handling)
+// MARK: Focus (see Interaction.swift for how focus reaches native widgets)
 
 @propertyWrapper
-public struct FocusState<Value: Hashable>: DynamicProperty {
-    final class Box: @unchecked Sendable { var value: Value; init(_ v: Value) { value = v } }
+public struct FocusState<Value: Hashable>: DynamicPropertyLink, DynamicProperty {
+    /// Storage kept by path; writes re-render the owning scope and move
+    /// keyboard focus to the view bound to the new value.
+    final class Box: @unchecked Sendable {
+        var value: Value
+        let unfocused: Value
+        weak var state: StateBox<Value>?
+        init(_ v: Value) { value = v; unfocused = v }
+        var current: Value { state?.value ?? value }
+        @MainActor func set(_ v: Value) {
+            if let state {
+                guard state.value != v else { return }
+                state.set(v)
+                state.host?.scheduleFocusSync()
+            } else {
+                value = v
+            }
+        }
+    }
     let box: Box
     public init() where Value == Bool { box = Box(false) }
     public init<T: Hashable>() where Value == T? { box = Box(nil) }
     public var wrappedValue: Value {
-        get { box.value }
-        nonmutating set { box.value = newValue }
+        get { box.current }
+        nonmutating set { MainActor.assumeIsolated { box.set(newValue) } }
     }
     public var projectedValue: Binding { Binding(box: box) }
+
+    func link(_ ctx: ResolveContext, key: String) {
+        let initial = box.value
+        let state = ctx.host.stateBox(key) { initial }
+        box.state = state
+    }
 
     @propertyWrapper public struct Binding {
         let box: Box
         public var wrappedValue: Value {
-            get { box.value }
-            nonmutating set { box.value = newValue }
+            get { box.current }
+            nonmutating set { MainActor.assumeIsolated { box.set(newValue) } }
         }
         public var projectedValue: Binding { self }
     }
-}
-
-extension View {
-    public func focused<V: Hashable>(_ binding: FocusState<V>.Binding, equals value: V) -> some View { self }
-    public func focused(_ condition: FocusState<Bool>.Binding) -> some View { self }
-    public func focusable(_ isFocusable: Bool = true) -> some View { self }
-    public func focusEffectDisabled(_ disabled: Bool = true) -> some View { self }
 }
 
 // MARK: ObservableObject: Combine's (re-exported), observed per host and key.
