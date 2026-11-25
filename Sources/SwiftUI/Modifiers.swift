@@ -257,21 +257,25 @@ extension View {
     // MARK: Gestures
 
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> some View {
-        tapArea(action: action)
+        tapArea(count: count, action: action)
     }
     /// The preview backends deliver the position in the tapped view's local coordinates.
     public func onTapGesture(count: Int = 1, coordinateSpace: CoordinateSpace = .local, perform action: @escaping (CGPoint) -> Void) -> some View {
-        tapArea(spatialAction: action)
+        tapArea(count: count, spatialAction: action)
     }
-    private func tapArea(action: (() -> Void)? = nil, spatialAction: ((CGPoint) -> Void)? = nil) -> some View {
+    private func tapArea(count: Int = 1, action: (() -> Void)? = nil, spatialAction: ((CGPoint) -> Void)? = nil) -> some View {
         nodes("tap") { ns, ctx in
             let w = ctx.widget(.tapArea, "tap")
             var events = WidgetEvents()
             events.onTap = action
             events.onTapLocation = spatialAction
-            if let w { ctx.host.backend.update(w, props: ctx.baseProps(), events: events) }
+            var p = ctx.baseProps()
+            p.tapCount = max(1, count)
+            if let w { ctx.host.backend.update(w, props: p, events: events) }
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
+            let node = ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)
+            node.layoutPriority = inner.layoutPriority
+            return [node]
         }
     }
     public func onLongPressGesture(minimumDuration: Double = 0.5, perform action: @escaping () -> Void) -> some View { self }

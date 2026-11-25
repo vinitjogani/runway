@@ -34,13 +34,13 @@ private let signalCallback1: @convention(c) (UnsafeMutableRawPointer?, UnsafeMut
 }
 /// GtkGestureClick::released (gesture, n_press, x, y, data).
 private final class ClickHandler {
-    let fire: (CGPoint) -> Void
-    init(_ fire: @escaping (CGPoint) -> Void) { self.fire = fire }
+    let fire: (CGPoint, Int) -> Void
+    init(_ fire: @escaping (CGPoint, Int) -> Void) { self.fire = fire }
 }
 
-private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { _, _, x, y, data in
+private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { _, n, x, y, data in
     guard let data else { return }
-    Unmanaged<ClickHandler>.fromOpaque(data).takeUnretainedValue().fire(CGPoint(x: x, y: y))
+    Unmanaged<ClickHandler>.fromOpaque(data).takeUnretainedValue().fire(CGPoint(x: x, y: y), Int(n))
 }
 /// Signals returning gboolean (activate-link, close-request).
 private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> gboolean = { instance, data in
@@ -92,7 +92,7 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         _ = runway_connect(instance, signal, unsafeBitCast(boolCallback, to: GCallback.self), Unmanaged.passUnretained(h).toOpaque())
     }
 
-    func onClick(_ f: @escaping (CGPoint) -> Void) {
+    func onClick(_ f: @escaping (CGPoint, Int) -> Void) {
         let g = gtk_gesture_click_new()!
         let h = ClickHandler(f)
         clickHandler = h
@@ -477,8 +477,9 @@ final class WorkBox {
             let b = GtkBox(kind: kind, outer: c)
             b.canvas = c
             runway_widget_set_interactive(c, 1)
-            b.onClick { [unowned b] point in
-                guard b.props.enabled else { return }
+            b.onClick { [unowned b] point, clicks in
+                // A double-tap gesture fires on the second click only.
+                guard b.props.enabled, clicks == b.props.tapCount else { return }
                 if let action = b.events.onTapLocation { action(point) }
                 else { b.events.onTap?() }
             }

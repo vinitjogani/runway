@@ -404,7 +404,7 @@ extension View {
 
     /// Wraps the content in an event container that sees the pointer
     /// without taking clicks from what's inside.
-    fileprivate func pointerArea(_ name: String, _ configure: @escaping @MainActor (EventHandlers, ResolveContext) -> Void) -> some View {
+    func pointerArea(_ name: String, _ configure: @escaping @MainActor (EventHandlers, ResolveContext) -> Void) -> some View {
         nodes(name) { ns, ctx in
             guard !ctx.dryRun, let (w, h) = ctx.host.eventWidget(ctx.path, focusable: false) else { return ns }
             h.widget = w

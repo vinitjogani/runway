@@ -156,6 +156,8 @@ public struct WidgetProps: Equatable, Sendable {
     /// A canvas that takes pointer events where it's drawn (SwiftUI's
     /// filled shapes); canvases are otherwise transparent to the pointer.
     public var hitTestable = false
+    /// A tap area's clicks per tap (2: double-click).
+    public var tapCount = 1
     /// A text editor or list without its own background (SwiftUI's
     /// scrollContentBackground(.hidden)).
     public var clearBackground = false

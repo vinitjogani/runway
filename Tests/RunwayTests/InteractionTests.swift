@@ -39,6 +39,56 @@ private struct Counted: NSViewRepresentable {
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) { dismantled += 1 }
 }
 
+private struct DragProbe: View {
+    let log: (String) -> Void
+    @GestureState private var dragging: CGFloat = 0
+    var body: some View {
+        Color.red.frame(width: 200, height: 40)
+            .overlay { Text(verbatim: "state \(Int(dragging))") }
+            .gesture(DragGesture(minimumDistance: 5)
+                .updating($dragging) { value, state, _ in state = value.translation.width }
+                .onChanged { log("changed \(Int($0.translation.width))") }
+                .onEnded { log("ended \(Int($0.translation.width))") })
+    }
+}
+
+private struct FocusProbe: View {
+    enum Field: Hashable { case name, card }
+    @FocusState var focus: Field?
+    @State var keys: [String] = []
+    var body: some View {
+        VStack {
+            TextField("Name", text: .constant("")).focused($focus, equals: .name)
+                .onKeyPress(.return) { keys.append("return"); return .handled }
+            Text("card").padding().focusable().focused($focus, equals: .card)
+                .onKeyPress(phases: .down) { keys.append($0.characters); return .handled }
+            Text(verbatim: "focus \(focus.map { "\($0)" } ?? "none") keys \(keys.joined(separator: ","))")
+            Button("Focus card") { focus = .card }
+        }
+    }
+}
+
+private struct Row: Identifiable, Hashable { let id: Int; let title: String; let size: Int }
+
+private struct TableProbe: View {
+    @State var order = [KeyPathComparator(\Row.title)]
+    @State var selection: Set<Int> = []
+    let opened: (Set<Int>) -> Void
+    var rows: [Row] { [Row(id: 1, title: "b", size: 3), Row(id: 2, title: "a", size: 1), Row(id: 3, title: "c", size: 2)].sorted(using: order) }
+    var body: some View {
+        VStack {
+            Table(rows, selection: $selection, sortOrder: $order) {
+                TableColumn("Title", value: \.title)
+                TableColumn("Size", value: \.size) { Text("\($0.size)") }.width(min: 40, ideal: 60, max: 80)
+            }
+            .contextMenu(forSelectionType: Int.self) { ids in
+                Button("Open \(ids.sorted().map(String.init).joined())") { opened(ids) }
+            } primaryAction: { opened($0) }
+            Text(verbatim: "selected \(selection.sorted().map(String.init).joined(separator: ","))")
+        }
+    }
+}
+
 private final class ProbeView: NSView {
     var movedToWindow = 0
     override func viewDidMoveToWindow() { movedToWindow += 1 }
@@ -221,5 +271,96 @@ final class InteractionTests: XCTestCase {
         let img = NSImage(systemSymbolName: "link", accessibilityDescription: nil)
         XCTAssertNotNil(img)
         XCTAssertNotNil(NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil))
+    }
+
+    func pointerWidgets(_ root: HeadlessWidget) -> [HeadlessWidget] {
+        root.all.filter { HeadlessBackend.record($0).pointer != nil }
+    }
+
+    func testDragGestureTracksThePointer() {
+        var log: [String] = []
+        let (_, root) = render(DragProbe { log.append($0) })
+        guard let area = pointerWidgets(root).first, let pointer = HeadlessBackend.record(area).pointer else { return XCTFail("no drag area") }
+        _ = pointer(PointerEvent(kind: .down, location: CGPoint(x: 10, y: 10)))
+        _ = pointer(PointerEvent(kind: .dragged, location: CGPoint(x: 12, y: 10)))
+        XCTAssertTrue(log.isEmpty, "under the minimum distance")
+        _ = pointer(PointerEvent(kind: .dragged, location: CGPoint(x: 40, y: 10)))
+        backend.drain()
+        XCTAssertEqual(log, ["changed 30"])
+        XCTAssertTrue(texts(root).contains("state 30"), "GestureState follows the drag")
+        _ = pointer(PointerEvent(kind: .up, location: CGPoint(x: 50, y: 10)))
+        backend.drain()
+        XCTAssertEqual(log, ["changed 30", "ended 40"])
+        XCTAssertTrue(texts(root).contains("state 0"), "and resets when it ends")
+    }
+
+    func testFocusStateAndKeyPresses() {
+        let (_, root) = render(FocusProbe())
+        let field = root.all.first { $0.kind == .textField(secure: false) }!
+        // Focusing the field natively sets the state; keys reach its handlers first.
+        backend.focus(field)
+        backend.drain()
+        XCTAssertTrue(texts(root).contains { $0.hasPrefix("focus name") })
+        XCTAssertEqual(HeadlessBackend.record(field).textKey?(KeyPress(key: "return")), true)
+        XCTAssertEqual(HeadlessBackend.record(field).textKey?(KeyPress(key: "a")), false, "other keys stay the field's")
+        backend.drain()
+        XCTAssertTrue(texts(root).contains { $0.hasSuffix("keys return") })
+        // Setting the state in code moves focus to the focusable card.
+        let button = root.all.first { $0.kind == .button }!
+        button.events.onTap?()
+        backend.drain()
+        XCTAssertTrue(texts(root).contains { $0.hasPrefix("focus card") })
+        let card = root.all.first { HeadlessBackend.record($0).focusable }!
+        XCTAssertTrue(HeadlessBackend.focused === card)
+        XCTAssertEqual(HeadlessBackend.record(card).key?(KeyPress(key: "x")), true)
+        backend.drain()
+        XCTAssertTrue(texts(root).contains { $0.hasSuffix("keys return,x") })
+    }
+
+    func testHoverAndContextMenu() {
+        final class Box { var hovered = false; var picked = "" }
+        let box = Box()
+        let (_, root) = render(Text("row")
+            .onHover { box.hovered = $0 }
+            .contextMenu { Button("Copy") { box.picked = "copy" }; Divider(); Button("Open") { box.picked = "open" } })
+        let areas = pointerWidgets(root)
+        XCTAssertEqual(areas.count, 2)
+        for a in areas { _ = HeadlessBackend.record(a).pointer?(PointerEvent(kind: .moved, location: CGPoint(x: 2, y: 2))) }
+        XCTAssertTrue(box.hovered)
+        for a in areas { _ = HeadlessBackend.record(a).pointer?(PointerEvent(kind: .exited, location: .zero)) }
+        XCTAssertFalse(box.hovered)
+        for a in areas { _ = HeadlessBackend.record(a).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 2, y: 2), button: 1)) }
+        let menu = HeadlessBackend.poppedUpMenus.last
+        XCTAssertEqual(menu?.map(\.title), ["Copy", "", "Open"])
+        menu?[2].action?()
+        XCTAssertEqual(box.picked, "open")
+    }
+
+    func testTableSortsSelectsAndOpens() {
+        var opened: [Set<Int>] = []
+        let (_, root) = render(TableProbe { opened.append($0) }, size: CGSize(width: 400, height: 300))
+        func cells() -> [String] { texts(root).filter { ["a", "b", "c"].contains($0) } }
+        XCTAssertEqual(cells(), ["a", "b", "c"])
+        // Clicking the sorted column's header reverses it; another column sorts by it.
+        let headers = root.all.filter { $0.kind == .tapArea || $0.kind == .button }
+        let title = headers.first { $0.all.contains { $0.props.text?.plain == "Title" } }
+        title?.events.onTap?()
+        backend.drain()
+        XCTAssertEqual(cells(), ["c", "b", "a"])
+        let size = headers.first { $0.all.contains { $0.props.text?.plain == "Size" } }
+        size?.events.onTap?()
+        backend.drain()
+        XCTAssertEqual(cells(), ["a", "c", "b"])
+        // Rows: click selects, ⌘-click adds, double-click opens, secondary click shows the menu.
+        let rows = pointerWidgets(root).filter { $0.frame.height == 24 }
+        XCTAssertEqual(rows.count, 3)
+        _ = HeadlessBackend.record(rows[0]).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 5, y: 5)))
+        _ = HeadlessBackend.record(rows[2]).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 5, y: 5), modifiers: .command))
+        backend.drain()
+        XCTAssertTrue(texts(root).contains("selected 1,2"))
+        _ = HeadlessBackend.record(rows[1]).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 5, y: 5), clickCount: 2))
+        XCTAssertEqual(opened, [[3]])
+        _ = HeadlessBackend.record(rows[1]).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 5, y: 5), button: 1))
+        XCTAssertEqual(HeadlessBackend.poppedUpMenus.last?.map(\.title), ["Open 3"])
     }
 }
