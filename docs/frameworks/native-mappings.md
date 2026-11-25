@@ -86,9 +86,12 @@ plugin.
   uses. Shortcuts, separators, checkmarks and enabled states carry over, and
   menus validate as they open.
 - While a host is present, the titlebar row drops the menu. A window with a
-  toolbar loses the row entirely: its traffic lights float at the leading
-  edge of the toolbar band, as on a Mac with a unified toolbar, and
-  `standardWindowButton(_:)` returns their frames.
+  toolbar loses the row entirely.
+- In a window with a toolbar, the traffic lights always float at the leading
+  edge of the toolbar band, as on a Mac with a unified toolbar, where apps
+  with full-size content leave room for them. Without a global menu host the
+  row above keeps only the in-window menu bar. `standardWindowButton(_:)`
+  returns their frames.
 - The host is watched, so the in-window bar comes back if the host goes
   away. Stock GNOME, Ubuntu's default included, has no global menu, so the
   in-window bar stays there.

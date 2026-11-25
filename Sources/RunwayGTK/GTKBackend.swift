@@ -163,8 +163,11 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         runway_widget_add_css(handle, "titlebar")
         runway_widget_add_css(handle, "rw-titlebar")
         gtk_window_set_titlebar(typed(window), handle)
-        titlebar = handle; menuSlot = slot; titleLabel = label
+        titlebar = handle; menuSlot = slot; titleLabel = label; rowControls = controls
     }
+    /// The window buttons in the titlebar row (hidden while they float in
+    /// the toolbar band).
+    private var rowControls: GW?
 
     /// Shows the menu bar in the titlebar row (false: no row to show it in).
     func setMenuBar(_ bar: GW?) -> Bool {
@@ -184,14 +187,17 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
 
     // MARK: Window buttons in the toolbar band
 
-    /// Window buttons floating over the content, for windows whose titlebar
-    /// row would hold nothing else: with the menu bar on the desktop's top
-    /// bar and a toolbar band, the Mac draws them at the band's leading
-    /// edge, and the row goes away.
+    /// Window buttons floating over the content's toolbar band, as the Mac
+    /// draws them for a full-size-content window with a toolbar: apps leave
+    /// room for them at the band's leading edge. With the menu bar on the
+    /// desktop's top bar the titlebar row then goes away; with the menu bar
+    /// in the window, the row stays for the menu alone, so the room the app
+    /// left in its band still holds the buttons rather than a gap.
     private var floatingControls: GW?
     private var globalMenu = false
     private(set) var bandHeight: CGFloat = 0
     private(set) var buttonsInBand = false
+    private var rowHidden = false
     static let lightSize: CGFloat = 12, lightGap: CGFloat = 8, lightInset: CGFloat = 12
 
     func setBandHeight(_ h: CGFloat) {
@@ -201,16 +207,24 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
     }
 
     private func updateMerge() {
-        let merged = globalMenu && bandHeight > 0 && titlebar != nil
+        let inBand = bandHeight > 0 && titlebar != nil
+        let hideRow = inBand && globalMenu
         if let floatingControls {
             gtk_widget_set_margin_top(floatingControls, Int32(((bandHeight - Self.lightSize) / 2).rounded()))
         }
-        guard merged != buttonsInBand, let titlebar, let floatingControls else { return }
-        buttonsInBand = merged
-        if merged { runway_widget_add_css(titlebar, "rw-titlebar-merged") } else { runway_widget_remove_css(titlebar, "rw-titlebar-merged") }
-        if let row = gtk_widget_get_first_child(titlebar) { gtk_widget_set_visible(row, merged ? 0 : 1) }
-        gtk_widget_set_visible(floatingControls, merged ? 1 : 0)
-        // The row's height goes to the content (the window keeps its size).
+        guard let titlebar, let floatingControls else { return }
+        if inBand != buttonsInBand {
+            buttonsInBand = inBand
+            gtk_widget_set_visible(floatingControls, inBand ? 1 : 0)
+            if let rowControls { gtk_widget_set_visible(rowControls, inBand ? 0 : 1) }
+            if inBand { runway_widget_add_css(titlebar, "rw-titlebar-menu-only") } else { runway_widget_remove_css(titlebar, "rw-titlebar-menu-only") }
+        }
+        if hideRow != rowHidden {
+            rowHidden = hideRow
+            if hideRow { runway_widget_add_css(titlebar, "rw-titlebar-merged") } else { runway_widget_remove_css(titlebar, "rw-titlebar-merged") }
+            if let row = gtk_widget_get_first_child(titlebar) { gtk_widget_set_visible(row, hideRow ? 0 : 1) }
+            // The row's height goes to the content (the window keeps its size).
+        }
     }
 
     /// Close, minimise and zoom, in the canvas (y down), while in the band.
