@@ -451,7 +451,7 @@ extension View {
             }
             ctx.host.backend.update(w, props: ctx.baseProps(), events: WidgetEvents())
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
+            return [ContainerNode.modifier(w, ctx.host.backend, inner)]
         }
     }
 }

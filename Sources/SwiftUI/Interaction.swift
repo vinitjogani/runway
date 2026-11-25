@@ -292,7 +292,7 @@ extension View {
             h.focus = { [weak host] gained in host?.nativeFocusChanged(path, gained: gained) }
             host.backend.update(w, props: ctx.baseProps(), events: WidgetEvents())
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: host.backend, content: inner, sizing: .hug)]
+            return [ContainerNode.modifier(w, host.backend, inner)]
         }
     }
 
@@ -389,7 +389,7 @@ extension View {
             appKit.setHitTestable(w, false)
             ctx.host.backend.update(w, props: ctx.baseProps(), events: WidgetEvents())
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
+            return [ContainerNode.modifier(w, ctx.host.backend, inner)]
         }
     }
 
@@ -408,7 +408,7 @@ extension View {
             configure(h, ctx)
             ctx.host.backend.update(w, props: ctx.baseProps(), events: WidgetEvents())
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
+            return [ContainerNode.modifier(w, ctx.host.backend, inner)]
         }
     }
 }
@@ -607,4 +607,17 @@ extension View {
 
 public struct ScrollAnchorRole: Hashable, Sendable {
     public static let initialOffset = Self(), sizeChanges = Self(), alignment = Self()
+}
+
+extension ContainerNode {
+    /// A native container a modifier wraps its view in (hover, context
+    /// menu, hit testing, focus): the view's layout priority and tag carry
+    /// through it, as they do through SwiftUI's modifiers.
+    static func modifier(_ widget: NativeWidget, _ backend: Backend, _ content: LayoutNode) -> ContainerNode {
+        let n = ContainerNode(widget: widget, backend: backend, content: content, sizing: .hug)
+        n.layoutPriority = content.layoutPriority
+        n.tag = content.tag
+        n.tagValue = content.tagValue
+        return n
+    }
 }

@@ -86,4 +86,20 @@ final class InteractionTests: XCTestCase {
         let bg = (host.container as! HeadlessWidget).all.filter { $0.kind == .canvas }.map(\.frame.width).max() ?? 0
         XCTAssertEqual(bg, 900, accuracy: 1)
     }
+
+    func testCodeReviewSymbolsHaveArtwork() {
+        for name in ["arrow.triangle.branch", "arrow.triangle.merge", "arrowshape.turn.up.left", "brain", "bubble.left",
+                     "checklist", "cloud.fill", "paperclip", "return", "scope", "at", "checkmark.circle.fill", "xmark.circle.fill"] {
+            XCTAssertNotNil(SymbolArt.svg(name), name)
+        }
+    }
+
+    func testModifierContainersKeepLayoutPriority() {
+        let (_, root) = render(HStack(spacing: 0) {
+            Text("Sources/Workspace/ReviewRouter.swift").lineLimit(1).layoutPriority(1).contextMenu { Button("Copy") {} }
+            Color.clear
+        }.frame(width: 300))
+        let label = root.all.first { $0.kind == .text }
+        XCTAssertGreaterThan(label?.frame.width ?? 0, 200)
+    }
 }
