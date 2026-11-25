@@ -111,8 +111,14 @@ private let pressedCB: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, 
     MainActor.assumeIsolated {
         guard let s = widgetState(data) else { return }
         s.clickCount = Int(n)
-        s.button = Int(gtk_gesture_single_get_current_button(OpaquePointer(g))) - 1
-        if s.button < 0 { s.button = 0 }
+        // GTK numbers buttons 1 left, 2 middle, 3 right; events use 0
+        // primary, 1 secondary, 2 middle.
+        switch gtk_gesture_single_get_current_button(OpaquePointer(g)) {
+        case 3: s.button = 1
+        case 2: s.button = 2
+        case let b where b > 3: s.button = Int(b) - 1
+        default: s.button = 0
+        }
         s.pressed = true
         s.dragStart = CGPoint(x: x, y: y)
         if let w = data?.assumingMemoryBound(to: GtkWidget.self), gtk_widget_get_focusable(w) != 0 { gtk_widget_grab_focus(w) }
