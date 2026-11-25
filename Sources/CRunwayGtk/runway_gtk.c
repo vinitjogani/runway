@@ -868,3 +868,36 @@ int runway_label_baselines(GtkWidget *w, int width, double *first, double *last)
     *last = nat_base + (double)(baseN - base0) / PANGO_SCALE;
     return 1;
 }
+
+static void app_chosen(GtkDialog *dialog, int response, gpointer data) {
+    DialogWait *w = data;
+    if (response == GTK_RESPONSE_OK) {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GAppInfo *info = gtk_app_chooser_get_app_info(GTK_APP_CHOOSER(dialog));
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        if (info) {
+            const char *id = g_app_info_get_id(info);
+            if (id) w->paths = g_strdup(id);
+            g_object_unref(info);
+        }
+    }
+    w->done = TRUE;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+/* The desktop's application chooser: the desktop id of the application
+   picked (all applications, or those for `content_type`), or NULL. */
+char *runway_choose_application(GtkWindow *parent, const char *title, const char *content_type) {
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    GtkWidget *d = gtk_app_chooser_dialog_new_for_content_type(parent, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                                content_type && *content_type ? content_type : "application/octet-stream");
+    if (title && *title) gtk_window_set_title(GTK_WINDOW(d), title);
+    GtkWidget *widget = gtk_app_chooser_dialog_get_widget(GTK_APP_CHOOSER_DIALOG(d));
+    gtk_app_chooser_widget_set_show_all(GTK_APP_CHOOSER_WIDGET(widget), TRUE);
+    G_GNUC_END_IGNORE_DEPRECATIONS
+    DialogWait w = { FALSE, NULL, -1 };
+    g_signal_connect(d, "response", G_CALLBACK(app_chosen), &w);
+    gtk_window_present(GTK_WINDOW(d));
+    wait_until(&w.done, -1);
+    return w.paths;
+}

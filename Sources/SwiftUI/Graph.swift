@@ -783,6 +783,7 @@ final class ScopeNode: LayoutNode {
             // Its size may have changed: everything above it measures again.
             var a = d.parent
             while let s = a { s.layoutEpoch += 1; a = s.parent }
+            LayoutNode.generation += 1
             splices += 1
         }
         pendingGC = .partial(keys: oldKeys, scopes: oldScopes)

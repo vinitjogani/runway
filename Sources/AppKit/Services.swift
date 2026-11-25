@@ -624,12 +624,11 @@ public final class NSWorkspace: NSObject, @unchecked Sendable {
         let ok = open(url)
         completionHandler?(nil, ok ? nil : CocoaError(.fileNoSuchFile))
     }
-    /// Makes an application the handler of a URL scheme (xdg-mime on Linux).
+    /// Makes an application the handler of a URL scheme (the desktop's
+    /// mimeapps.list on Linux).
     public func setDefaultApplication(at app: URL, toOpenURLsWithScheme scheme: String) async throws {
         guard let id = DesktopApps.desktopID(for: app) else { throw CocoaError(.fileNoSuchFile) }
-        guard DesktopApps.run("xdg-mime", ["default", id + ".desktop", "x-scheme-handler/" + scheme.lowercased()]) != nil else {
-            throw CocoaError(.featureUnsupported)
-        }
+        try MimeApps.setDefault(id + ".desktop", for: "x-scheme-handler/" + scheme.lowercased())
     }
     public func setDefaultApplication(at app: URL, toOpenURLsWithScheme scheme: String, completion: @escaping ((any Error)?) -> Void) {
         Task {
@@ -638,7 +637,7 @@ public final class NSWorkspace: NSObject, @unchecked Sendable {
     }
     public func setDefaultApplication(at app: URL, toOpen type: UTType) async throws {
         guard let id = DesktopApps.desktopID(for: app), let mime = type.preferredMIMEType else { throw CocoaError(.fileNoSuchFile) }
-        _ = DesktopApps.run("xdg-mime", ["default", id + ".desktop", mime])
+        try MimeApps.setDefault(id + ".desktop", for: mime)
     }
 
     /// The file manager, with the files selected where it can.
@@ -652,7 +651,7 @@ public final class NSWorkspace: NSObject, @unchecked Sendable {
     /// The application with a bundle identifier: on Linux a desktop entry
     /// (Mac identifiers of common apps map to theirs), as an app bundle.
     public func urlForApplication(withBundleIdentifier id: String) -> URL? { DesktopApps.application(withIdentifier: id) }
-    /// The default handler for a URL (xdg-mime on Linux), as an app bundle.
+    /// The default handler for a URL (mimeapps.list on Linux), as an app bundle.
     public func urlForApplication(toOpen url: URL) -> URL? { DesktopApps.defaultApplication(for: url) }
     public func recycle(_ urls: [URL], completionHandler: (([URL: URL], Error?) -> Void)? = nil) {
         var moved: [URL: URL] = [:]
@@ -846,6 +845,21 @@ public final class NSOpenPanel: NSSavePanel {
     public private(set) var urls: [URL] = []
     public static func openPanel() -> NSOpenPanel { NSOpenPanel() }
     public override func runModal() -> NSApplication.ModalResponse {
+        // Applications aren't bundles in a folder off the Mac: pick one
+        // from the desktop's application chooser, seen as a bundle.
+        if !allowedContentTypes.isEmpty, allowedContentTypes.allSatisfy({ $0.conforms(to: .application) || $0 == .applicationBundle }) {
+            #if os(Linux)
+            if let id = Runway.backend.services.chooseApplication(title: title ?? message ?? "Choose an Application", mimeType: nil),
+               let file = DesktopApps.desktopFile(id), let bundle = DesktopApps.bundle(for: file) {
+                urls = [bundle]
+                url = urls.first
+                return .OK
+            }
+            urls = []
+            url = nil
+            return .cancel
+            #endif
+        }
         let exts = allowedContentTypes.flatMap { $0.tags[.filenameExtension] ?? [] }
         urls = Runway.backend.services.chooseFiles(title: title ?? message ?? "Open", allowsMultiple: allowsMultipleSelection,
                                                     canChooseDirectories: canChooseDirectories, extensions: exts) ?? []
@@ -900,6 +914,86 @@ public final class NSAlertButton {
     public var hasDestructiveAction = false
     public var keyEquivalent = ""
     init(title: String) { self.title = title }
+}
+
+// MARK: Default applications (freedesktop mimeapps.list)
+
+/// The desktop's default applications, read and written as the
+/// freedesktop MIME applications spec describes (what xdg-mime and GIO use),
+/// so no helper tool is needed.
+enum MimeApps {
+    static var configHome: String {
+        ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? (NSHomeDirectory() + "/.config")
+    }
+    static var desktops: [String] {
+        (ProcessInfo.processInfo.environment["XDG_CURRENT_DESKTOP"] ?? "").split(separator: ":").map { $0.lowercased() }
+    }
+
+    /// mimeapps.list files in priority order (desktop-specific first).
+    static var lists: [String] {
+        let env = ProcessInfo.processInfo.environment
+        var dirs = [configHome] + (env["XDG_CONFIG_DIRS"] ?? "/etc/xdg").split(separator: ":").map(String.init)
+        dirs += DesktopApps.dataDirs.map { $0 + "/applications" }
+        var out: [String] = []
+        for d in dirs {
+            for desktop in desktops { out.append(d + "/\(desktop)-mimeapps.list") }
+            out.append(d + "/mimeapps.list")
+        }
+        return out + DesktopApps.dataDirs.map { $0 + "/applications/defaults.list" }
+    }
+
+    /// The groups of an ini-style file: [group] key=value.
+    static func parse(_ text: String) -> [(group: String, entries: [(String, String)])] {
+        var out: [(String, [(String, String)])] = []
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("["), line.hasSuffix("]") { out.append((String(line.dropFirst().dropLast()), [])); continue }
+            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "="), !out.isEmpty else { continue }
+            out[out.count - 1].1.append((String(line[..<eq]).trimmingCharacters(in: .whitespaces),
+                                          String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)))
+        }
+        return out
+    }
+
+    /// The desktop id of the default application for a MIME type.
+    static func defaultApplication(for mime: String) -> String? {
+        for path in lists {
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            for g in parse(text) where g.group == "Default Applications" {
+                for (k, v) in g.entries where k == mime {
+                    for id in v.split(separator: ";").map(String.init) where !id.isEmpty && DesktopApps.desktopFile(id) != nil { return id }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Makes `desktopID` the default for `mime` in the user's mimeapps.list,
+    /// keeping everything else in it.
+    static func setDefault(_ desktopID: String, for mime: String) throws {
+        let path = configHome + "/mimeapps.list"
+        let existing = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        var groups = parse(existing)
+        func set(_ group: String, _ value: (String?) -> String) {
+            if let gi = groups.firstIndex(where: { $0.group == group }) {
+                if let ei = groups[gi].entries.firstIndex(where: { $0.0 == mime }) {
+                    groups[gi].entries[ei].1 = value(groups[gi].entries[ei].1)
+                } else {
+                    groups[gi].entries.append((mime, value(nil)))
+                }
+            } else {
+                groups.append((group, [(mime, value(nil))]))
+            }
+        }
+        set("Default Applications") { _ in desktopID + ";" }
+        set("Added Associations") { old in
+            let ids = (old ?? "").split(separator: ";").map(String.init).filter { !$0.isEmpty && $0 != desktopID }
+            return ([desktopID] + ids).joined(separator: ";") + ";"
+        }
+        let text = groups.map { g in "[\(g.group)]\n" + g.entries.map { "\($0.0)=\($0.1)\n" }.joined() }.joined(separator: "\n")
+        try FileManager.default.createDirectory(atPath: configHome, withIntermediateDirectories: true)
+        try text.write(toFile: path, atomically: true, encoding: .utf8)
+    }
 }
 
 // MARK: Desktop applications as bundles
@@ -970,8 +1064,7 @@ enum DesktopApps {
             guard let scheme = url.scheme?.lowercased() else { return nil }
             mime = "x-scheme-handler/" + scheme
         }
-        guard let id = run("xdg-mime", ["query", "default", mime])?.split(separator: ";").first.map(String.init), !id.isEmpty,
-              let file = desktopFile(id) else { return nil }
+        guard let id = MimeApps.defaultApplication(for: mime), let file = desktopFile(id) else { return nil }
         return bundle(for: file)
     }
 

@@ -289,6 +289,10 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     var services: PlatformServices { get }
 }
 
+extension PlatformServices {
+    public func chooseApplication(title: String, mimeType: String?) -> String? { nil }
+}
+
 extension Backend {
     /// Where a text widget's first and last lines sit (their baselines,
     /// from the widget's top) at a width; nil for widgets without text or
@@ -321,6 +325,9 @@ public struct EdgeInsetsValue: Hashable, Sendable {
     /// File dialogs; `nil` when cancelled.
     func chooseFiles(title: String, allowsMultiple: Bool, canChooseDirectories: Bool, extensions: [String]) -> [URL]?
     func chooseSaveLocation(title: String, suggestedName: String) -> URL?
+    /// The desktop's application chooser (all applications, or those for a
+    /// MIME type): the chosen desktop entry's id, or nil.
+    func chooseApplication(title: String, mimeType: String?) -> String?
     /// A blocking alert; returns the index of the button clicked.
     func alert(title: String, message: String, buttons: [String], destructive: Int?) -> Int
 }

@@ -177,9 +177,20 @@ let defaultSpacing: CGFloat = 8
     /// their own (the node they forward to does).
     var cachesSizes: Bool { true }
 
+    /// Moves on whenever part of a tree changes without its ancestors
+    /// running again (a scope's body ran alone): sizes cached before then
+    /// may be out of date wherever that part sits, so all are measured
+    /// afresh. (Measuring native widgets has its own cache, per widget.)
+    static var generation = 0
+    private var cacheGeneration = LayoutNode.generation
+
     public func size(_ p: ProposedSize) -> CGSize {
         if RunwayMetrics.enabled { LayoutNode.sizeCalls += 1 }
         guard cachesSizes else { return sizeThatFits(p) }
+        if cacheGeneration != LayoutNode.generation {
+            cacheGeneration = LayoutNode.generation
+            clearSizeCache()
+        }
         if let o = owner, o.layoutEpoch != cacheEpoch {
             cacheEpoch = o.layoutEpoch
             clearSizeCache()
@@ -211,7 +222,7 @@ let defaultSpacing: CGFloat = 8
     /// unspecified height, a share of the space).
     func proposal(measuredAs size: CGSize) -> ProposedSize? {
         func same(_ a: CGSize) -> Bool { abs(a.width - size.width) < 0.5 && abs(a.height - size.height) < 0.5 }
-        guard hasFirst, owner.map({ $0.layoutEpoch == cacheEpoch }) ?? true else { return nil }
+        guard hasFirst, cacheGeneration == LayoutNode.generation, owner.map({ $0.layoutEpoch == cacheEpoch }) ?? true else { return nil }
         for (q, s) in moreSizes.reversed() where same(s) { return q }
         return same(firstSize) ? firstProposal : nil
     }

@@ -77,6 +77,8 @@ void runway_beep(void);
 /// NULL when cancelled. g_free() them.
 char *runway_choose_files(GtkWindow *parent, const char *title, gboolean multiple, gboolean folders, const char *const *extensions);
 char *runway_choose_save(GtkWindow *parent, const char *title, const char *suggested);
+/* The desktop's application chooser; the chosen desktop id (g_free it) or NULL. */
+char *runway_choose_application(GtkWindow *parent, const char *title, const char *content_type);
 int runway_alert(GtkWindow *parent, const char *title, const char *message, const char *const *buttons, int cancel_index, int default_index);
 
 /// Menus: a GMenu with actions "rw.<n>", callbacks by index.

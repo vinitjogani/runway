@@ -360,6 +360,24 @@ final class InteractionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(f("after")!.minY, last.maxY, root.dump())
     }
 
+    func testScaledToFitImageInAPlainButtonKeepsItsAspect() {
+        let ctx = CGContext(data: nil, width: 1280, height: 828, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let image = ctx.makeImage()!
+        let (_, root) = render(VStack(alignment: .leading) {
+            Text("Above")
+            Button {} label: {
+                Image(image, scale: 1, label: Text("Shot")).resizable().scaledToFit()
+                    .frame(maxWidth: 1280).clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            Text("Below")
+        }.frame(width: 248), size: CGSize(width: 248, height: 600))
+        let img = root.all.first { $0.kind == .image }!.windowFrame
+        XCTAssertEqual(img.width, 248, accuracy: 1, root.dump())
+        XCTAssertEqual(img.height, 248 * 828 / 1280, accuracy: 1.5, root.dump())
+    }
+
     func testPositionCentresTheViewAtThePoint() {
         let (_, root) = render(ZStack(alignment: .topLeading) {
             Color.clear
