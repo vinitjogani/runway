@@ -702,7 +702,7 @@ final class ShapeNode: LayoutNode {
         self.widget = widget; self.backend = backend; self.props = props; self.events = events; self.draw = draw
     }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize {
-        CGSize(width: p.width.flatMap { $0.isFinite ? $0 : nil } ?? 10, height: p.height.flatMap { $0.isFinite ? $0 : nil } ?? 10)
+        CGSize(width: p.width ?? 10, height: p.height ?? 10)   // fills any proposal, infinity included, as SwiftUI shapes do
     }
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         guard let widget else { return }
@@ -732,7 +732,7 @@ final class GeometryNode: LayoutNode {
     let build: (CGSize) -> [LayoutNode]
     init(_ build: @escaping (CGSize) -> [LayoutNode]) { self.build = build }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize {
-        CGSize(width: p.width.flatMap { $0.isFinite ? $0 : nil } ?? 10, height: p.height.flatMap { $0.isFinite ? $0 : nil } ?? 10)
+        CGSize(width: p.width ?? 10, height: p.height ?? 10)   // greedy, infinity included, as SwiftUI's is
     }
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
         for n in build(rect.size) {

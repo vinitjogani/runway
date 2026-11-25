@@ -61,4 +61,29 @@ final class InteractionTests: XCTestCase {
         let b: AnyShapeStyle? = AnyShapeStyle(Color.red)
         XCTAssertFalse(FieldLayout.equalAny(a as Any, b as Any))
     }
+
+    func testHoverAndContextMenuWrappersKeepFlexibility() {
+        let row = HStack(spacing: 8) {
+            HStack(spacing: 3) {
+                Button {} label: { Text("Sources/File.swift") }
+                    .layoutPriority(1)
+                    .contextMenu { Button("Copy") {} }
+                Button {} label: { Image(systemName: "doc.on.doc").frame(width: 22, height: 22) }
+                    .opacity(0)
+                Color.clear.onTapGesture {}
+            }
+            .buttonStyle(.plain)
+            .onHover { _ in }
+            Text("+12 -4").fixedSize()
+        }
+        .padding(.horizontal, 9)
+        .background(Color.gray)
+        .frame(maxWidth: .infinity)
+        let (host, _) = render(row, size: CGSize(width: 900, height: 40))
+        let size = host.lastRoot!.size(ProposedSize(width: 900, height: 40))
+        XCTAssertEqual(size.width, 900)
+        // The background spans the row.
+        let bg = (host.container as! HeadlessWidget).all.filter { $0.kind == .canvas }.map(\.frame.width).max() ?? 0
+        XCTAssertEqual(bg, 900, accuracy: 1)
+    }
 }
