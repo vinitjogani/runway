@@ -453,6 +453,7 @@ final class WorkBox {
             let c = runway_canvas_new()!
             let b = GtkBox(kind: kind, outer: c)
             b.canvas = c
+            runway_widget_set_interactive(c, 1)
             b.onClick { [unowned b] point in
                 guard b.props.enabled else { return }
                 if let action = b.events.onTapLocation { action(point) }
@@ -508,6 +509,8 @@ final class WorkBox {
             gtk_text_view_set_top_margin(typed(tv), 2)
             let b = GtkBox(kind: kind, outer: s)
             b.setClass("rw-editor", true)
+            // The box holds its own reference to `inner` (released in destroy).
+            g_object_ref(raw(tv))
             b.inner = tv
             let buffer = gtk_text_view_get_buffer(typed(tv))!
             b.connect(UnsafeMutableRawPointer(buffer), "changed") { [unowned b] _ in

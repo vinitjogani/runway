@@ -26,6 +26,7 @@ typedef struct {
     const char *chars;
     int is_repeat;
     int native_text_focus;   /* keys: a native text input has keyboard focus */
+    int native_control;      /* presses: on a native control (a button, a field, a tap area) */
 } RunwayAppKitEvent;
 
 typedef gboolean (*RunwayAppKitEventFunc)(const RunwayAppKitEvent *e, void *data);
@@ -36,6 +37,9 @@ typedef int (*RunwayDropFunc)(int kind, double x, double y, const char *uris, co
 /// Mouse, scroll and crossing events on `content` (bubble phase, after
 /// native widgets), keys on `window` (capture phase, before them).
 /// `notify` releases `data` when the window goes.
+/// Marks a widget as a control that takes its own clicks (a tap area), so
+/// a press on it isn't taken for the window's (a title bar drag).
+void runway_widget_set_interactive(GtkWidget *w, int interactive);
 void runway_appkit_install_events(GtkWidget *window, GtkWidget *content, RunwayAppKitEventFunc fn, void *data, GDestroyNotify notify);
 /// Starts an interactive move of the window (as dragging its title bar),
 /// from a press of `button` (1-based) at (x, y) in the window's surface.

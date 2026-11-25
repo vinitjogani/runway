@@ -214,7 +214,9 @@ public struct GeometryReader<Content: View>: View, PrimitiveView {
         let c = ctx.with { $0._stackAxis = nil }
         // Its content depends on the size: resizes run bodies again.
         if !ctx.dryRun { ctx.host.readsGeometry = true }
-        return [GeometryNode { size in c.host.resolveLate { c.resolve(content(GeometryProxy(size: size)), "geo") } }]
+        let owner = ctx.scope
+        let reader = LateReader()
+        return [GeometryNode { [weak owner] size in c.host.resolveLate(owner: owner, reader: reader) { c.resolve(content(GeometryProxy(size: size)), "geo") } }]
     }
 }
 
@@ -232,3 +234,6 @@ public struct GlassEffectContainer<Content: View>: View {
     public init(spacing: CGFloat? = nil, @ViewBuilder content: () -> Content) { self.content = content() }
     public var body: some View { content }
 }
+
+/// Identifies one GeometryReader's late-resolved content on its owner.
+final class LateReader {}

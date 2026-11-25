@@ -328,6 +328,11 @@ void runway_canvas_raise(GtkWidget *canvas, GtkWidget *child) {
 
 void runway_canvas_remove(GtkWidget *canvas, GtkWidget *child) {
     if (gtk_widget_get_parent(child) == canvas) {
+        // A field that's going away leaves focus nowhere, as AppKit's first
+        // responder would; GTK would otherwise move it to another field.
+        GtkRoot *root = gtk_widget_get_root(child);
+        GtkWidget *focus = root ? gtk_root_get_focus(root) : NULL;
+        if (focus && (focus == child || gtk_widget_is_ancestor(focus, child))) gtk_root_set_focus(root, NULL);
         if (RUNWAY_IS_CANVAS(canvas) && widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count--;
         gtk_widget_unparent(child);
     }

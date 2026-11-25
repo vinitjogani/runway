@@ -43,6 +43,22 @@ static gboolean content_point(GtkWidget *content, GdkEvent *ev, double *x, doubl
     return TRUE;
 }
 
+void runway_widget_set_interactive(GtkWidget *w, int interactive) {
+    g_object_set_data(G_OBJECT(w), "rw-interactive", interactive ? GINT_TO_POINTER(1) : NULL);
+}
+
+/// Whether the widget under (x, y) in `content`, or one of its ancestors
+/// below `content`, is a control that handles presses itself.
+static int native_control_at(GtkWidget *content, double x, double y) {
+    GtkWidget *w = gtk_widget_pick(content, x, y, GTK_PICK_DEFAULT);
+    for (; w && w != content; w = gtk_widget_get_parent(w)) {
+        if (g_object_get_data(G_OBJECT(w), "rw-interactive")) return 1;
+        if (GTK_IS_BUTTON(w) || GTK_IS_TEXT(w) || GTK_IS_TEXT_VIEW(w) || GTK_IS_DROP_DOWN(w) || GTK_IS_SWITCH(w)
+            || GTK_IS_SCALE(w) || GTK_IS_CHECK_BUTTON(w) || GTK_IS_MENU_BUTTON(w) || GTK_IS_ENTRY(w)) return 1;
+    }
+    return 0;
+}
+
 static gboolean legacy_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer data) {
     (void)c;
     EventTarget *t = data;
@@ -56,6 +72,7 @@ static gboolean legacy_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer
     case GDK_BUTTON_PRESS:
     case GDK_BUTTON_RELEASE: {
         guint b = gdk_button_event_get_button(ev);
+        if (type == GDK_BUTTON_PRESS) e.native_control = native_control_at(t->content, e.x, e.y);
         e.kind = type == GDK_BUTTON_PRESS ? RUNWAY_EV_DOWN : RUNWAY_EV_UP;
         e.button = b == 1 ? 0 : b == 3 ? 1 : b == 2 ? 2 : (int)b - 1;
         break;

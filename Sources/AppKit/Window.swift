@@ -689,7 +689,12 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     @discardableResult
     open func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         let target = responder ?? self
-        if firstResponder === target { return true }
+        if firstResponder === target {
+            // Already first responder, but the toolkit's focus may have left
+            // its widget (removed and shown again): put it back.
+            if let v = target as? NSView, v.usesNativeKeyboardFocus, let n = native, let vs = viewSystem { vs.setKeyboardFocus(v.widget, in: n) }
+            return true
+        }
         if let cur = firstResponder, cur !== self, !cur.resignFirstResponder() { return false }
         if let r = responder, r !== self {
             guard r.acceptsFirstResponder || r is NSWindow else { firstResponder = self; return false }
@@ -795,6 +800,8 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
 
     /// Raw backend input → NSEvent → NSApp.sendEvent. Returns whether the
     /// event was used (so native widgets don't also act on it).
+    private var pressOnNativeControl = false
+
     func handleRaw(_ raw: RawEvent) -> Bool {
         let flags = EventTranslation.flags(raw.modifiers)
         NSEvent.modifierFlags = flags
@@ -810,6 +817,10 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         defer { ViewSystem.flush() }
         switch raw.kind {
         case .mouseDown:
+            // A SwiftUI control took this press natively: it isn't a drag
+            // of the window from its title bar.
+            pressOnNativeControl = raw.onNativeControl
+            defer { pressOnNativeControl = false }
             NSEvent.pressedMouseButtons |= 1 << raw.button
             var count = 1
             if let l = lastClick, l.button == raw.button, raw.timestamp - l.time < NSEvent.doubleClickInterval,
@@ -940,7 +951,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     open func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            if event.type == .leftMouseDown, titlebarMouseDown(event) { return }
+            if event.type == .leftMouseDown, !pressOnNativeControl, titlebarMouseDown(event) { return }
             guard let hit = toolbarHit(event.locationInWindow) ?? contentView?.hitTest(event.locationInWindow) else { return }
             mouseDownView = hit
             if event.type == .leftMouseDown, hit !== firstResponder, hit.acceptsFirstResponder {

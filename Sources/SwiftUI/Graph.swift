@@ -127,6 +127,9 @@ extension DynamicProperty { public mutating func update() {} }
     var ownKeys: [StorageKey] = []
     /// The scopes resolved within it, in order.
     var children: [Scope] = []
+    /// What its GeometryReaders' content (resolved at layout) last touched,
+    /// per reader: kept alive and collected with it.
+    var late: [ObjectIdentifier: (keys: [StorageKey], scopes: [Scope])] = [:]
 
     init(path: String) { self.path = path }
 }
@@ -352,7 +355,7 @@ final class ScopeNode: LayoutNode {
         if let s = scopes[ctx.path] { scope = s } else { scope = Scope(path: ctx.path); scopes[ctx.path] = scope }
         let parent = ctx.scope ?? rootScope
         scope.parent = parent
-        if lateDepth == 0 { parent.children.append(scope) }
+        if lateDepth == 0 { parent.children.append(scope) } else if currentScope == nil { lateSink?.scopes.append(scope) }
         if !scope.dirty, !scope.containsDirty, !scope.volatile, let old = scope.input,
            old.ctx.env.memoEquals(ctx.env), let typed = old as? TypedScopeInput<V>, FieldLayout.equal(typed.view, view) {
             // Same input, nothing inside changed: keep it as it is.
@@ -375,6 +378,7 @@ final class ScopeNode: LayoutNode {
         scope.volatile = false
         scope.ownKeys.removeAll(keepingCapacity: true)
         scope.children.removeAll(keepingCapacity: true)
+        scope.late.removeAll()
         var ctx = input.ctx
         ctx.scope = scope
         let outer = currentScope
@@ -413,6 +417,10 @@ final class ScopeNode: LayoutNode {
         scope.generation = generation
         for k in scope.ownKeys { visit(k) }
         for c in scope.children { markAlive(c) }
+        for (_, l) in scope.late {
+            for k in l.keys { visit(k) }
+            for c in l.scopes where c !== scope { markAlive(c) }
+        }
     }
 
     private func visit(_ k: StorageKey) {
@@ -427,21 +435,40 @@ final class ScopeNode: LayoutNode {
     }
 
     func record(_ kind: StorageKey.Kind, _ key: String) {
-        currentScope?.ownKeys.append(StorageKey(kind: kind, key: key))
+        if let s = currentScope { s.ownKeys.append(StorageKey(kind: kind, key: key)) }
+        else if lateSink != nil { lateSink!.keys.append(StorageKey(kind: kind, key: key)) }
     }
+    private var lateSink: (keys: [StorageKey], scopes: [Scope])?
 
     /// Resolves content outside the normal walk: GeometryReader's, built at
     /// layout time for the size it gets. What it touches is kept alive by
     /// being touched (layout runs before garbage collection) rather than
     /// recorded on a scope, which would grow on every layout.
     private var lateDepth = 0
-    func resolveLate(_ body: () -> [LayoutNode]) -> [LayoutNode] {
-        let outer = currentScope, outerBuilding = LayoutNode.buildingScope
+    ///
+    /// Observable reads it makes (the content closure's own, outside any
+    /// nested view's body) re-run `owner`, the view that holds the
+    /// GeometryReader, as they would had it read them in its body.
+    func resolveLate(owner: Scope? = nil, reader: AnyObject? = nil, _ body: () -> [LayoutNode]) -> [LayoutNode] {
+        let outer = currentScope, outerBuilding = LayoutNode.buildingScope, outerSink = lateSink
         currentScope = nil
         LayoutNode.buildingScope = nil
         lateDepth += 1
-        defer { currentScope = outer; LayoutNode.buildingScope = outerBuilding; lateDepth -= 1 }
-        return body()
+        lateSink = ([], [])
+        defer {
+            if let owner, let reader, let sink = lateSink { owner.late[ObjectIdentifier(reader)] = sink }
+            currentScope = outer; LayoutNode.buildingScope = outerBuilding; lateDepth -= 1; lateSink = outerSink
+        }
+        return withObservationTracking {
+            body()
+        } onChange: { [weak self, weak owner] in
+            let ref = UncheckedScopeRef(host: self, scope: owner)
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { ref.invalidate() }
+            } else {
+                Task { @MainActor in ref.invalidate() }
+            }
+        }
     }
 
     private var typeKeys: [ObjectIdentifier: String] = [:]
@@ -665,6 +692,7 @@ final class ScopeNode: LayoutNode {
         env.colorScheme = backend.colorScheme == .dark ? .dark : .light
         env._host = self
         rootScope.ownKeys.removeAll(keepingCapacity: true)
+        rootScope.late.removeAll()
         rootScope.children.removeAll(keepingCapacity: true)
         rootScope.generation = generation
         rootScope.dirty = false
@@ -728,6 +756,10 @@ final class ScopeNode: LayoutNode {
     private func collect(_ s: Scope, keys: inout [StorageKey], scopes list: inout [Scope]) {
         keys += s.ownKeys
         for c in s.children { list.append(c); collect(c, keys: &keys, scopes: &list) }
+        for (_, l) in s.late {
+            keys += l.keys
+            for c in l.scopes where c !== s { list.append(c); collect(c, keys: &keys, scopes: &list) }
+        }
     }
 
     /// Releases what the last resolve no longer reached.

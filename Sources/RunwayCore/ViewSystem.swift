@@ -50,6 +50,9 @@ public struct RawEvent: Sendable {
     /// Keys: a native text input (a SwiftUI text field or editor, say) has
     /// keyboard focus, so typing and its editing keys are the toolkit's.
     public var nativeTextFocus = false
+    /// Presses: on a native control that handles the click itself (a
+    /// SwiftUI button in a hosting view), not on AppKit's own views.
+    public var onNativeControl = false
     public init(kind: Kind) { self.kind = kind }
 }
 

@@ -5,6 +5,40 @@ import XCTest
 import RunwayCore
 @testable import SwiftUI
 
+@MainActor @Observable private final class SheetModel { var open = false }
+
+private struct OverlayHost: View {
+    let model: SheetModel
+    var body: some View {
+        // Read inside a GeometryReader, as Merge's workspace does.
+        GeometryReader { _ in
+        VStack { Text("Inbox") }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) {
+                if model.open {
+                    ZStack(alignment: .top) {
+                        Rectangle().fill(.black.opacity(0.085)).ignoresSafeArea().onTapGesture { model.open = false }
+                        VStack(spacing: 6) {
+                            HStack { Text("Search requests"); Counted() }.frame(height: 48)
+                        }
+                        .frame(maxWidth: 600)
+                        .padding(.top, 63)
+                    }
+                    .onExitCommand { model.open = false }
+                }
+            }
+        }
+    }
+}
+
+private struct Counted: NSViewRepresentable {
+    nonisolated(unsafe) static var made = 0
+    nonisolated(unsafe) static var dismantled = 0
+    func makeNSView(context: Context) -> NSView { Self.made += 1; return NSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) { dismantled += 1 }
+}
+
 private final class ProbeView: NSView {
     var movedToWindow = 0
     override func viewDidMoveToWindow() { movedToWindow += 1 }
@@ -136,5 +170,25 @@ final class InteractionTests: XCTestCase {
         // hitTest takes the superview's (here the window's) coordinates.
         XCTAssertTrue(hosting.hitTest(hosting.convert(NSPoint(x: 150, y: 70), to: nil)) === probe)
         XCTAssertFalse(hosting.hitTest(hosting.convert(NSPoint(x: 150, y: 10), to: nil)) === probe)
+    }
+
+    func testOverlayAppearsWhenModelChanges() {
+        let model = SheetModel()
+        let (host, root) = render(OverlayHost(model: model), size: CGSize(width: 800, height: 600))
+        XCTAssertFalse(texts(root).contains("Search requests"))
+        model.open = true
+        // The change itself schedules the render.
+        backend.drain()
+        XCTAssertTrue(texts(root).contains("Search requests"))
+        // Closed, what it held goes with it, though it's resolved inside a
+        // GeometryReader at layout time.
+        XCTAssertEqual(Counted.made, 1)
+        model.open = false
+        backend.drain()
+        XCTAssertFalse(texts(root).contains("Search requests"))
+        XCTAssertEqual(Counted.dismantled, 1)
+        model.open = true
+        backend.drain()
+        XCTAssertEqual(Counted.made, 2, "a new view, as SwiftUI makes one for new identity")
     }
 }
