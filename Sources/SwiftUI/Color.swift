@@ -193,12 +193,15 @@ extension ShapeStyle where Self == SeparatorShapeStyle { public static var separ
 /// Materials: translucent fills; here, the window's backgrounds.
 public struct Material: ShapeStyle {
     let alpha: Double
-    public static let ultraThinMaterial = Material(alpha: 0.5)
-    public static let thinMaterial = Material(alpha: 0.65)
-    public static let regularMaterial = Material(alpha: 0.8)
-    public static let thickMaterial = Material(alpha: 0.9)
-    public static let ultraThickMaterial = Material(alpha: 0.95)
-    public static let bar = Material(alpha: 0.85)
+    // Without a blur of what's behind (only siblings in one container can
+    // be blurred), materials are about as opaque as they read on the Mac,
+    // where the blur hides most of what's beneath.
+    public static let ultraThinMaterial = Material(alpha: 0.72)
+    public static let thinMaterial = Material(alpha: 0.84)
+    public static let regularMaterial = Material(alpha: 0.93)
+    public static let thickMaterial = Material(alpha: 0.97)
+    public static let ultraThickMaterial = Material(alpha: 0.985)
+    public static let bar = Material(alpha: 0.94)
     public func _paint(_ env: EnvironmentValues, role: PaintRole) -> Paint {
         .color(Color.windowBackground.resolve(env).multiplyingAlpha(alpha))
     }
