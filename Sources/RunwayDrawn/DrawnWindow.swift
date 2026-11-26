@@ -56,6 +56,8 @@ enum Drag {
     var rawHandler: ((RawEvent) -> Bool)?
     var activationHandler: ((Bool) -> Void)?
     var dropHandler: ((RawDragEvent) -> RawDragOperation)?
+    /// The SwiftUI drop destination a drag is over.
+    weak var dropTarget: DrawnWidget?
     var pointerInside = false
     var buttonsDown = 0
     var keyModifiers: KeyModifiers = []
@@ -87,6 +89,8 @@ enum Drag {
             native = rw_window_create(o.title, Double(o.size.width), Double(o.size.height), o.resizable ? 1 : 0,
                                       parent?.native, o.modal && parent != nil ? 1 : 0, Unmanaged.passUnretained(self).toOpaque())
         }
+        // Drops reach SwiftUI drop destinations as well as AppKit's handler.
+        if let n = native, !popup { rw_window_accept_drops(n, 1) }
         if let n = native {
             scale = CGFloat(rw_window_scale(n))
             if o.titlebar == .none, !popup { rw_window_set_decorated(n, 0) }

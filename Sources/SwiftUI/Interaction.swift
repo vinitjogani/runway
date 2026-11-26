@@ -146,6 +146,17 @@ extension ViewHost {
 
     func existingFocusTarget(_ path: String) -> FocusTarget? { interactions["focus:" + path] as? FocusTarget }
 
+    /// Per-view interaction state kept by key across renders while the view stays.
+    func interactionState<T: AnyObject>(_ key: String, make: () -> T) -> T {
+        let k = "state:" + key
+        visitedInteractions.insert(k)
+        record(.interaction, k)
+        if let t = interactions[k] as? T { return t }
+        let t = make()
+        interactions[k] = t
+        return t
+    }
+
     /// An event container kept by key, with handlers the caller fills in.
     func eventWidget(_ key: String, focusable: Bool) -> (NativeWidget, EventHandlers)? {
         guard let appKit = backend as? AppKitBackend else { return nil }

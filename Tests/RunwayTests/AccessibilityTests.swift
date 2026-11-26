@@ -90,3 +90,24 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(box.text, "hello")
     }
 }
+
+@MainActor
+final class DragDropTests: XCTestCase {
+    func testDropDestinationReceivesDroppedFiles() {
+        let backend = HeadlessBackend()
+        Runway.install(backend)
+        var got: [URL] = []
+        var targeted: [Bool] = []
+        let host = ViewHost(Text("Drop here").dropDestination(for: URL.self) { urls, _ in got = urls; return true } isTargeted: { targeted.append($0) },
+                            backend: backend)
+        host.setSize(CGSize(width: 200, height: 100))
+        host.render()
+        let zone = (host.container as! HeadlessWidget).all.first { $0.events.onDrop != nil }
+        XCTAssertNotNil(zone)
+        let file = URL(fileURLWithPath: "/tmp/notes.txt")
+        XCTAssertEqual(zone?.events.onDrop?(RawDragEvent(kind: .entered, location: .zero, fileURLs: [file])), .copy)
+        XCTAssertEqual(zone?.events.onDrop?(RawDragEvent(kind: .perform, location: .zero, fileURLs: [file])), .copy)
+        XCTAssertEqual(got, [file])
+        XCTAssertEqual(targeted, [true, false])
+    }
+}

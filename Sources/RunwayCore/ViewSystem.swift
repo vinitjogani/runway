@@ -72,6 +72,14 @@ public struct RawDragEvent: Sendable {
     }
 }
 
+/// What a drag carries out of the app: text and files.
+public struct DragPayload: Sendable, Equatable {
+    public var strings: [String]
+    public var fileURLs: [URL]
+    public init(strings: [String] = [], fileURLs: [URL] = []) { self.strings = strings; self.fileURLs = fileURLs }
+    public var isEmpty: Bool { strings.isEmpty && fileURLs.isEmpty }
+}
+
 /// What a drop target accepts (AppKit's NSDragOperation bits).
 public struct RawDragOperation: OptionSet, Hashable, Sendable {
     public let rawValue: UInt

@@ -232,6 +232,10 @@ public struct WidgetProps: Equatable, Sendable {
     /// ("default" is its primary action; "increment" and "decrement"
     /// adjust it), beyond what its kind already offers.
     public var accessibilityActions: [(name: String, perform: () -> Void)] = []
+    /// A drag over the widget (SwiftUI's drop destinations); return the
+    /// operation accepted. Backends route a window's drags to the innermost
+    /// widget with one, else to the window's own handler.
+    public var onDrop: ((RawDragEvent) -> RawDragOperation)?
     public var onTap: (() -> Void)?
     public var onTapLocation: ((CGPoint) -> Void)?
     public var onToggle: ((Bool) -> Void)?
@@ -388,6 +392,10 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     /// (SwiftUI's accessibility modifiers wrap views in one), made with the
     /// role it presents: toolkits whose roles are fixed at creation use it.
     func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget
+    /// Starts dragging `payload` out of `widget` (the pointer is down and
+    /// moving over it); `ended` gets the operation the drop took (empty:
+    /// cancelled). Backends without drag sources end it at once.
+    func beginDrag(_ payload: DragPayload, from widget: NativeWidget, ended: @escaping (RawDragOperation) -> Void)
 
     // Windows and the loop.
     func makeWindow(_ options: WindowOptions, parent: NativeWindow?) -> NativeWindow
@@ -408,6 +416,7 @@ extension PlatformServices {
 
 extension Backend {
     public func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget { makeWidget(.container) }
+    public func beginDrag(_ payload: DragPayload, from widget: NativeWidget, ended: @escaping (RawDragOperation) -> Void) { ended([]) }
 
     /// Where a text widget's first and last lines sit (their baselines,
     /// from the widget's top) at a width; nil for widgets without text or

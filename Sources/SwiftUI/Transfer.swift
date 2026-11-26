@@ -1,8 +1,5 @@
-// Drag and drop, sharing and file export in SwiftUI's terms: onDrop with
-// item providers or a DropDelegate, dropDestination/draggable with
-// Transferable items, ShareLink, fileExporter. They compile and keep their
-// values; the backends don't route SwiftUI drops yet, so drop handlers
-// aren't called (AppKit's NSView drag and drop works).
+// Drag and drop types, sharing and file export in SwiftUI's terms (the
+// drag and drop modifiers are in DragDrop.swift).
 
 import Foundation
 import UniformTypeIdentifiers
@@ -54,17 +51,7 @@ extension DropDelegate {
 }
 
 extension View {
-    public func onDrop(of supportedContentTypes: [UTType], isTargeted: Binding<Bool>?, perform action: @escaping ([NSItemProvider]) -> Bool) -> some View { self }
-    public func onDrop(of supportedContentTypes: [UTType], isTargeted: Binding<Bool>?, perform action: @escaping ([NSItemProvider], CGPoint) -> Bool) -> some View { self }
-    public func onDrop(of supportedTypes: [String], isTargeted: Binding<Bool>?, perform action: @escaping ([NSItemProvider]) -> Bool) -> some View { self }
-    public func onDrop(of supportedContentTypes: [UTType], delegate: DropDelegate) -> some View { self }
-    public func onDrop(of supportedTypes: [String], delegate: DropDelegate) -> some View { self }
 
-    public func dropDestination<T: Transferable>(for payloadType: T.Type = T.self, action: @escaping (_ items: [T], _ location: CGPoint) -> Bool,
-                                                 isTargeted: @escaping (Bool) -> Void = { _ in }) -> some View { self }
-    public func draggable<T: Transferable>(_ payload: @autoclosure @escaping () -> T) -> some View { self }
-    public func draggable<T: Transferable, V: View>(_ payload: @autoclosure @escaping () -> T, @ViewBuilder preview: () -> V) -> some View { self }
-    public func itemProvider(_ action: (() -> NSItemProvider?)?) -> some View { self }
     public func copyable<T: Transferable>(_ payload: @autoclosure @escaping () -> [T]) -> some View { self }
     public func cuttable<T: Transferable>(for payloadType: T.Type = T.self, action: @escaping () -> [T]) -> some View { self }
     public func pasteDestination<T: Transferable>(for payloadType: T.Type = T.self, action: @escaping ([T]) -> Void,

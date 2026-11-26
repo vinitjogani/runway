@@ -90,11 +90,37 @@ extension DrawnWindow {
     }
 
     func dragEvent(_ ev: rw_event) -> RawDragOperation {
-        guard let handler = dropHandler else { return [] }
         let kind: RawDragEvent.Kind = switch ev.button { case 0: .entered; case 1: .updated; case 2: .exited; default: .perform }
         let files = string(ev.text).split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
         let text = string(ev.text2)
-        return handler(RawDragEvent(kind: kind, location: CGPoint(x: ev.x, y: ev.y), fileURLs: files, strings: text.isEmpty ? [] : [text]))
+        let p = CGPoint(x: ev.x, y: ev.y)
+        func event(_ k: RawDragEvent.Kind, at loc: CGPoint) -> RawDragEvent {
+            RawDragEvent(kind: k, location: loc, fileURLs: files, strings: text.isEmpty ? [] : [text])
+        }
+        // SwiftUI drop destinations: the innermost under the pointer, in its own coordinates.
+        let target = kind == .exited ? nil : dropWidget(at: p, in: root)
+        if target !== dropTarget, let old = dropTarget, let h = old.events.onDrop {
+            _ = h(event(.exited, at: .zero))
+        }
+        let entering = target !== dropTarget
+        dropTarget = kind == .perform ? nil : target
+        if let t = target, let h = t.events.onDrop {
+            let f = t.windowFrame
+            let local = CGPoint(x: p.x - f.minX, y: p.y - f.minY)
+            if kind == .perform { return h(event(.perform, at: local)) }
+            return h(event(entering ? .entered : .updated, at: local))
+        }
+        guard let handler = dropHandler else { return [] }
+        return handler(event(kind, at: p))
+    }
+
+    /// The innermost widget with a drop handler containing `p` (window coordinates).
+    private func dropWidget(at p: CGPoint, in w: DrawnWidget) -> DrawnWidget? {
+        guard w.windowFrame.contains(p) || w === root else { return nil }
+        var kids = w.children
+        if let d = w.document { kids.append(d) }
+        for c in kids.reversed() { if let hit = dropWidget(at: p, in: c) { return hit } }
+        return w.events.onDrop != nil ? w : nil
     }
 
     func setFocusedContainer(_ w: DrawnWidget?) {
@@ -264,7 +290,7 @@ extension DrawnBackend: ViewSystemBackend {
     public func setDropHandler(_ window: NativeWindow, _ handler: ((RawDragEvent) -> RawDragOperation)?) {
         guard let w = w32(window) else { return }
         w.dropHandler = handler
-        if let n = w.native { rw_window_accept_drops(n, handler == nil ? 0 : 1) }
+        if let n = w.native { rw_window_accept_drops(n, 1) }
     }
     public func setCursor(_ cursor: CursorSpec, in window: NativeWindow) { w32(window)?.windowCursor = cursor }
 
