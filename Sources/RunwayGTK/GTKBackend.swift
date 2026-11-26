@@ -72,6 +72,8 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
     var menuItems: [MenuItemSpec] = []
     var size: CGSize = .zero
     var textureSize: CGSize?
+    /// destroy() released the GTK widget.
+    var destroyed = false
 
     init(kind: WidgetKind, outer: GW) {
         self.kind = kind
@@ -1169,6 +1171,8 @@ final class WorkBox {
 
     public func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize {
         let b = widget as! GtkBox
+        // A released widget has no GTK widget left to measure.
+        if b.destroyed { return .zero }
         let w = b.outer
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
         switch b.kind {
@@ -1297,6 +1301,8 @@ final class WorkBox {
 
     public func destroy(_ widget: NativeWidget) {
         let b = widget as! GtkBox
+        if b.destroyed { return }
+        b.destroyed = true
         if let p = gtk_widget_get_parent(b.outer) {
             if gtk_widget_get_parent(p) != nil || true { runway_canvas_remove(p, b.outer) }
         }

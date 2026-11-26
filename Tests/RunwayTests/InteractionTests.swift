@@ -630,3 +630,27 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(HeadlessBackend.poppedUpMenus.last?.map(\.title), ["Open 3"])
     }
 }
+
+private struct LateInner: View {
+    var body: some View { Text("Nested in a reader") }
+}
+
+private struct LateRow: View {
+    var body: some View { VStack { LateInner() } }
+}
+
+extension InteractionTests {
+    /// Views nested two deep in GeometryReader content keep their widgets
+    /// when a later render reuses the outer one (a window resize).
+    func testViewsNestedInGeometryReaderContentSurviveResizes() {
+        let (host, root) = render(GeometryReader { _ in LateRow() }, size: CGSize(width: 400, height: 300))
+        let text = root.all.first { $0.props.text?.plain == "Nested in a reader" }
+        XCTAssertNotNil(text)
+        for width in [360.0, 420, 380] {
+            host.setSize(CGSize(width: width, height: 300))
+            host.render()
+        }
+        XCTAssertEqual(text?.destroyed, false)
+        XCTAssertTrue(root.all.contains { $0 === text })
+    }
+}

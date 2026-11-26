@@ -388,7 +388,10 @@ final class ScopeNode: LayoutNode {
         if let s = scopes[ctx.path] { scope = s } else { scope = Scope(path: ctx.path); scopes[ctx.path] = scope }
         let parent = ctx.scope ?? rootScope
         scope.parent = parent
-        if lateDepth == 0 { parent.children.append(scope) } else if currentScope == nil { lateSink?.scopes.append(scope) }
+        // A scope belongs to the body running around it (reusing that body
+        // must keep it alive), even inside GeometryReader content; content
+        // resolved late outside any body goes to the late sink instead.
+        if lateDepth == 0 || currentScope != nil { parent.children.append(scope) } else { lateSink?.scopes.append(scope) }
         if !scope.dirty, !scope.containsDirty, !scope.volatile, let old = scope.input,
            old.ctx.env.memoEquals(ctx.env), let typed = old as? TypedScopeInput<V>, FieldLayout.equal(typed.view, view) {
             // Same input, nothing inside changed: keep it as it is.
