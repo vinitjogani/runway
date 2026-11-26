@@ -148,7 +148,9 @@ open class NSMenu: NSObject {
         let window = view?.window ?? NSApp.keyWindow
         guard let window, let native = window.nativeWindow, let vs = Runway.backend as? ViewSystemBackend else { return false }
         let inWindow = view?.convert(location, to: nil) ?? location
-        let point = CGPoint(x: inWindow.x, y: window.contentLayoutRect.height - inWindow.y)
+        // Window coordinates are y-up over the whole canvas (under a full-size
+        // content view's title bar too), as events' locations are.
+        let point = CGPoint(x: inWindow.x, y: window.canvasSize.height - inWindow.y)
         delegate?.menuWillOpen(self)
         let model = MenuModel(self, includeSelf: false)
         var chosen = false
