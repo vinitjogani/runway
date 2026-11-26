@@ -15,4 +15,10 @@ public func getuid() -> uid_t { 501 }
 public func geteuid() -> uid_t { 501 }
 public func getgid() -> gid_t { 20 }
 public func getegid() -> gid_t { 20 }
+
+/// Sleeps at least `microseconds` (Windows sleeps in milliseconds).
+@discardableResult public func usleep(_ microseconds: UInt32) -> Int32 {
+    Sleep(DWORD((UInt64(microseconds) + 999) / 1000))
+    return 0
+}
 #endif

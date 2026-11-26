@@ -80,7 +80,8 @@ let package = Package(
         // Apple framework shims, each mapped to the platform's native API.
         .systemLibrary(name: "CRunwayZlib", providers: [.apt(["zlib1g-dev"])]),
         .target(name: "CRunwayFoundation"),
-        .target(name: "RunwayFoundation", dependencies: [.target(name: "CRunwayZlib", condition: linux), "CRunwayFoundation", "Combine"]),
+        .target(name: "RunwayFoundation", dependencies: [.target(name: "CRunwayZlib", condition: linux), "CRunwayFoundation", "Combine"],
+                linkerSettings: [.linkedLibrary("ws2_32", windowsOnly)]),
         .target(name: "CoreGraphics", dependencies: ["RunwayFoundation", "RunwayCF", "RunwayX11"]),
         .systemLibrary(name: "CGdkPixbuf", pkgConfig: "gdk-pixbuf-2.0", providers: [.apt(["libgdk-pixbuf-2.0-dev"])]),
         .target(name: "ImageIO", dependencies: [
