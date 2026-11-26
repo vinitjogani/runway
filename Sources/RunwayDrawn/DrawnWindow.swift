@@ -61,7 +61,8 @@ enum Drag {
     var pressChain: [DrawnWidget] = []
     // Tooltips: the text under the pointer, shown after a pause.
     var tooltipText: String?
-    var tooltipShown = false
+    /// The tooltip on screen, and where (the pointer, window coordinates).
+    var shownTooltip: (text: String, at: CGPoint)?
     var tooltipGeneration = 0
     var hoverChain: [DrawnWidget] = []
     weak var focusedContainer: DrawnWidget?
@@ -168,7 +169,6 @@ enum Drag {
         case RW_EV_MOUSE_LEAVE:
             mouseMoved(CGPoint(x: -1e6, y: -1e6))
             if pressChain.isEmpty { updateHover(CGPoint(x: -1e6, y: -1e6)) }
-            if DrawnBackend.debugInput { FileHandle.standardError.write("leave\n".data(using: .utf8)!) }
             updateTooltip(nil)
             if pointerInside {
                 pointerInside = false
@@ -315,21 +315,18 @@ enum Drag {
     func updateTooltip(_ p: CGPoint?) {
         let text = p.flatMap { point in pick(point).reversed().lazy.compactMap { $0.props.tooltip }.first { !$0.isEmpty } }
         guard text != tooltipText else { return }
-        if DrawnBackend.debugInput { FileHandle.standardError.write("tooltip \(text ?? "-")\n".data(using: .utf8)!) }
         tooltipText = text
         tooltipGeneration += 1
-        if tooltipShown, let n = native {
-            rw_window_set_tooltip(n, nil, 0, 0)
-            tooltipShown = false
+        if shownTooltip != nil {
+            shownTooltip = nil
+            invalidate()
         }
         guard let text else { return }
         let generation = tooltipGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.tooltipGeneration == generation, let n = self.native else { return }
-                self.tooltipShown = true
-                rw_window_set_tooltip(n, text, Double(self.mouse.x), Double(self.mouse.y))
-            }
+        backend.after(0.7) { [weak self] in
+            guard let self, self.tooltipGeneration == generation else { return }
+            self.shownTooltip = (text, self.mouse)
+            self.invalidate()
         }
     }
 
@@ -657,6 +654,7 @@ enum Drag {
             if !w.props.title.isEmpty { out += " title=\(w.props.title)" }
             if w.pointerHandler != nil { out += " pointer" }
             if w.passesThrough { out += " through" }
+            if let t = w.props.tooltip { out += " tip=\(t)" }
             out += "\n"
             for c in w.children { walk(c, depth + 1) }
             if let d = w.document { walk(d, depth + 1) }

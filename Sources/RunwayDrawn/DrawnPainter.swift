@@ -42,8 +42,27 @@ import CRunwayDrawn
             rw_draw_set_alpha(n, 1)
             stroke(bounds, 0, theme.popoverBorder, width: hairline)
         }
+        if let tip = window.shownTooltip { tooltip(tip.text, at: tip.at, in: bounds) }
         rw_window_set_timer(n, frameInterval.map { Int32(($0 * 1000).rounded()) } ?? 0)
         n = nil
+    }
+
+    /// A tooltip bubble below the pointer, kept inside the window.
+    private let tooltipBox = TextBox()
+    private func tooltip(_ string: String, at p: CGPoint, in bounds: CGRect) {
+        tooltipBox.set(StyledText(runs: [TextRun(string: string, font: FontSpec(size: 11), color: nil)], lineLimit: 6))
+        let size = tooltipBox.measure(300)
+        let w = size.width + 14, h = size.height + 8
+        var x = p.x, y = p.y + 20
+        if x + w > bounds.maxX - 4 { x = bounds.maxX - 4 - w }
+        if y + h > bounds.maxY - 4 { y = p.y - 8 - h }
+        let r = CGRect(x: snap(max(4, x)), y: snap(max(4, y)), width: w, height: h)
+        rw_draw_set_offset(n, 0, 0)
+        rw_draw_set_alpha(n, 1)
+        fill(r.offsetBy(dx: 0, dy: 1), 5, RGBA(0, 0, 0, theme.dark ? 0.35 : 0.12))
+        fill(r, 5, theme.popoverBackground)
+        stroke(r, 5, theme.popoverBorder, width: hairline)
+        text(tooltipBox, r.insetBy(dx: 7, dy: 4), theme.label)
     }
 
     private func wantFrames(every seconds: Double) {

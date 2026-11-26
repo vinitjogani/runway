@@ -660,8 +660,14 @@ extension DrawnBackend: AppKitBackend {
     }
 
     // Timing.
+    /// Through the toolkit's loop (a wake-up after the delay), so the work
+    /// runs as UI work does: redraws it asks for happen.
     public func after(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, seconds)) { MainActor.assumeIsolated { work() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, seconds)) { [weak self] in
+            MainActor.assumeIsolated {
+                if let self { self.schedule(work) } else { work() }
+            }
+        }
     }
 
     // Menus.
