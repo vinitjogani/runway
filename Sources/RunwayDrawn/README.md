@@ -74,10 +74,32 @@ settings, the agent panel and its model picker. On Linux the GTK binding runs
 the same apps under Xvfb. `RUNWAY_DEBUG_INPUT=1` logs how presses are routed;
 Ctrl+Shift+F12 dumps a window's widget tree to stderr.
 
+## Accessibility
+
+The widget tree is turned into an accessibility tree by RunwayCore's
+`AccessibilityTree`, which follows SwiftUI's rules: controls are elements with
+a role, a name, a value and states; layout containers are transparent; what
+SwiftUI's accessibility modifiers declare renames, hides, combines or groups.
+The tree is built only once an assistive technology asks for it, and is sent
+to the platform layer as a flat `rw_a11y_node` list with stable ids:
+
+- **Windows:** a UI Automation provider per element (`Native/win32/rw_a11y.cpp`),
+  with control types, names, help text, states, hit testing, navigation,
+  focus, and the Invoke, Toggle, Value, RangeValue and SelectionItem
+  patterns. The window answers `WM_GETOBJECT` with the root.
+- **Linux:** an invisible, click-through widget per element
+  (`Native/gtk/rw_gtk_a11y.c`) with its role, label, description, value and
+  states, so GTK exposes it over AT-SPI. Its actions are installed widget
+  actions (`a11y.default`, `a11y.increment`, ...).
+
+Actions, new values and focus requests come back as `RW_EV_A11Y_*` events.
+`RUNWAY_A11Y=0` turns the tree off on Linux (`=1` forces it without an
+accessibility bus). `RUNWAY_A11Y_INVOKE=<name>` invokes an element once on
+Windows, through the provider interfaces (diagnostics).
+
 ## Known gaps
 
-No accessibility tree (UI Automation / AT-SPI) for the custom-drawn controls
-yet, no tooltips, no keyboard focus for non-text controls (Tab moves between
-text fields, as on the Mac by default), no text selection in `Text`, and no
-dragging out of the app (drops in work). On Linux, GTK 4 can't place windows
-(`setPosition` is ignored).
+No keyboard focus for non-text controls (Tab moves between text fields, as
+on the Mac by default), no text selection in `Text`, and no dragging out of
+the app (drops in work). GTK 4 can't place windows on Wayland (`setPosition`
+works on X11).

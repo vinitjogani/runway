@@ -44,6 +44,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <memory>
 #include <unordered_map>
 
 #include "runway_drawn.h"
@@ -136,8 +137,14 @@ struct rw_window {
     unsigned downKeys[16] = {0};           // keys held, for repeats
     int downCount = 0;
 
+    std::shared_ptr<struct RwA11yState> a11y;  // UI Automation (rw_a11y.cpp)
+
     double scale() const { return dpi / 96.0; }
 };
+
+bool rwA11yGetObject(rw_window *w, WPARAM wp, LPARAM lp, LRESULT *result);
+void rwA11yRunPending(rw_window *w);
+void rwA11yWindowGone(rw_window *w);
 
 ID2D1SolidColorBrush *rwRunBrush(rw_window *w, rw_color c);
 void rwDiscardTarget(rw_window *w);

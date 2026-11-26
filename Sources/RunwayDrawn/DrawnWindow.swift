@@ -38,6 +38,9 @@ enum Drag {
     private(set) var drag: Drag?
     private(set) var pressedInside = false
     var hovered: DrawnWidget?
+    // Accessibility: the elements last sent, by node index, and whether a send is due.
+    var a11yElements: [AccessibleElement] = []
+    var a11yPending = false
     private(set) var hoveredScroll: DrawnWidget?
     private(set) var mouse = CGPoint(x: -1, y: -1)
 
@@ -115,7 +118,11 @@ enum Drag {
         backend.windowClosed(self)
     }
 
-    func invalidate() { if let n = native { rw_window_invalidate(n) } }
+    func invalidate() {
+        guard let n = native else { return }
+        rw_window_invalidate(n)
+        accessibilityChanged()
+    }
 
     func themeChanged() {
         if let n = native { rw_window_set_dark(n, backend.colorScheme == .dark ? 1 : 0) }
@@ -146,6 +153,8 @@ enum Drag {
         }
         let point = CGPoint(x: ev.x, y: ev.y)
         switch ev.type {
+        case RW_EV_A11Y_WANTED, RW_EV_A11Y_ACTION, RW_EV_A11Y_SET, RW_EV_A11Y_FOCUS:
+            return accessibilityEvent(ev)
         case RW_EV_PAINT:
             painter.paint(n)
         case RW_EV_RESIZE:

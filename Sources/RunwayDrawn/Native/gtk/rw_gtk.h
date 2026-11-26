@@ -54,6 +54,7 @@ struct rw_window {
     double popup_x, popup_y;      // where a popup's content sits in its owner
     double pending_x, pending_y;  // a position asked for before the window was shown
     gboolean has_pending_position;
+    GtkWidget *a11y_root;         // the accessibility tree's widgets (rw_gtk_a11y.c)
 
     // A drawing pass.
     cairo_t *cr;

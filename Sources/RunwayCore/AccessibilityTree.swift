@@ -93,8 +93,7 @@ public struct AccessibleStates: OptionSet, Sendable, Hashable {
     var accessibilityEvents: WidgetEvents { get }
     /// In window coordinates.
     var accessibilityFrame: CGRect { get }
-    /// Children in reading order (front to back is fine: the builder sorts
-    /// siblings top to bottom, then leading to trailing).
+    /// Children in view order (drawing order).
     var accessibilityChildren: [AccessibilitySourceWidget] { get }
     /// Whether the widget has keyboard focus.
     var accessibilityFocused: Bool { get }
@@ -116,7 +115,9 @@ public struct AccessibleStates: OptionSet, Sendable, Hashable {
         let a = p.accessibility
         if a?.hidden == true { return [] }
         if p.opacity <= 0.01 && a == nil { return [] }
-        let kids = ordered(w.accessibilityChildren.flatMap { elements($0) })
+        // View order is reading order, as in SwiftUI (stacks list their
+        // views leading to trailing, top to bottom).
+        let kids = w.accessibilityChildren.flatMap { elements($0) }
         var out: [AccessibleElement]
         if let e = control(w, kids) {
             out = [e]
@@ -125,20 +126,6 @@ public struct AccessibleStates: OptionSet, Sendable, Hashable {
         }
         guard let a else { return out }
         return apply(a, w, out)
-    }
-
-    /// Siblings in reading order: rows top to bottom, then leading to trailing.
-    static func ordered(_ list: [AccessibleElement]) -> [AccessibleElement] {
-        guard list.count > 1 else { return list }
-        return list.enumerated().sorted { x, y in
-            let a = x.element.frame, b = y.element.frame
-            // Same row when they overlap vertically by half the shorter one.
-            let overlap = min(a.maxY, b.maxY) - max(a.minY, b.minY)
-            if overlap >= min(a.height, b.height) / 2 && overlap > 0 {
-                return a.minX != b.minX ? a.minX < b.minX : x.offset < y.offset
-            }
-            return a.minY != b.minY ? a.minY < b.minY : x.offset < y.offset
-        }.map(\.element)
     }
 
     /// The element a control is, or nil for layout containers.

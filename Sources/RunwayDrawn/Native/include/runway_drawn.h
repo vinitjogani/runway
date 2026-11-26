@@ -67,6 +67,10 @@ typedef struct { float location; rw_color color; } rw_stop;
 #define RW_EV_TRAY          34   // ctx: the tray item's; button: 0 primary, 1 secondary
 #define RW_EV_MOVED         35   // x, y: the window's outer top-left on the desktop (DIPs)
 #define RW_EV_RICH_PAINT    36   // ctx: the rich edit's; button: 0 under the text, 1 over it; draw on rw_rich_surface()
+#define RW_EV_A11Y_WANTED   37   // an assistive technology asked for the window's tree: send it (rw_window_set_a11y)
+#define RW_EV_A11Y_ACTION   38   // clicks: the node's index; key: the action's index in its list
+#define RW_EV_A11Y_SET      39   // clicks: the node's index; text: its new value
+#define RW_EV_A11Y_FOCUS    40   // clicks: the node's index: give it keyboard focus
 
 #define RW_MOD_SHIFT 1
 #define RW_MOD_CTRL  2
@@ -116,6 +120,7 @@ typedef int (*rw_event_fn)(const rw_event *event);
 
 // App.
 int rw_init(rw_event_fn callback);      // 1 on success
+void rw_set_app_name(const char *name); // before rw_init: what the desktop and assistive technologies call the app
 void rw_run(void);                      // until rw_quit
 void rw_quit(void);
 void rw_wake(void);                     // posts one RW_EV_WAKE
@@ -327,6 +332,63 @@ void rw_beep(void);
 char *rw_choose_files(rw_window *owner, const char *title, int multiple, int directories, const char *const *extensions, int count);
 char *rw_choose_save(rw_window *owner, const char *title, const char *suggested_name);
 int rw_message_box(rw_window *owner, const char *title, const char *message, int ok_cancel);
+
+// Accessibility: the window's elements, flattened depth-first (node 0 is
+// the window; every other node's parent comes before it). Frames are in
+// client DIPs. Strings may be NULL; `actions` is newline-separated names
+// ("default" first when there is one). Copied: the caller keeps nothing.
+typedef struct {
+    int parent;
+    int role;                 // RW_ROLE_* (RunwayCore's AccessibleRole)
+    unsigned states;          // RW_STATE_* (RunwayCore's AccessibleStates)
+    double x, y, width, height;
+    const char *name, *value, *hint, *identifier, *actions;
+    int has_range;
+    double number, minimum, maximum;
+    int settable;             // the value can be set (RW_EV_A11Y_SET)
+    long long uid;            // stays the same for the same element across updates
+} rw_a11y_node;
+
+#define RW_ROLE_GROUP 0
+#define RW_ROLE_BUTTON 1
+#define RW_ROLE_CHECKBOX 2
+#define RW_ROLE_SWITCH 3
+#define RW_ROLE_TEXT 4
+#define RW_ROLE_TEXTFIELD 5
+#define RW_ROLE_TEXTAREA 6
+#define RW_ROLE_IMAGE 7
+#define RW_ROLE_LINK 8
+#define RW_ROLE_SLIDER 9
+#define RW_ROLE_COMBOBOX 10
+#define RW_ROLE_TABLIST 11
+#define RW_ROLE_PROGRESS 12
+#define RW_ROLE_SCROLLAREA 13
+#define RW_ROLE_HEADING 14
+#define RW_ROLE_MENUBUTTON 15
+#define RW_ROLE_COLORWELL 16
+#define RW_ROLE_STEPPER 17
+#define RW_ROLE_SEPARATOR 18
+#define RW_ROLE_SEARCHFIELD 19
+#define RW_ROLE_WINDOW 20
+#define RW_ROLE_TOGGLEBUTTON 21
+
+#define RW_STATE_DISABLED 1
+#define RW_STATE_FOCUSABLE 2
+#define RW_STATE_FOCUSED 4
+#define RW_STATE_CHECKED 8
+#define RW_STATE_CHECKABLE 16
+#define RW_STATE_SELECTED 32
+#define RW_STATE_EDITABLE 64
+#define RW_STATE_MULTILINE 128
+#define RW_STATE_PROTECTED 256
+#define RW_STATE_MIXED 512
+#define RW_STATE_MODAL 1024
+
+// Replaces the window's tree (after RW_EV_A11Y_WANTED, and whenever it
+// changes while wanted).
+void rw_window_set_a11y(rw_window *w, const rw_a11y_node *nodes, int count);
+// Whether an assistive technology has asked for this window's tree.
+int rw_window_a11y_wanted(rw_window *w);
 
 #ifdef __cplusplus
 }

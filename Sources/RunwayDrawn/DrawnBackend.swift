@@ -52,6 +52,8 @@ public typealias Win32Backend = DrawnBackend
         Self.withCStrings(files) { paths, n in
             Self.withCStrings(aliases) { names, _ in rw_register_fonts(paths, n, names, Int32(BundledFonts.aliases.count)) }
         }
+        let info = Bundle.main.infoDictionary
+        rw_set_app_name(info?["CFBundleDisplayName"] as? String ?? info?["CFBundleName"] as? String ?? ProcessInfo.processInfo.processName)
         _ = rw_init(eventCallback)
         Fonts.configure()
         colorScheme = rw_dark_mode() != 0 ? .dark : .light

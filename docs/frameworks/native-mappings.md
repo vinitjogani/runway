@@ -76,6 +76,28 @@ containers, native focus), so they work wherever AppKit's do:
   `scrollIndicators` work; `TextEditor(text:selection:)` reports and sets
   the selection.
 
+## Accessibility
+
+SwiftUI's accessibility modifiers (`accessibilityLabel`, `Value`, `Hint`,
+`Identifier`, `Hidden`, `Element(children:)`, `Add/RemoveTraits`, `Heading`,
+`accessibilityAction` and `accessibilityAdjustableAction`) wrap the view in a
+pass-through container that carries `AccessibilityProps`; modifiers in a row
+share one. Its role comes from the traits (heading, button, link, image,
+toggle, a named element, or a group), for toolkits that fix roles when a
+widget is made.
+
+| Backend | Exposed through |
+|---|---|
+| GTK | GTK's own accessibility (AT-SPI): labels, descriptions, value text and hidden states on the widgets; tap areas are buttons; `ignore`/`combine` elements hide their children (combined ones are named after their text); text fields are named by their prompt; help tags stay on the view they're on instead of every widget inside it. |
+| Drawn (Windows) | UI Automation: one provider per element of RunwayCore's `AccessibilityTree`. |
+| Drawn (Linux) | AT-SPI through GTK: one invisible widget per element. |
+
+`AccessibilityTree` builds the tree as SwiftUI does: controls are elements,
+layout is transparent and reading order is view order; a label on a view that
+is a single element names that element; `ignore` and `combine` fold children
+into one element (`combine` names it after their text and takes their
+actions); images are decorative unless labelled.
+
 ## Window chrome on Linux
 
 A Mac window's titlebar holds the traffic lights, the title and (unified)

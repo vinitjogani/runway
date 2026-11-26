@@ -1,6 +1,7 @@
 // App start-up, the message loop, top-level windows and their input.
 #ifdef _WIN32
 #include "rw_internal.h"
+#include <uiautomation.h>
 
 RwGlobals rwG;
 
@@ -544,6 +545,14 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
     case WM_ERASEBKGND:
         return 1;
+    case WM_GETOBJECT: {
+        LRESULT r = 0;
+        if (rwA11yGetObject(w, wp, lp, &r)) return r;
+        break;
+    }
+    case WM_APP + 0x51:
+        rwA11yRunPending(w);
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         BeginPaint(h, &ps);
@@ -709,12 +718,14 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         rwSend(RW_EV_CLOSE_REQUEST, w->ctx);
         return 0;
     case WM_DESTROY:
+        if (w->a11y) UiaReturnRawElementProvider(h, 0, 0, nullptr);
         if (w->modal && w->parent && w->parent->hwnd) EnableWindow(w->parent->hwnd, TRUE);
         rwDropRevoke(w);
         if (w->timer) { KillTimer(h, 1); w->timer = 0; }
         rwSend(RW_EV_DESTROYED, w->ctx);
         return 0;
     case WM_NCDESTROY:
+        rwA11yWindowGone(w);
         rwEditsWindowGone(w);
         rwRichWindowGone(w);
         rwDiscardTarget(w);
