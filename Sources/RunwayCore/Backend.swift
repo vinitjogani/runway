@@ -113,6 +113,65 @@ public struct BackdropBlur: Equatable, Sendable {
 }
 
 /// Everything a widget shows. Backends read what applies to their kind.
+/// Accessibility information a view declares (SwiftUI's accessibility
+/// modifiers, AppKit's accessibility properties). Backends expose it to
+/// screen readers with the widget's own role and state.
+public struct AccessibilityProps: Equatable, Sendable {
+    public enum Children: Sendable, Equatable {
+        /// Children are separate elements (the default).
+        case contain
+        /// One element; children aren't exposed.
+        case ignore
+        /// One element named after its children's text.
+        case combine
+    }
+    public struct Traits: OptionSet, Sendable, Hashable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+        public static let button = Traits(rawValue: 1), header = Traits(rawValue: 2), selected = Traits(rawValue: 4)
+        public static let link = Traits(rawValue: 8), image = Traits(rawValue: 16), staticText = Traits(rawValue: 32)
+        public static let toggle = Traits(rawValue: 128), modal = Traits(rawValue: 256), searchField = Traits(rawValue: 512)
+        public static let tabBar = Traits(rawValue: 65536)
+    }
+    public var label: String?
+    public var value: String?
+    public var hint: String?
+    public var identifier: String?
+    public var hidden = false
+    /// Whether this view is an element of its own (accessibilityElement):
+    /// without it, a label on a plain container names the group.
+    public var element = false
+    public var children: Children = .contain
+    public var traits: Traits = []
+    public var removedTraits: Traits = []
+    public init() {}
+
+    /// The role a wrapper carrying this information presents.
+    public var wrapperRole: AccessibleRole {
+        if traits.contains(.header) { return .heading }
+        if traits.contains(.link) { return .link }
+        if traits.contains(.toggle) { return .toggleButton }
+        if traits.contains(.button) { return .button }
+        if traits.contains(.image) { return .image }
+        if element && children != .contain { return .staticText }
+        return .group
+    }
+
+    /// This information layered over `inner`'s (an outer modifier wins).
+    public func over(_ inner: AccessibilityProps) -> AccessibilityProps {
+        var r = inner
+        if let label { r.label = label }
+        if let value { r.value = value }
+        if let hint { r.hint = hint }
+        if let identifier { r.identifier = identifier }
+        r.hidden = hidden || inner.hidden
+        if element { r.element = true; r.children = children }
+        r.traits = inner.traits.subtracting(removedTraits).union(traits)
+        r.removedTraits = inner.removedTraits.union(removedTraits)
+        return r
+    }
+}
+
 public struct WidgetProps: Equatable, Sendable {
     public var text: StyledText?
     /// Button/toggle/link title, placeholder for text fields.
@@ -156,6 +215,9 @@ public struct WidgetProps: Equatable, Sendable {
     /// A canvas that takes pointer events where it's drawn (SwiftUI's
     /// filled shapes); canvases are otherwise transparent to the pointer.
     public var hitTestable = false
+    /// What assistive technologies are told about this widget beyond what
+    /// its kind and content say (SwiftUI's accessibility modifiers).
+    public var accessibility: AccessibilityProps?
     /// A tap area's clicks per tap (2: double-click).
     public var tapCount = 1
     /// A text editor or list without its own background (SwiftUI's
@@ -166,6 +228,10 @@ public struct WidgetProps: Equatable, Sendable {
 
 /// What a widget reports back. Closures are replaced on every render.
 @MainActor public struct WidgetEvents {
+    /// Actions assistive technologies can perform on the widget, by name
+    /// ("default" is its primary action; "increment" and "decrement"
+    /// adjust it), beyond what its kind already offers.
+    public var accessibilityActions: [(name: String, perform: () -> Void)] = []
     public var onTap: (() -> Void)?
     public var onTapLocation: ((CGPoint) -> Void)?
     public var onToggle: ((Bool) -> Void)?
@@ -318,6 +384,10 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     /// container asks for (a scroll view's document size).
     func setChildren(_ container: NativeWidget, _ children: [(NativeWidget, CGRect)], contentSize: CGSize)
     func destroy(_ widget: NativeWidget)
+    /// A pass-through container that carries accessibility information
+    /// (SwiftUI's accessibility modifiers wrap views in one), made with the
+    /// role it presents: toolkits whose roles are fixed at creation use it.
+    func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget
 
     // Windows and the loop.
     func makeWindow(_ options: WindowOptions, parent: NativeWindow?) -> NativeWindow
@@ -337,6 +407,8 @@ extension PlatformServices {
 }
 
 extension Backend {
+    public func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget { makeWidget(.container) }
+
     /// Where a text widget's first and last lines sit (their baselines,
     /// from the widget's top) at a width; nil for widgets without text or
     /// backends that can't tell. Used for text-baseline alignment.

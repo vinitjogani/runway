@@ -74,6 +74,10 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
     var textureSize: CGSize?
     /// destroy() released the GTK widget.
     var destroyed = false
+    /// Where setChildren last placed it, and what it last placed (help-tag pruning).
+    weak var parentBox: GtkBox?
+    var childBoxes: [GtkBox] = []
+    var prunedFor: String?
 
     init(kind: WidgetKind, outer: GW) {
         self.kind = kind
@@ -430,6 +434,11 @@ final class WorkBox {
             }
             owned.forEach { free($0) }
         }
+        // The name assistive technologies and the desktop show for the app.
+        let info = Bundle.main.infoDictionary
+        let appName = info?["CFBundleDisplayName"] as? String ?? info?["CFBundleName"] as? String ?? ProcessInfo.processInfo.processName
+        g_set_application_name(appName)
+        if g_get_prgname() == nil { g_set_prgname(appName) }
         gtk_init()
         if ProcessInfo.processInfo.environment["RUNWAY_NATIVE_LOOK"] == nil { runway_tune_text_rendering() }
         colorScheme = runway_prefers_dark() != 0 ? .dark : .light
@@ -480,6 +489,23 @@ final class WorkBox {
 
     // MARK: Widgets
 
+    public func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget {
+        let gtkRole: GtkAccessibleRole
+        switch role {
+        case .heading: gtkRole = GTK_ACCESSIBLE_ROLE_HEADING
+        case .button, .menuButton: gtkRole = GTK_ACCESSIBLE_ROLE_BUTTON
+        case .toggleButton: gtkRole = GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON
+        case .link: gtkRole = GTK_ACCESSIBLE_ROLE_LINK
+        case .image: gtkRole = GTK_ACCESSIBLE_ROLE_IMG
+        case .staticText: gtkRole = GTK_ACCESSIBLE_ROLE_LABEL
+        default: gtkRole = GTK_ACCESSIBLE_ROLE_GROUP
+        }
+        let c = runway_canvas_new_with_role(gtkRole)!
+        let b = GtkBox(kind: .container, outer: c)
+        b.canvas = c
+        return b
+    }
+
     public func makeWidget(_ kind: WidgetKind) -> NativeWidget {
         switch kind {
         case .container:
@@ -507,7 +533,8 @@ final class WorkBox {
             b.connect(raw(btn), "clicked") { [unowned b] _ in b.events.onTap?() }
             return b
         case .tapArea:
-            let c = runway_canvas_new()!
+            // Clickable: a button to assistive technologies.
+            let c = runway_canvas_new_with_role(GTK_ACCESSIBLE_ROLE_BUTTON)!
             let b = GtkBox(kind: kind, outer: c)
             b.canvas = c
             runway_widget_set_interactive(c, 1)
@@ -702,8 +729,9 @@ final class WorkBox {
         defer { b.updating = false }
         let w = b.outer
         if old.enabled != p.enabled || b.props == WidgetProps() { gtk_widget_set_sensitive(w, p.enabled ? 1 : 0) }
-        if old.tooltip != p.tooltip { gtk_widget_set_tooltip_text(w, p.tooltip) }
+        if old.tooltip != p.tooltip { gtk_widget_set_tooltip_text(w, p.tooltip); b.prunedFor = nil }
         if old.opacity != p.opacity { gtk_widget_set_opacity(w, p.opacity) }
+        if old.accessibility != p.accessibility { applyAccessibility(b.outer, p.accessibility) }
         b.setClass("rw-small", p.controlSize == .small || p.controlSize == .mini)
         b.setClass("rw-large", p.controlSize == .large || p.controlSize == .extraLarge)
 
@@ -760,7 +788,11 @@ final class WorkBox {
         case .textField:
             let current = String(cString: gtk_editable_get_text(opaque(w)))
             if current != p.string { gtk_editable_set_text(opaque(w), p.string) }
-            if old.placeholder != p.placeholder || b.props == WidgetProps() { gtk_entry_set_placeholder_text(typed(w), p.placeholder) }
+            if old.placeholder != p.placeholder || b.props == WidgetProps() {
+                gtk_entry_set_placeholder_text(typed(w), p.placeholder)
+                // The prompt names the field when nothing else does.
+                if p.accessibility?.label == nil, !p.placeholder.isEmpty { runway_accessible_label(w, p.placeholder) }
+            }
             gtk_entry_set_has_frame(typed(w), p.bordered ? 1 : 0)
             b.setClass("rw-plain", !p.bordered)
             if old.text != p.text || b.props == WidgetProps() { applyEntryFont(b, p.text?.runs.first) }
@@ -1265,7 +1297,62 @@ final class WorkBox {
         return CanvasRef.wrap(c, owner: b)
     }
 
+    /// Clears tooltips that repeat `inherited` in `b`'s subtree (once per value).
+    private func pruneTooltips(_ b: GtkBox, inherited: String?) {
+        guard b.prunedFor != inherited || b.prunedFor == nil else { return }
+        b.prunedFor = inherited
+        // Controls keep theirs: it names an icon-only button.
+        let control: Bool
+        switch b.kind {
+        case .button, .tapArea, .menuButton, .toggle, .link, .textField, .textEditor, .slider, .dropdown, .segmented, .stepper, .colorWell: control = true
+        default: control = false
+        }
+        if !control, let t = b.props.tooltip, t == inherited { gtk_widget_set_tooltip_text(b.outer, nil) }
+        let next = b.props.tooltip ?? inherited
+        for c in b.childBoxes { pruneTooltips(c, inherited: next) }
+    }
+
+    /// What accessibility modifiers declared, on a GTK widget.
+    func applyAccessibility(_ w: GW, _ a: AccessibilityProps?, hideAll: Bool = false) {
+        let label = a?.label, hint = a?.hint, value = a?.value
+        runway_accessible_apply(w, label, hint, value, (a?.hidden ?? false || hideAll) ? 1 : 0)
+    }
+
     public func setChildren(_ container: NativeWidget, _ children: [(NativeWidget, CGRect)], contentSize: CGSize) {
+        let owner = (container as? GtkBox) ?? (container as? CanvasRef)?.owner
+        // An accessibility wrapper speaks for what it holds: a lone child takes
+        // its label; an element that ignores or combines hides its children.
+        if let b = owner, let a = b.props.accessibility {
+            for (child, _) in children {
+                let c = child as! GtkBox
+                if a.element && a.children != .contain {
+                    applyAccessibility(c.outer, c.props.accessibility, hideAll: true)
+                } else if children.count == 1, c.props.accessibility == nil, a.label != nil || a.hint != nil || a.value != nil {
+                    applyAccessibility(c.outer, a)
+                }
+            }
+        }
+        defer {
+            if let b = owner, var a = b.props.accessibility, a.element, a.children == .combine, a.label == nil,
+               let t = runway_accessible_text(b.outer) {
+                a.label = String(cString: t)
+                g_free(t)
+                applyAccessibility(b.outer, a)
+            }
+        }
+        // A help tag reaches every widget inside the view it's on; GTK looks
+        // for a tooltip up the hierarchy, so widgets that only repeat an
+        // ancestor's keep none (and don't repeat it to screen readers).
+        if let b = owner {
+            var inherited: String?
+            var a: GtkBox? = b
+            while let x = a, inherited == nil { inherited = x.props.tooltip; a = x.parentBox }
+            b.childBoxes = children.map { $0.0 as! GtkBox }
+            for c in b.childBoxes {
+                c.parentBox = b
+                pruneTooltips(c, inherited: inherited)
+            }
+        }
         let canvas: GW
         if let ref = container as? CanvasRef { canvas = ref.canvas } else {
             let b = container as! GtkBox

@@ -837,6 +837,9 @@ final class ContainerNode: LayoutNode {
     let insets: EdgeInsetsValue
     var minSize: CGSize = .zero
     var item: MenuItemSpec?
+    /// What accessibility modifiers set on this wrapper (later ones merge in).
+    var accessibility: AccessibilityProps?
+    var accessibilityActions: [(name: String, perform: () -> Void)] = []
     init(widget: NativeWidget?, backend: Backend, content: LayoutNode, sizing: Sizing, insets: EdgeInsetsValue = .zero) {
         self.widget = widget; self.backend = backend; self.content = content; self.sizing = sizing; self.insets = insets
     }

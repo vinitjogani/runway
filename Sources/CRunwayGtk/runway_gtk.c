@@ -289,6 +289,7 @@ void runway_canvas_set_min_size(GtkWidget *canvas, int width, int height) {
 }
 
 GtkWidget *runway_canvas_new(void) { return g_object_new(RUNWAY_TYPE_CANVAS, NULL); }
+GtkWidget *runway_canvas_new_with_role(GtkAccessibleRole role) { return g_object_new(RUNWAY_TYPE_CANVAS, "accessible-role", role, NULL); }
 
 void runway_canvas_set_content_size(GtkWidget *canvas, int width, int height) {
     RunwayCanvas *self = RUNWAY_CANVAS(canvas);
@@ -454,6 +455,32 @@ void runway_popovers_constrain_to_window(GtkWidget *w) {
 
 void runway_accessible_label(GtkWidget *w, const char *label) {
     gtk_accessible_update_property(GTK_ACCESSIBLE(w), GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
+}
+
+void runway_accessible_apply(GtkWidget *w, const char *label, const char *description, const char *value, gboolean hidden) {
+    GtkAccessible *a = GTK_ACCESSIBLE(w);
+    if (label) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_LABEL);
+    if (description) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, description, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION);
+    if (value) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, value, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT);
+    gtk_accessible_update_state(a, GTK_ACCESSIBLE_STATE_HIDDEN, hidden, -1);
+}
+
+static void collect_text(GtkWidget *w, GString *out) {
+    if (GTK_IS_LABEL(w)) {
+        const char *t = gtk_label_get_text(GTK_LABEL(w));
+        if (t && *t) { if (out->len) g_string_append(out, ", "); g_string_append(out, t); }
+        return;
+    }
+    for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) collect_text(c, out);
+}
+
+char *runway_accessible_text(GtkWidget *w) {
+    GString *out = g_string_new(NULL);
+    collect_text(w, out);
+    return g_string_free(out, FALSE);
 }
 
 gboolean runway_prefers_dark(void) {

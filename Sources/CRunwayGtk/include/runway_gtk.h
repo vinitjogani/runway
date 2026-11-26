@@ -12,6 +12,8 @@ typedef void (*RunwayResizeFunc)(int width, int height, void *user_data);
 typedef void (*RunwayVoidFunc)(void *user_data);
 
 GtkWidget *runway_canvas_new(void);
+/// A canvas presenting `role` to assistive technologies (fixed at creation in GTK).
+GtkWidget *runway_canvas_new_with_role(GtkAccessibleRole role);
 /// The Mac's activity indicator: 12 steps a second while mapped, no frame clock.
 GtkWidget *runway_spinner_new(void);
 /// The size the canvas asks for (its content's size). -1 keeps GTK's minimum.
@@ -57,6 +59,11 @@ void runway_popovers_plain(GtkWidget *w);
 /// Keeps a mobile menu's popover horizontally inside its window.
 void runway_popovers_constrain_to_window(GtkWidget *w);
 void runway_accessible_label(GtkWidget *w, const char *label);
+/// Label, description and value text (NULL resets each), and whether the
+/// widget is hidden from assistive technologies.
+/// The text of the labels under a widget, joined (g_free it).
+char *runway_accessible_text(GtkWidget *w);
+void runway_accessible_apply(GtkWidget *w, const char *label, const char *description, const char *value, gboolean hidden);
 
 /// Light or dark: GTK settings, GTK_THEME, or the desktop's colour-scheme.
 gboolean runway_prefers_dark(void);

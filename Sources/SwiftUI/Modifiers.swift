@@ -440,14 +440,18 @@ public struct AccessibilityTraits: OptionSet, Sendable {
     public static let updatesFrequently = AccessibilityTraits(rawValue: 64), isToggle = AccessibilityTraits(rawValue: 128)
 }
 
-public struct AccessibilityChildBehavior: Sendable {
-    public static let ignore = AccessibilityChildBehavior(), combine = AccessibilityChildBehavior(), contain = AccessibilityChildBehavior()
+public struct AccessibilityChildBehavior: Sendable, Hashable {
+    let value: AccessibilityProps.Children
+    public static let ignore = AccessibilityChildBehavior(value: .ignore), combine = AccessibilityChildBehavior(value: .combine)
+    public static let contain = AccessibilityChildBehavior(value: .contain)
 }
 
 public struct AccessibilityActionKind: Sendable {
-    public static let `default` = AccessibilityActionKind(), escape = AccessibilityActionKind(), magicTap = AccessibilityActionKind()
-    public init(named: Text) {}
-    init() {}
+    let name: String
+    public static let `default` = AccessibilityActionKind(name: "default"), escape = AccessibilityActionKind(name: "escape")
+    public static let magicTap = AccessibilityActionKind(name: "magicTap")
+    @MainActor public init(named: Text) { name = named.plainText }
+    init(name: String) { self.name = name }
 }
 
 public enum AccessibilityAdjustmentDirection: Sendable { case increment, decrement }
@@ -504,24 +508,6 @@ extension View {
     public func scaleEffect(_ s: CGSize, anchor: UnitPoint = .center) -> some View { self }
     public func scaleEffect(x: CGFloat = 1, y: CGFloat = 1, anchor: UnitPoint = .center) -> some View { self }
     public func matchedGeometryEffect<ID: Hashable>(id: ID, in namespace: Namespace.ID, isSource: Bool = true) -> some View { self }
-    public func accessibilityLabel(_ label: Text) -> some View { self }
-    public func accessibilityLabel(_ label: LocalizedStringKey) -> some View { self }
-    @_disfavoredOverload public func accessibilityLabel<S: StringProtocol>(_ label: S) -> some View { self }
-    public func accessibilityValue(_ value: Text) -> some View { self }
-    public func accessibilityValue(_ value: LocalizedStringKey) -> some View { self }
-    @_disfavoredOverload public func accessibilityValue<S: StringProtocol>(_ value: S) -> some View { self }
-    public func accessibilityHint(_ hint: Text) -> some View { self }
-    public func accessibilityHint(_ hint: LocalizedStringKey) -> some View { self }
-    public func accessibilityElement(children: AccessibilityChildBehavior = .ignore) -> some View { self }
-    public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> some View { self }
-    public func accessibilityRemoveTraits(_ traits: AccessibilityTraits) -> some View { self }
-    public func accessibilityHidden(_ hidden: Bool) -> some View { self }
-    public func accessibilityIdentifier(_ id: String) -> some View { self }
-    public func accessibilityAction(_ kind: AccessibilityActionKind = .default, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAction(named name: Text, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAction(named name: LocalizedStringKey, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> some View { self }
-    public func accessibilitySortPriority(_ p: Double) -> some View { self }
     public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { environment { $0._textSelectable = S.allowsSelection } }
     @_disfavoredOverload public func textContentType(_ type: Any?) -> some View { self }
     public func autocorrectionDisabled(_ disabled: Bool = true) -> some View { self }
