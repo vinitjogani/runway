@@ -27,8 +27,13 @@ private let eventCallback: rw_event_fn = { event in
     public private(set) var colorScheme: ColorSchemeValue
     public lazy var services: PlatformServices = Win32Services(backend: self)
     static weak var current: Win32Backend?
+    /// RUNWAY_DEBUG_INPUT=1: how presses are routed, on stderr.
+    static let debugInput = ProcessInfo.processInfo.environment["RUNWAY_DEBUG_INPUT"] != nil
 
-    private(set) var windows: [W32Window] = []
+    var windows: [W32Window] = []
+    var trays: [W32Tray] = []
+    /// The scheme AppKit asked for (nil: the system's).
+    var preferredScheme: ColorSchemeValue?
     private var queue: [@MainActor () -> Void] = []
     private var wakePending = false
 
@@ -52,13 +57,22 @@ private let eventCallback: rw_event_fn = { event in
             drain()
             return 0
         case RW_EV_THEME_CHANGED:
-            let scheme: ColorSchemeValue = rw_dark_mode() != 0 ? .dark : .light
-            if scheme != colorScheme {
-                colorScheme = scheme
-                for w in windows { w.themeChanged() }
-                onColorSchemeChange?()
-            }
+            let scheme: ColorSchemeValue = preferredScheme ?? (rw_dark_mode() != 0 ? .dark : .light)
+            if scheme != colorScheme { setColorScheme(scheme) }
             return 0
+        case RW_EV_RICH_CHANGED, RW_EV_RICH_SELECTION, RW_EV_RICH_FOCUS, RW_EV_RICH_CHAR, RW_EV_RICH_KEY, RW_EV_RICH_POINTER, RW_EV_RICH_HEIGHT:
+            guard let ctx = ev.ctx else { return 0 }
+            let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
+            return richEvent(widget, ev) ? 1 : 0
+        case RW_EV_TRAY:
+            guard let ctx = ev.ctx else { return 0 }
+            Unmanaged<W32Tray>.fromOpaque(ctx).takeUnretainedValue().clicked(secondary: ev.button != 0)
+            return 0
+        case RW_EV_EDIT_KEY:
+            guard let ctx = ev.ctx else { return 0 }
+            let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
+            guard let handler = widget.fieldKey, let press = Keys.press(Int(ev.key), mods: ev.mods) else { return 0 }
+            return handler(press) ? 1 : 0
         case RW_EV_EDIT_CHANGED, RW_EV_EDIT_SUBMIT, RW_EV_EDIT_FOCUS, RW_EV_EDIT_BLUR:
             guard let ctx = ev.ctx else { return 0 }
             let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
@@ -66,8 +80,15 @@ private let eventCallback: rw_event_fn = { event in
         default:
             guard let ctx = ev.ctx else { return 0 }
             let window = Unmanaged<W32Window>.fromOpaque(ctx).takeUnretainedValue()
+            if ev.type == RW_EV_DRAG { return Int32(window.dragEvent(ev).rawValue) }
             return window.handle(ev) ? 1 : 0
         }
+    }
+
+    func setColorScheme(_ scheme: ColorSchemeValue) {
+        colorScheme = scheme
+        for w in windows { w.themeChanged() }
+        onColorSchemeChange?()
     }
 
     private func editEvent(_ w: W32Widget, _ type: Int32) -> Bool {
@@ -90,11 +111,13 @@ private let eventCallback: rw_event_fn = { event in
             w.editFocused = true
             w.invalidate()
             w.events.onFocus?(true)
+            w.fieldFocus?(true)
             return true
         case RW_EV_EDIT_BLUR:
             w.editFocused = false
             w.invalidate()
             w.events.onFocus?(false)
+            w.fieldFocus?(false)
             return true
         default:
             return false
@@ -210,6 +233,15 @@ private let eventCallback: rw_event_fn = { event in
         case .container, .scroll, .tapArea, .canvas:
             return proposal.replacingUnspecified(by: CGSize(width: 10, height: 10))
         }
+    }
+
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? {
+        let w = widget as! W32Widget
+        guard w.kind == .text, let p = w.label.pointer else { return nil }
+        var lines = [Double](repeating: 0, count: 256)
+        let n = Int(lines.withUnsafeMutableBufferPointer { rw_text_baselines(p, Double(width ?? 0), $0.baseAddress, 256) })
+        guard n > 0 else { return nil }
+        return (CGFloat(lines[0]), CGFloat(lines[n - 1]))
     }
 
     public func contentInsets(_ widget: NativeWidget) -> EdgeInsetsValue {

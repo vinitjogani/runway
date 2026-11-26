@@ -85,15 +85,6 @@ int rwSend(int type, void *ctx) {
     return rwSendEvent(ev);
 }
 
-static unsigned currentMods() {
-    unsigned m = 0;
-    if (GetKeyState(VK_SHIFT) < 0) m |= RW_MOD_SHIFT;
-    if (GetKeyState(VK_CONTROL) < 0) m |= RW_MOD_CTRL;
-    if (GetKeyState(VK_MENU) < 0) m |= RW_MOD_ALT;
-    if (GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0) m |= RW_MOD_WIN;
-    return m;
-}
-
 // MARK: Theme
 
 extern "C" int rw_dark_mode(void) {
@@ -144,6 +135,7 @@ static void applyBackdrop(rw_window *w) {
 
 static LRESULT CALLBACK messageProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     if (m == kWakeMessage) { rwSend(RW_EV_WAKE, nullptr); return 0; }
+    if (m == rwTrayMessageId) { rwTrayMessage(wp, lp); return 0; }
     return DefWindowProcW(h, m, wp, lp);
 }
 
@@ -180,14 +172,19 @@ extern "C" int rw_init(rw_event_fn callback) {
     rwG.callback = callback;
     rwG.instance = GetModuleHandleW(nullptr);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    // OLE (drag and drop) on a single-threaded apartment; COM alone if that fails.
+    if (FAILED(OleInitialize(nullptr))) CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     activateCommonControls6();
     allowDarkMenus();
     findMainQueue();
 
     if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &rwG.d2d))) return 0;
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&rwG.dwrite))) return 0;
-    if (rw_font_available("Segoe UI Variable Text")) rwG.uiFamily = L"Segoe UI Variable Text";
+    // The UI font: Windows 11's variable Segoe UI, else Segoe UI, else (Wine,
+    // stripped-down systems) the closest humanist sans that is installed.
+    static const char *const ui[] = {"Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Open Sans", "Selawik",
+                                     "Liberation Sans", "DejaVu Sans", "Tahoma"};
+    for (const char *f : ui) if (rw_font_available(f)) { rwG.uiFamily = rwWiden(f); break; }
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
@@ -262,13 +259,28 @@ static DWORD windowStyle(bool resizable) {
                      : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN);
 }
 
-/// Outer window size for a content size in DIPs.
-static SIZE outerSize(DWORD style, UINT dpi, double width, double height) {
+/// Outer window size for a content size in DIPs (with the menu bar, if any).
+SIZE rwOuterSize(HWND h, DWORD style, UINT dpi, double width, double height) {
     RECT r = {0, 0, (LONG)lround(width * dpi / 96.0), (LONG)lround(height * dpi / 96.0)};
-    AdjustWindowRectExForDpi(&r, style, FALSE, 0, dpi);
+    BOOL menu = h && GetMenu(h) ? TRUE : FALSE;
+    DWORD ex = h ? (DWORD)GetWindowLongPtrW(h, GWL_EXSTYLE) : 0;
+    AdjustWindowRectExForDpi(&r, style, menu, ex, dpi);
     SIZE s = {r.right - r.left, r.bottom - r.top};
+    // A menu bar that wraps onto more rows: measure the real client area.
+    if (h && menu && IsWindowVisible(h)) {
+        RECT win, client;
+        GetWindowRect(h, &win);
+        GetClientRect(h, &client);
+        LONG chromeH = (win.bottom - win.top) - client.bottom;
+        LONG chromeW = (win.right - win.left) - client.right;
+        if ((DWORD)GetWindowLongPtrW(h, GWL_STYLE) == style && client.bottom > 0) {
+            s.cx = chromeW + (LONG)lround(width * dpi / 96.0);
+            s.cy = chromeH + (LONG)lround(height * dpi / 96.0);
+        }
+    }
     return s;
 }
+static SIZE outerSize(DWORD style, UINT dpi, double width, double height) { return rwOuterSize(nullptr, style, dpi, width, height); }
 
 extern "C" rw_window *rw_window_create(const char *title, double width, double height, int resizable, rw_window *parent, int modal, void *ctx) {
     rw_window *w = new rw_window();
@@ -308,7 +320,7 @@ extern "C" void rw_window_set_title(rw_window *w, const char *title) {
 
 extern "C" void rw_window_set_content_size(rw_window *w, double width, double height) {
     DWORD style = (DWORD)GetWindowLongPtrW(w->hwnd, GWL_STYLE);
-    SIZE s = outerSize(style, w->dpi, width, height);
+    SIZE s = rwOuterSize(w->hwnd, style, w->dpi, width, height);
     SetWindowPos(w->hwnd, nullptr, 0, 0, s.cx, s.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -369,8 +381,22 @@ extern "C" void rw_window_set_dark(rw_window *w, int dark) {
 }
 
 extern "C" void rw_window_set_cursor(rw_window *w, int cursor) {
-    LPCWSTR id = cursor == RW_CURSOR_HAND ? IDC_HAND : cursor == RW_CURSOR_IBEAM ? IDC_IBEAM : IDC_ARROW;
-    HCURSOR c = LoadCursorW(nullptr, id);
+    LPCWSTR id = IDC_ARROW;
+    switch (cursor) {
+    case RW_CURSOR_HAND: id = IDC_HAND; break;
+    case RW_CURSOR_IBEAM: id = IDC_IBEAM; break;
+    case RW_CURSOR_CROSS: id = IDC_CROSS; break;
+    case RW_CURSOR_SIZEWE: id = IDC_SIZEWE; break;
+    case RW_CURSOR_SIZENS: id = IDC_SIZENS; break;
+    case RW_CURSOR_SIZEALL: id = IDC_SIZEALL; break;
+    case RW_CURSOR_NO: id = IDC_NO; break;
+    case RW_CURSOR_WAIT: id = IDC_WAIT; break;
+    case RW_CURSOR_HELP: id = IDC_HELP; break;
+    case RW_CURSOR_SIZENWSE: id = IDC_SIZENWSE; break;
+    case RW_CURSOR_SIZENESW: id = IDC_SIZENESW; break;
+    case RW_CURSOR_PROGRESS: id = IDC_APPSTARTING; break;
+    }
+    HCURSOR c = cursor == RW_CURSOR_HIDDEN ? nullptr : LoadCursorW(nullptr, id);
     if (c != w->cursor) {
         w->cursor = c;
         POINT p;
@@ -406,7 +432,7 @@ static void pointerEvent(rw_window *w, int type, LPARAM lp, int button) {
     ev.x = GET_X_LPARAM(lp) / w->scale();
     ev.y = GET_Y_LPARAM(lp) / w->scale();
     ev.button = button;
-    ev.mods = currentMods();
+    ev.mods = rwCurrentMods();
     rwSendEvent(ev);
 }
 
@@ -423,7 +449,7 @@ static void wheelEvent(rw_window *w, WPARAM wp, LPARAM lp, bool horizontal) {
     ev.ctx = w->ctx;
     ev.x = p.x / w->scale();
     ev.y = p.y / w->scale();
-    ev.mods = currentMods();
+    ev.mods = rwCurrentMods();
     if (horizontal) ev.dx = amount;
     else if (ev.mods & RW_MOD_SHIFT) ev.dx = -amount;
     else ev.dy = -amount;
@@ -472,6 +498,7 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         RECT *r = (RECT *)lp;
         SetWindowPos(h, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
         rwEditsRefreshFonts(w);
+        rwRichRefresh(w);
         rwSend(RW_EV_DPI_CHANGED, w->ctx);
         InvalidateRect(h, nullptr, FALSE);
         return 0;
@@ -479,7 +506,7 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     case WM_GETMINMAXINFO: {
         if (w->minWidth > 0 || w->minHeight > 0) {
             DWORD style = (DWORD)GetWindowLongPtrW(h, GWL_STYLE);
-            SIZE s = outerSize(style, w->dpi, w->minWidth, w->minHeight);
+            SIZE s = rwOuterSize(h, style, w->dpi, w->minWidth, w->minHeight);
             MINMAXINFO *mmi = (MINMAXINFO *)lp;
             mmi->ptMinTrackSize.x = s.cx;
             mmi->ptMinTrackSize.y = s.cy;
@@ -523,13 +550,20 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_MOUSEWHEEL: wheelEvent(w, wp, lp, false); return 0;
     case WM_MOUSEHWHEEL: wheelEvent(w, wp, lp, true); return 0;
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        if (rwRawKey(w, m, wp, lp, false)) return 0;
+        break;
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
+        w->swallowChar = false;
+        if (rwRawKey(w, m, wp, lp, false)) { if (IsWindow(h)) w->swallowChar = true; return 0; }
+        if (!IsWindow(h)) return 0;
         rw_event ev = {};
         ev.type = RW_EV_KEY_DOWN;
         ev.ctx = w->ctx;
         ev.key = (int)wp;
-        ev.mods = currentMods();
+        ev.mods = rwCurrentMods();
         if (rwSendEvent(ev)) { w->swallowChar = true; return 0; }
         break;
     }
@@ -547,7 +581,37 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         }
         break;
     case WM_COMMAND:
-        if (lp) { rwEditCommand((HWND)lp, HIWORD(wp)); return 0; }
+        if (lp) {
+            if (!rwRichCommand((HWND)lp, HIWORD(wp))) rwEditCommand((HWND)lp, HIWORD(wp));
+            return 0;
+        }
+        if (HIWORD(wp) == 0) {
+            rw_event ev = {};
+            ev.type = RW_EV_MENU_COMMAND;
+            ev.ctx = w->ctx;
+            ev.key = LOWORD(wp);
+            rwSendEvent(ev);
+            return 0;
+        }
+        break;
+    case WM_INITMENUPOPUP:
+        if (GetMenu(h)) rwSend(RW_EV_MENU_OPENING, w->ctx);
+        break;
+    case WM_NOTIFY: {
+        LRESULT result = 0;
+        if (rwRichNotify(w, (NMHDR *)lp, &result)) return result;
+        break;
+    }
+    case WM_ACTIVATE: {
+        rw_event ev = {};
+        ev.type = RW_EV_ACTIVATE;
+        ev.ctx = w->ctx;
+        ev.button = LOWORD(wp) != WA_INACTIVE ? 1 : 0;
+        rwSendEvent(ev);
+        break;
+    }
+    case WM_MOUSEACTIVATE:
+        if (w->popup) return MA_ACTIVATE;
         break;
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC: {
@@ -561,12 +625,15 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_DESTROY:
         if (w->modal && w->parent && w->parent->hwnd) EnableWindow(w->parent->hwnd, TRUE);
+        rwDropRevoke(w);
         if (w->timer) { KillTimer(h, 1); w->timer = 0; }
         rwSend(RW_EV_DESTROYED, w->ctx);
         return 0;
     case WM_NCDESTROY:
         rwEditsWindowGone(w);
+        rwRichWindowGone(w);
         rwDiscardTarget(w);
+        if (w->ownedCursor) { DestroyCursor(w->ownedCursor); w->ownedCursor = nullptr; }
         SetWindowLongPtrW(h, GWLP_USERDATA, 0);
         w->hwnd = nullptr;
         delete w;

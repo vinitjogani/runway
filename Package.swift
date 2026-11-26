@@ -62,7 +62,7 @@ let package = Package(
             "user32", "gdi32", "d2d1", "dwrite", "dwmapi", "uxtheme", "comdlg32", "shell32", "ole32", "winmm", "advapi32",
         ].map { .linkedLibrary($0, windowsOnly) }),
         .target(name: "RunwayWin32", dependencies: [
-            "RunwayCore",
+            "RunwayCore", "CoreGraphics",
             .target(name: "CRunwayWin32", condition: windows),
         ], exclude: ["Native", "README.md"]),
         .target(name: "RunwayPlatform", dependencies: [

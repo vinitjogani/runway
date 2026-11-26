@@ -48,16 +48,40 @@ enum Drag {
 
     final class Weak { weak var widget: W32Widget?; init(_ w: W32Widget) { widget = w } }
 
-    init(_ o: WindowOptions, parent: W32Window?, backend: Win32Backend) {
+    // AppKit's view system (Win32AppKit.swift).
+    var rawHandler: ((RawEvent) -> Bool)?
+    var activationHandler: ((Bool) -> Void)?
+    var dropHandler: ((RawDragEvent) -> RawDragOperation)?
+    var pointerInside = false
+    var buttonsDown = 0
+    var keyModifiers: KeyModifiers = []
+    var clickCount = 1
+    var lastClick: (time: Double, point: CGPoint, button: Int)?
+    var pressChain: [W32Widget] = []
+    var hoverChain: [W32Widget] = []
+    weak var focusedContainer: W32Widget?
+    var menuBar: MenuBarState?
+    var popover: PopoverState?
+    var riches: [ObjectIdentifier: Weak] = [:]
+    var richesSeen = Set<ObjectIdentifier>()
+
+    init(_ o: WindowOptions, parent: W32Window?, backend: Win32Backend, popup: Bool = false) {
         self.backend = backend
         title = o.title
         contentSize = o.size
         modal = o.modal
         root.hostWindow = self
         root.frame = CGRect(origin: .zero, size: o.size)
-        native = rw_window_create(o.title, Double(o.size.width), Double(o.size.height), o.resizable ? 1 : 0,
-                                  parent?.native, o.modal && parent != nil ? 1 : 0, Unmanaged.passUnretained(self).toOpaque())
-        if let n = native { scale = CGFloat(rw_window_scale(n)) }
+        if popup, let owner = parent?.native {
+            native = rw_popup_create(owner, Unmanaged.passUnretained(self).toOpaque())
+        } else {
+            native = rw_window_create(o.title, Double(o.size.width), Double(o.size.height), o.resizable ? 1 : 0,
+                                      parent?.native, o.modal && parent != nil ? 1 : 0, Unmanaged.passUnretained(self).toOpaque())
+        }
+        if let n = native {
+            scale = CGFloat(rw_window_scale(n))
+            if o.titlebar == .none, !popup { rw_window_set_decorated(n, 0) }
+        }
     }
 
     // MARK: NativeWindow
@@ -70,6 +94,7 @@ enum Drag {
     func setMinimumSize(_ size: CGSize) { if let n = native { rw_window_set_min_size(n, Double(size.width), Double(size.height)) } }
     func setResizable(_ resizable: Bool) { if let n = native { rw_window_set_resizable(n, resizable ? 1 : 0) } }
     func show() { if let n = native { rw_window_show(n) } }
+    func showWithoutActivating() { if let n = native { rw_window_show_inactive(n) } }
     func center() { if let n = native { rw_window_center(n) } }
 
     func close() {
@@ -100,6 +125,9 @@ enum Drag {
             }
         }
         edits[ObjectIdentifier(w)] = nil
+        riches[ObjectIdentifier(w)] = nil
+        pressChain.removeAll { $0 === w }
+        hoverChain.removeAll { $0 === w }
     }
 
     // MARK: Events
@@ -119,12 +147,74 @@ enum Drag {
             contentSize = s
             root.frame.size = s
             onResize?(s)
-        case RW_EV_MOUSE_MOVE: mouseMoved(point)
-        case RW_EV_MOUSE_LEAVE: mouseMoved(CGPoint(x: -1e6, y: -1e6))
-        case RW_EV_MOUSE_DOWN: mouseDown(point, button: Int(ev.button), n)
-        case RW_EV_MOUSE_UP: mouseUp(point, button: Int(ev.button), n)
-        case RW_EV_WHEEL: wheel(point, CGPoint(x: ev.dx, y: ev.dy))
+        case RW_EV_MOUSE_MOVE:
+            let mods = RawModifiers(ev.mods)
+            if !pointerInside {
+                pointerInside = true
+                _ = sendRaw(.mouseEntered, at: point, mods: mods)
+            }
+            if buttonsDown != 0, sendRaw(.mouseMoved, at: point, mods: mods, monitor: true) { return true }
+            for c in pressChain { _ = deliver(.dragged, to: c, at: point) }
+            mouseMoved(point)
+            updateHover(point)
+            _ = sendRaw(.mouseMoved, at: point, mods: mods)
+        case RW_EV_MOUSE_LEAVE:
+            mouseMoved(CGPoint(x: -1e6, y: -1e6))
+            if pressChain.isEmpty { updateHover(CGPoint(x: -1e6, y: -1e6)) }
+            if pointerInside {
+                pointerInside = false
+                _ = sendRaw(.mouseExited, at: mouse, mods: RawModifiers(ev.mods))
+            }
+        case RW_EV_MOUSE_DOWN:
+            let b = Int(ev.button)
+            countClick(point, button: b)
+            buttonsDown |= 1 << b
+            keyModifiers = KeyModifiers(raw: RawModifiers(ev.mods))
+            let onNative = hit(point) != nil
+            if Win32Backend.debugInput { FileHandle.standardError.write("down \(point) path=\(pick(point).map { "\($0.kind)" }.joined(separator: ">")) hit=\(String(describing: hit(point)?.kind))\n".data(using: .utf8)!) }
+            if sendRaw(.mouseDown, at: point, mods: RawModifiers(ev.mods), button: b, monitor: true, onNative: onNative) {
+                if Win32Backend.debugInput { FileHandle.standardError.write("  monitor took it\n".data(using: .utf8)!) }
+                return true
+            }
+            mouseDown(point, button: b, n)
+            _ = sendRaw(.mouseDown, at: point, mods: RawModifiers(ev.mods), button: b, onNative: onNative)
+        case RW_EV_MOUSE_UP:
+            let b = Int(ev.button)
+            if b >= 0 { buttonsDown &= ~(1 << b) } else { buttonsDown = 0 }
+            if b >= 0, sendRaw(.mouseUp, at: point, mods: RawModifiers(ev.mods), button: b, monitor: true) {
+                // A monitor took the release: the control under the press lets go.
+                mouseUp(CGPoint(x: -1e6, y: -1e6), button: b, n)
+                return true
+            }
+            mouseUp(point, button: b, n)
+            if b >= 0 { _ = sendRaw(.mouseUp, at: point, mods: RawModifiers(ev.mods), button: b) }
+        case RW_EV_WHEEL:
+            if !wheel(point, CGPoint(x: ev.dx, y: ev.dy)) {
+                var e = rawEvent(.scroll, at: point, mods: RawModifiers(ev.mods))
+                e.scrollDelta = CGSize(width: -ev.dx, height: -ev.dy)
+                e.preciseScrolling = true
+                _ = rawHandler?(e)
+            }
         case RW_EV_KEY_DOWN: return key(Int(ev.key), mods: ev.mods)
+        case RW_EV_RAW_KEY: return rawKey(ev)
+        case RW_EV_ACTIVATE:
+            let active = ev.button != 0
+            activationHandler?(active)
+            if !active, popover?.transient == true { closePopoverWindow() }
+            return false
+        case RW_EV_MENU_COMMAND:
+            menuBar?.activate(Int(ev.key))
+        case RW_EV_MENU_OPENING:
+            menuBar?.refresh(n)
+        case RW_EV_CHILD_MOUSE, RW_EV_CHILD_MOUSE_AFTER:
+            let up = ev.flags & UInt32(RW_MOUSE_RELEASE) != 0
+            let b = Int(ev.button)
+            if ev.type == RW_EV_CHILD_MOUSE {
+                countClick(point, button: b)
+                if up { buttonsDown &= ~(1 << b) } else { buttonsDown |= 1 << b }
+            }
+            return sendRaw(up ? .mouseUp : .mouseDown, at: point, mods: RawModifiers(ev.mods), button: b,
+                           monitor: ev.type == RW_EV_CHILD_MOUSE, onNative: true)
         case RW_EV_TIMER: invalidate()
         case RW_EV_DPI_CHANGED:
             scale = CGFloat(rw_window_scale(n))
@@ -149,25 +239,67 @@ enum Drag {
 
     // MARK: Hit-testing
 
-    /// The deepest interactive widget at a window point.
-    func hit(_ point: CGPoint) -> W32Widget? { hit(root, point, origin: .zero) }
+    /// The deepest native control at a window point (the picked widget or
+    /// the nearest of its ancestors that handles the pointer itself).
+    func hit(_ point: CGPoint) -> W32Widget? {
+        pick(point).last { $0.isInteractive }
+    }
 
-    private func hit(_ w: W32Widget, _ p: CGPoint, origin: CGPoint) -> W32Widget? {
+    /// The widgets under a point, outermost first, ending with the deepest
+    /// one that takes it: as a toolkit picks, a container counts where it
+    /// has no child, unless it lets the pointer through its gaps or (an
+    /// AppKit view) says the point isn't its own.
+    func pick(_ point: CGPoint) -> [W32Widget] { pickPath(root, point, origin: .zero) ?? [] }
+
+    private func pickPath(_ w: W32Widget, _ p: CGPoint, origin: CGPoint) -> [W32Widget]? {
         let f = w.frame.offsetBy(dx: origin.x, dy: origin.y)
-        if w.props.opacity <= 0.01 { return nil }
+        if w.props.opacity <= 0.01 || !w.hitTestable { return nil }
         if case .scroll = w.kind {
             guard f.contains(p) else { return nil }
-            if scrollbarHit(w, f, p) != nil { return w }
+            if scrollbarHit(w, f, p) != nil { return [w] }
             if let doc = w.document {
                 let o = CGPoint(x: f.minX - w.scrollOffset.x, y: f.minY - w.scrollOffset.y)
-                for c in doc.children.reversed() { if let h = hit(c, p, origin: o) { return h } }
+                for c in doc.children.reversed() { if let s = pickPath(c, p, origin: o) { return [w] + s } }
             }
-            return w
+            return [w]
         }
         if w.props.clips, !f.contains(p) { return nil }
-        for c in w.children.reversed() { if let h = hit(c, p, origin: f.origin) { return h } }
-        if w.isInteractive, f.contains(p) { return w }
-        return nil
+        for c in w.children.reversed() { if let s = pickPath(c, p, origin: f.origin) { return [w] + s } }
+        guard f.contains(p) else { return nil }
+        // Shapes and dividers are drawing only, unless they ask for the pointer.
+        if w.kind == .canvas || w.kind == .divider, !w.props.hitTestable { return nil }
+        if w.kind == .container, w !== root {
+            if w.passesThrough { return nil }
+            if let owns = w.ownsPoint, !owns(CGPoint(x: p.x - f.minX, y: p.y - f.minY)) { return nil }
+        }
+        return [w]
+    }
+
+    /// Sends a pointer event to a container in its own coordinates.
+    @discardableResult
+    func deliver(_ kind: PointerEvent.Kind, to c: W32Widget, at p: CGPoint, button: Int = 0) -> Bool {
+        guard let handler = c.pointerHandler else { return false }
+        let f = c.windowFrame
+        return handler(PointerEvent(kind: kind, location: CGPoint(x: p.x - f.minX, y: p.y - f.minY), button: button,
+                                    clickCount: clickCount, modifiers: keyModifiers))
+    }
+
+    /// Entered, moved and exited for the containers the pointer is over.
+    func updateHover(_ p: CGPoint) {
+        let now = p.x < -1e5 ? [] : pointerContainers(at: p)
+        let old = hoverChain
+        hoverChain = now
+        for c in old where !now.contains(where: { $0 === c }) { deliver(.exited, to: c, at: p) }
+        for c in now {
+            if !old.contains(where: { $0 === c }) { deliver(.entered, to: c, at: p) }
+            deliver(.moved, to: c, at: p)
+        }
+    }
+
+    /// The pointer containers (SwiftUI's gestures, hover and context menus)
+    /// a point is over, innermost first.
+    func pointerContainers(at p: CGPoint) -> [W32Widget] {
+        pick(p).reversed().filter { $0.pointerHandler != nil }
     }
 
     /// The innermost scroll view at a point, and its window frame.
@@ -243,19 +375,48 @@ enum Drag {
             hoveredScroll = s
             invalidate()
         }
-        if let n = native {
-            var cursor = RW_CURSOR_ARROW
-            if let h, h.props.enabled {
-                if h.kind == .link { cursor = RW_CURSOR_HAND }
-                if case .textField = h.kind { cursor = RW_CURSOR_IBEAM }
-            }
-            rw_window_set_cursor(n, cursor)
+        applyCursor()
+    }
+
+    /// The pointer's shape: the hovered control's, else what AppKit set for
+    /// the window (cursor rects), else an arrow.
+    func applyCursor() {
+        guard let n = native else { return }
+        if let h = hovered, h.props.enabled {
+            if let c = h.cursor { rw_window_set_cursor(n, Win32Backend.cursorID(c)); return }
+            if h.kind == .link { rw_window_set_cursor(n, RW_CURSOR_HAND); return }
+            if case .textField = h.kind { rw_window_set_cursor(n, RW_CURSOR_IBEAM); return }
         }
+        switch windowCursor {
+        case let .named(name)?: rw_window_set_cursor(n, Win32Backend.cursorID(named: name))
+        case .hidden?: rw_window_set_cursor(n, RW_CURSOR_HIDDEN)
+        case let .image(width, height, rgba, hot)?:
+            rgba.withUnsafeBufferPointer { rw_window_set_cursor_image(n, Int32(width), Int32(height), $0.baseAddress, Int32(hot.x), Int32(hot.y)) }
+        case nil: rw_window_set_cursor(n, RW_CURSOR_ARROW)
+        }
+    }
+    var windowCursor: CursorSpec? {
+        didSet { if windowCursor != oldValue { applyCursor() } }
     }
 
     private func mouseDown(_ p: CGPoint, button: Int, _ n: OpaquePointer) {
         mouse = p
-        guard let w = hit(p), w.props.enabled else { return }
+        let native = hit(p)
+        let claimed = native.map { $0.props.enabled && (button == 0 || (button == 1 && !$0.events.menu.isEmpty)) } ?? false
+        if !claimed {
+            // Gesture and hover containers under the press, innermost first,
+            // until one takes it; they follow the pointer until release.
+            let chain = pointerContainers(at: p)
+            if let f = chain.first(where: { $0.focusable }) { setFocusedContainer(f) } else if focusedContainer != nil { setFocusedContainer(nil) }
+            pressChain = []
+            for c in chain {
+                pressChain.append(c)
+                if deliver(.down, to: c, at: p, button: button) { break }
+            }
+            if !pressChain.isEmpty { rw_window_capture(n, 1) }
+            if native == nil || button != 0 { return }
+        }
+        guard let w = native, w.props.enabled else { return }
         if button == 1 {
             // Context menus: a control's own menu, if it has one.
             if !w.events.menu.isEmpty { showMenu(w.events.menu, at: p, n) }
@@ -283,7 +444,7 @@ enum Drag {
             rw_window_capture(n, 1)
             setSlider(w, p)
         case .textField, .textEditor:
-            if let e = w.edit { rw_edit_focus(e.pointer, 0) }
+            if let r = w.rich { rw_rich_focus(r.pointer) } else if let e = w.edit { rw_edit_focus(e.pointer, 0) }
         case .dropdown:
             showOptions(w, f, n)
         case .menuButton:
@@ -311,6 +472,14 @@ enum Drag {
     }
 
     private func mouseUp(_ p: CGPoint, button: Int, _ n: OpaquePointer) {
+        if !pressChain.isEmpty {
+            let chain = pressChain
+            pressChain = []
+            rw_window_capture(n, 0)
+            for c in chain where deliver(.up, to: c, at: p, button: button) { break }
+            updateHover(p)
+            if drag == nil { return }
+        }
         guard let d = drag else { return }
         drag = nil
         let wasInside = pressedInside
@@ -360,7 +529,10 @@ enum Drag {
         }
     }
 
-    private func wheel(_ p: CGPoint, _ delta: CGPoint) {
+    @discardableResult
+    private func wheel(_ p: CGPoint, _ delta: CGPoint) -> Bool {
+        var scrolled = false
+        defer { if hoveredScroll == nil { hoveredScroll = scrollViews(at: p).last } }
         for s in scrollViews(at: p).reversed() {
             let m = s.maxScroll
             let canX = delta.x != 0 && m.x > 0.5, canY = delta.y != 0 && m.y > 0.5
@@ -368,9 +540,9 @@ enum Drag {
             let target = CGPoint(x: s.scrollOffset.x + (canX ? delta.x : 0), y: s.scrollOffset.y + (canY ? delta.y : 0))
             let before = s.scrollOffset
             scroll(s, to: target)
-            if s.scrollOffset != before { break }
+            if s.scrollOffset != before { scrolled = true; break }
         }
-        if hoveredScroll == nil { hoveredScroll = scrollViews(at: p).last }
+        return scrolled
     }
 
     func scroll(_ s: W32Widget, to p: CGPoint) {
@@ -379,6 +551,7 @@ enum Drag {
         guard clamped != s.scrollOffset else { return }
         s.scrollOffset = clamped
         invalidate()
+        s.scrollObserver?(clamped)
     }
 
     // MARK: Menus
@@ -418,9 +591,11 @@ enum Drag {
     // MARK: Keyboard
 
     private func key(_ vk: Int, mods: UInt32) -> Bool {
-        guard let name = Keys.name(vk) else { return false }
-        let press = KeyPress(key: name, command: mods & UInt32(RW_MOD_CTRL) != 0, shift: mods & UInt32(RW_MOD_SHIFT) != 0,
-                             option: mods & UInt32(RW_MOD_ALT) != 0, control: false)
+        guard let press = Keys.press(vk, mods: mods) else { return false }
+        let name = press.key
+        if name == "f12", press.command, press.shift { dumpTree(); return true }
+        if let c = focusedContainer, let k = c.keyHandler, k(press) { return true }
+        if pressKeyEquivalent(press) { return true }
         if onKey?(press) == true { return true }
         if name == "tab", !press.command, !press.option {
             focusNextField(backward: press.shift)
@@ -431,6 +606,26 @@ enum Drag {
             return true
         }
         return false
+    }
+
+    /// Ctrl+Shift+F12: the widget tree on stderr (diagnostics).
+    func dumpTree() {
+        var out = ""
+        func walk(_ w: W32Widget, _ depth: Int) {
+            let f = w.frame
+            out += String(repeating: "  ", count: depth) + "\(w.kind) [\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))]"
+            if w.props.opacity < 1 { out += " a=\(w.props.opacity)" }
+            if case let .symbol(n) = w.props.image { out += " symbol=\(n) pt=\(w.props.imagePointSize) tint=\(String(describing: w.props.imageTint))" }
+            if let t = w.props.text { out += " \"" + t.runs.map(\.string).joined().prefix(30) + "\"" }
+            if !w.props.title.isEmpty { out += " title=\(w.props.title)" }
+            if w.pointerHandler != nil { out += " pointer" }
+            if w.passesThrough { out += " through" }
+            out += "\n"
+            for c in w.children { walk(c, depth + 1) }
+            if let d = w.document { walk(d, depth + 1) }
+        }
+        walk(root, 0)
+        FileHandle.standardError.write(out.data(using: .utf8) ?? Data())
     }
 
     var focusedField: W32Widget? { editOrder.first { $0.editFocused } }
@@ -457,6 +652,8 @@ enum Drag {
             w.editWindow = self
             w.editText = w.props.string
             rw_edit_set_text(e, w.props.string)
+            rw_edit_set_alignment(e, w.fieldAlignment == .center ? RW_ALIGN_CENTER : w.fieldAlignment == .trailing ? RW_ALIGN_TRAILING : RW_ALIGN_LEADING)
+            rw_edit_set_readonly(e, w.fieldEditable ? 0 : 1)
         }
         guard let e = w.edit?.pointer else { return }
         if edits[id]?.widget !== w { edits[id] = Weak(w) }
@@ -469,9 +666,14 @@ enum Drag {
         rw_edit_set_enabled(e, w.props.enabled ? 1 : 0)
         rw_edit_set_frame(e, Double(frame.minX), Double(frame.minY), Double(frame.width), Double(frame.height),
                           Double(clip.minX), Double(clip.minY), Double(clip.width), Double(clip.height), 1)
+        if w.wantsFocus {
+            w.wantsFocus = false
+            rw_edit_focus(e, 0)
+        }
     }
 
     func beginEditPass() {
+        richesSeen.removeAll(keepingCapacity: true)
         editsSeen.removeAll(keepingCapacity: true)
         editOrder.removeAll(keepingCapacity: true)
     }
@@ -482,11 +684,21 @@ enum Drag {
             guard let w = ref.widget else { edits[id] = nil; continue }
             if !editsSeen.contains(id), let e = w.edit { rw_edit_set_frame(e.pointer, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
         }
+        for (id, ref) in riches {
+            guard let w = ref.widget else { riches[id] = nil; continue }
+            if !richesSeen.contains(id), let r = w.rich { rw_rich_set_frame(r.pointer, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
+        }
     }
 }
 
 /// Virtual-key codes to the key names `KeyPress` uses (SwiftUI's KeyEquivalent names).
 enum Keys {
+    static func press(_ vk: Int, mods: UInt32) -> KeyPress? {
+        guard let name = name(vk) else { return nil }
+        return KeyPress(key: name, command: mods & UInt32(RW_MOD_CTRL) != 0, shift: mods & UInt32(RW_MOD_SHIFT) != 0,
+                        option: mods & UInt32(RW_MOD_ALT) != 0, control: mods & UInt32(RW_MOD_WIN) != 0)
+    }
+
     static func name(_ vk: Int) -> String? {
         switch vk {
         case 0x08: return "backspace"

@@ -46,11 +46,33 @@ enum Fonts {
 
     static func configure() {
         if rw_font_available("Segoe Fluent Icons") != 0 { icon = "Segoe Fluent Icons" }
-        if rw_font_available("Cascadia Mono") != 0 { mono = "Cascadia Mono" }
+        // The first installed of the usual code fonts (Wine and trimmed
+        // systems lack Consolas).
+        for f in ["Cascadia Mono", "Consolas", "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Courier New"]
+            where rw_font_available(f) != 0 {
+            mono = f
+            break
+        }
+        for f in ["Georgia", "Cambria", "DejaVu Serif", "Liberation Serif", "Times New Roman"] where rw_font_available(f) != 0 {
+            serif = f
+            break
+        }
+    }
+
+    nonisolated(unsafe) private static var known: [String: Bool] = [:]
+    static func installed(_ family: String) -> Bool {
+        if let k = known[family] { return k }
+        let v = rw_font_available(family) != 0
+        known[family] = v
+        return v
     }
 
     static func family(for f: FontSpec) -> String? {
-        if let fam = f.family, !fam.isEmpty, !fam.hasPrefix(".") { return fam == "SF Mono" || fam == "Menlo" ? mono : fam }
+        if let fam = f.family, !fam.isEmpty, !fam.hasPrefix(".") {
+            if ["SF Mono", "Menlo", "Monaco", "Courier", "SFMono-Regular"].contains(fam) { return mono }
+            if fam == "System" || fam == "SF Pro" || fam == "SF Pro Text" || fam == "Helvetica Neue" || fam == "Helvetica" { return nil }
+            return installed(fam) ? fam : (f.design == .monospaced ? mono : nil)
+        }
         switch f.design {
         case .monospaced: return mono
         case .serif: return serif
@@ -245,6 +267,41 @@ final class PathBox {
     var editFocused = false
     var editText = ""
 
+    var wantsFocus = false
+
+    // AppKit extras (see Win32AppKit.swift).
+    var pointerHandler: (@MainActor (PointerEvent) -> Bool)?
+    var keyHandler: (@MainActor (KeyPress) -> Bool)?
+    var focusable = false
+    var ownsPoint: (@MainActor (CGPoint) -> Bool)?
+    var hitTestable = true
+    var passesThrough = false
+    var focusObserver: (@MainActor (Bool) -> Void)?
+    var cursor: CursorKind?
+    var scrollObserver: (@MainActor (CGPoint) -> Void)?
+    var scrollers = (horizontal: true, vertical: true)
+    var fieldFocus: (@MainActor (Bool) -> Void)?
+    var fieldKey: (@MainActor (KeyPress) -> Bool)?
+    var searchField = false
+    var keyEquivalent: KeyPress?
+    var radio = false
+    var styleClasses = Set<String>()
+    var fieldAlignment: TextAlignmentValue = .leading
+    var fieldEditable = true
+
+    // Rich text (a text view).
+    var isRich = false
+    var rich: NativeHandle?
+    var richConfig = TextViewConfig()
+    var richEvents = TextViewEvents()
+    var richRuns: [RichTextRun] = []
+    var richString = ""
+    var richSelection = 0..<0
+    var richHeight: CGFloat = 0
+    weak var richWindow: W32Window?
+    struct RichApplied: Equatable { let config: TextViewConfig; let background: RGBA; let typing: Bool }
+    var richConfigApplied: RichApplied?
+
     // Animation: a switch's knob position, 0 (off) … 1 (on).
     var knob: Double = 0
     var knobFrom: Double = 0
@@ -294,7 +351,8 @@ final class PathBox {
     }
 
     var maxScroll: CGPoint {
-        CGPoint(x: max(0, contentSize.width - frame.width), y: max(0, contentSize.height - frame.height))
+        CGPoint(x: scrollers.horizontal ? max(0, contentSize.width - frame.width) : 0,
+                y: scrollers.vertical ? max(0, contentSize.height - frame.height) : 0)
     }
 }
 

@@ -6,6 +6,7 @@
 #if os(Windows)
 import Foundation
 import RunwayCore
+import CoreGraphics
 import CRunwayWin32
 
 @MainActor final class Painter {
@@ -126,6 +127,55 @@ import CRunwayWin32
     }
 
     /// Text vertically centred in `r` (or from its top).
+    /// An SF Symbol as Runway's vector art, centred in `r` (widget
+    /// coordinates); the icon font's glyph where there's no art.
+    private func symbol(_ name: String, _ r: CGRect, _ c: RGBA, fallback: TextBox, background: RGBA) {
+        guard let shapes = SymbolPaths.shapes(name) else {
+            Symbols.set(fallback, name, size: min(r.width, r.height) / 1.2 * 1.15, alignment: .center)
+            text(fallback, r, c)
+            return
+        }
+        let side = min(r.width, r.height)
+        let k = side / 24
+        // Paths made at the drawn size, so strokes stay at least a pixel wide.
+        let boxes = Painter.symbolBoxes(name, shapes, scale: k)
+        rw_draw_set_transform(n, 1, 0, 0, 1, Double(snap(r.midX - side / 2)), Double(snap(r.midY - side / 2)))
+        rw_draw_set_round_caps(n, 1)
+        for (shape, box) in zip(shapes, boxes) {
+            rw_draw_paint_color(n, (shape.knockout ? background : c).rw)
+            if shape.fill { rw_draw_path(n, 1, box.pointer, 0) }
+            if shape.stroke { rw_draw_path(n, 0, box.pointer, Double(max(1 / scale, shape.strokeWidth * k))) }
+        }
+        rw_draw_set_round_caps(n, 0)
+        rw_draw_set_transform(n, 1, 0, 0, 1, 0, 0)
+    }
+
+    private static var symbolPaths: [String: [PathBox]] = [:]
+    private static func symbolBoxes(_ name: String, _ shapes: [SymbolShape], scale k: CGFloat) -> [PathBox] {
+        let key = "\(name)@\(k)"
+        if let b = symbolPaths[key] { return b }
+        let t = CGAffineTransform(scaleX: k, y: k)
+        let boxes = shapes.map { shape in
+            PathBox(shape.elements.map {
+                switch $0 {
+                case let .move(p): .move(p.applying(t))
+                case let .line(p): .line(p.applying(t))
+                case let .quad(p, c): .quad(p.applying(t), control: c.applying(t))
+                case let .curve(p, a, b): .curve(p.applying(t), control1: a.applying(t), control2: b.applying(t))
+                case .close: .close
+                }
+            })
+        }
+        if symbolPaths.count > 1024 { symbolPaths.removeAll() }
+        symbolPaths[key] = boxes
+        return boxes
+    }
+
+    private func symbolName(_ name: String, _ variant: String?) -> String {
+        guard let v = variant, !v.isEmpty, !name.hasSuffix("." + v) else { return name }
+        return name + "." + v
+    }
+
     private func text(_ t: TextBox, _ r: CGRect, _ c: RGBA, centred: Bool = true) {
         guard let p = t.pointer else { return }
         let s = t.measure(r.width)
@@ -211,7 +261,7 @@ import CRunwayWin32
         case .image:
             image(w, bounds)
         case .canvas:
-            canvas(w, f)
+            canvas(w, f, alpha: alpha)
         case .divider:
             fill(bounds, 0, theme.separator)
         case .link:
@@ -329,6 +379,15 @@ import CRunwayWin32
 
     private func textEditor(_ w: W32Widget, _ f: CGRect, clip: CGRect, _ tint: RGBA) {
         let b = CGRect(origin: .zero, size: f.size)
+        if w.isRich {
+            // An AppKit text view: its background, then the RichEdit over it.
+            let c = w.richConfig
+            let fillColor = c.background ?? theme.textBackground
+            if c.drawsBackground { fill(b, 0, fillColor) }
+            let bg = c.drawsBackground ? fillColor.over(background(behind: f)) : background(behind: f)
+            window.placeRich(w, frame: f, clip: clip, background: bg)
+            return
+        }
         fill(b, 0, theme.textBackground)
         stroke(b, 0, w.editFocused ? tint.withAlpha(0.7) : theme.fieldBorder, width: hairline)
         let bg = theme.textBackground.over(theme.windowBackground)
@@ -429,9 +488,9 @@ import CRunwayWin32
         if p.hasContent { return }
         let chevronX = r.maxX - 10
         if p.title.isEmpty, case let .symbol(name) = p.image {
-            let glyph = w.label
-            Symbols.set(glyph, name, size: m.font * 1.15)
-            text(glyph, CGRect(x: r.minX + (p.bordered ? 8 : 3), y: r.minY, width: m.font * 1.3, height: r.height), theme.label)
+            let side = (m.font * 1.25).rounded()
+            symbol(name, CGRect(x: r.minX + (p.bordered ? 8 : 3), y: r.midY - side / 2, width: side, height: side), theme.label,
+                   fallback: w.label, background: theme.windowBackground)
         } else {
             text(title(w.label, p.title, m, align: .leading), CGRect(x: r.minX + m.padding, y: r.minY, width: max(0, chevronX - r.minX - m.padding - 6), height: r.height), theme.label)
         }
@@ -555,8 +614,10 @@ import CRunwayWin32
         let p = w.props
         switch p.image {
         case let .symbol(name):
-            Symbols.set(w.label, name, size: p.imagePointSize * 1.15, alignment: .center)
-            text(w.label, b, p.imageTint ?? theme.label)
+            let side = min(b.width, b.height, (p.imagePointSize * 1.2).rounded())
+            let box = CGRect(x: b.midX - side / 2, y: b.midY - side / 2, width: side, height: side)
+            symbol(symbolName(name, p.imageSymbolVariant), box, p.imageTint ?? theme.label, fallback: w.label,
+                   background: background(behind: w.windowFrame))
         case .file, .pixels:
             if let img = w.image.pointer { rw_draw_image(n, img, 0, 0, Double(b.width), Double(b.height)) }
         case .none:
@@ -566,7 +627,7 @@ import CRunwayWin32
 
     // MARK: Canvas
 
-    private func canvas(_ w: W32Widget, _ f: CGRect) {
+    private func canvas(_ w: W32Widget, _ f: CGRect, alpha: Double) {
         for (i, cmd) in w.props.drawing.enumerated() {
             switch cmd {
             case let .fill(shape, paint):
@@ -590,8 +651,7 @@ import CRunwayWin32
                 if case let .symbol(name) = source {
                     let t = w.canvasTexts[i] ?? TextBox()
                     w.canvasTexts[i] = t
-                    Symbols.set(t, name, size: rect.height, alignment: .center)
-                    text(t, rect, theme.label)
+                    symbol(name, rect, theme.label, fallback: t, background: background(behind: rect.offsetBy(dx: f.minX, dy: f.minY)))
                 } else if let img = ImageCache.image(source).pointer {
                     rw_draw_image(n, img, Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height))
                 }
@@ -600,8 +660,8 @@ import CRunwayWin32
                 w.canvasTexts[i] = t
                 t.set(styled)
                 if let p = t.pointer { rw_draw_text(n, p, Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height), theme.label.rw) }
-            case .displayList:
-                break   // AppKit's CGContext drawing: not yet replayed on Win32 (GTKAppKitDrawing.swift is the reference)
+            case let .displayList(list):
+                DisplayListPlayer.replay(list, n, origin: f.origin, alpha: alpha)
             }
         }
     }

@@ -64,8 +64,9 @@ void rwPaintWindow(rw_window *w) {
     w->paint = w->solid;
     rw_draw_set_round_caps(w, 0);
     rw_draw_set_dash(w, nullptr, 0);
+    w->clipKinds.clear();
     rwSend(RW_EV_PAINT, w->ctx);
-    while (w->clipDepth > 0) { w->rt->PopAxisAlignedClip(); w->clipDepth--; }
+    while (w->clipDepth > 0) rw_draw_pop_clip(w);
     HRESULT hr = w->rt->EndDraw();
     w->painting = false;
     if (FAILED(hr)) RW_LOG("EndDraw failed: 0x%08lx", (unsigned long)hr);
@@ -111,6 +112,12 @@ extern "C" void rw_draw_set_offset(rw_window *w, double x, double y) {
     w->rt->SetTransform(D2D1::Matrix3x2F::Translation((float)x, (float)y));
 }
 
+extern "C" void rw_draw_set_transform(rw_window *w, double a, double b, double c, double d, double tx, double ty) {
+    if (!w->painting) return;
+    D2D1::Matrix3x2F m((float)a, (float)b, (float)c, (float)d, (float)tx, (float)ty);
+    w->rt->SetTransform(m * D2D1::Matrix3x2F::Translation(w->offsetX, w->offsetY));
+}
+
 extern "C" void rw_draw_set_alpha(rw_window *w, float alpha) {
     w->alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
     if (w->paint == w->solid && w->solid) w->solid->SetColor(color(w->paintColor, w->alpha));
@@ -121,11 +128,35 @@ extern "C" void rw_draw_push_clip(rw_window *w, double x, double y, double width
     if (!w->painting) return;
     w->rt->PushAxisAlignedClip(D2D1::RectF((float)x, (float)y, (float)(x + width), (float)(y + height)), D2D1_ANTIALIAS_MODE_ALIASED);
     w->clipDepth++;
+    w->clipKinds.push_back(0);
+}
+
+static ID2D1PathGeometry *pathGeometry(rw_path *p);
+
+extern "C" void rw_draw_push_clip_path(rw_window *w, rw_path *p) {
+    if (!w->painting || !p) return;
+    ID2D1PathGeometry *g = pathGeometry(p);
+    ID2D1Layer *layer = nullptr;
+    if (!g || FAILED(w->rt->CreateLayer(nullptr, &layer))) {
+        // Nothing to clip with: clip everything, keeping push and pop paired.
+        w->rt->PushAxisAlignedClip(D2D1::RectF(0, 0, 0, 0), D2D1_ANTIALIAS_MODE_ALIASED);
+        w->clipDepth++;
+        w->clipKinds.push_back(0);
+        return;
+    }
+    D2D1_MATRIX_3X2_F t;
+    w->rt->GetTransform(&t);
+    w->rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), g, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, t), layer);
+    layer->Release();   // the target keeps it while pushed
+    w->clipDepth++;
+    w->clipKinds.push_back(1);
 }
 
 extern "C" void rw_draw_pop_clip(rw_window *w) {
     if (!w->painting || w->clipDepth == 0) return;
-    w->rt->PopAxisAlignedClip();
+    char kind = w->clipKinds.empty() ? 0 : w->clipKinds.back();
+    if (!w->clipKinds.empty()) w->clipKinds.pop_back();
+    if (kind == 1) w->rt->PopLayer(); else w->rt->PopAxisAlignedClip();
     w->clipDepth--;
 }
 
@@ -275,7 +306,14 @@ struct rw_path {
     struct Op { int kind; float v[6]; };   // 0 move, 1 line, 2 quad, 3 cubic, 4 close
     std::vector<Op> ops;
     ID2D1PathGeometry *geometry = nullptr;
+    bool evenOdd = false;
 };
+
+extern "C" void rw_path_set_even_odd(rw_path *p, int on) {
+    if (!p || p->evenOdd == (on != 0)) return;
+    p->evenOdd = on != 0;
+    rwRelease(p->geometry);
+}
 
 extern "C" rw_path *rw_path_create(void) { return new rw_path(); }
 
@@ -302,7 +340,7 @@ static ID2D1PathGeometry *pathGeometry(rw_path *p) {
     if (FAILED(rwG.d2d->CreatePathGeometry(&p->geometry))) return nullptr;
     ID2D1GeometrySink *sink = nullptr;
     if (FAILED(p->geometry->Open(&sink))) { rwRelease(p->geometry); return nullptr; }
-    sink->SetFillMode(D2D1_FILL_MODE_WINDING);
+    sink->SetFillMode(p->evenOdd ? D2D1_FILL_MODE_ALTERNATE : D2D1_FILL_MODE_WINDING);
     bool open = false;
     D2D1_POINT_2F start = D2D1::Point2F(0, 0), current = start;
     for (const auto &op : p->ops) {
@@ -506,6 +544,25 @@ extern "C" void rw_text_measure(rw_text *t, double maxWidth, double *width, doub
     if (maxWidth > 0 && w > maxWidth) w = maxWidth;
     *width = w;
     *height = limitedHeight(t, layout, m.height);
+}
+
+extern "C" int rw_text_baselines(rw_text *t, double maxWidth, double *out, int max) {
+    float mw = maxWidth > 0 ? (float)maxWidth : kUnbounded;
+    IDWriteTextLayout *layout = layoutFor(t, mw, kUnbounded);
+    if (!layout) return 0;
+    UINT32 n = 0;
+    layout->GetLineMetrics(nullptr, 0, &n);
+    if (n == 0) return 0;
+    std::vector<DWRITE_LINE_METRICS> lines(n);
+    if (FAILED(layout->GetLineMetrics(lines.data(), n, &n))) return 0;
+    int limit = t->lineLimit > 0 && (UINT32)t->lineLimit < n ? t->lineLimit : (int)n;
+    double top = 0;
+    int count = 0;
+    for (int i = 0; i < limit && count < max; i++) {
+        out[count++] = top + lines[(size_t)i].baseline;
+        top += lines[(size_t)i].height;
+    }
+    return count;
 }
 
 /// A single line shortened at its head or middle to fit `width`.

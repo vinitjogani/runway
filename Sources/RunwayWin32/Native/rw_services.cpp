@@ -54,8 +54,40 @@ static LRESULT CALLBACK editProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     rw_edit *e = editFor(h);
     if (!e || !e->original) return DefWindowProcW(h, m, wp, lp);
     switch (m) {
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+        if (rwRawKey(e->window, m, wp, lp, true)) return 0;
+        if (!IsWindow(h)) return 0;
+        break;
+    case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN:
+    case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP: {
+        if (rwChildMouse(e->window, h, m, lp, false)) return 0;
+        if (!IsWindow(h)) return 0;
+        rw_window *win = e->window;
+        LRESULT r = CallWindowProcW(e->original, h, m, wp, lp);
+        if (IsWindow(h)) rwChildMouse(win, h, m, lp, true);
+        return r;
+    }
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
+        e->swallowChar = false;
+        if (rwRawKey(e->window, m, wp, lp, true)) {
+            if (IsWindow(h)) e->swallowChar = true;
+            return 0;
+        }
+        if (!IsWindow(h) || editFor(h) != e) return 0;
+        if (e->ctx) {
+            rw_event kev = {};
+            kev.type = RW_EV_EDIT_KEY;
+            kev.ctx = e->ctx;
+            kev.key = (int)wp;
+            kev.mods = rwCurrentMods();
+            if (rwSendEvent(kev)) {
+                if (IsWindow(h)) e->swallowChar = true;
+                return 0;
+            }
+            if (!IsWindow(h) || editFor(h) != e) return 0;
+        }
         bool ctrl = GetKeyState(VK_CONTROL) < 0;
         if (ctrl && wp == 'A') {
             SendMessageW(h, EM_SETSEL, 0, -1);
@@ -119,7 +151,8 @@ static void editFont(rw_edit *e) {
     HFONT old = e->font;
     int px = (int)lround(e->size * e->window->scale());
     e->font = CreateFontW(-px, 0, 0, 0, e->weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+                          CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                          rwG.uiFamily == L"Segoe UI Variable Text" ? L"Segoe UI" : rwG.uiFamily.c_str());
     SendMessageW(e->hwnd, WM_SETFONT, (WPARAM)e->font, TRUE);
     SendMessageW(e->hwnd, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
     if (old) DeleteObject(old);
@@ -158,7 +191,7 @@ extern "C" rw_edit *rw_edit_create(rw_window *w, int multiline, void *ctx) {
     e->window = w;
     e->ctx = ctx;
     e->multiline = multiline != 0;
-    DWORD style = WS_CHILD | WS_CLIPSIBLINGS | (e->multiline ? (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL) : ES_AUTOHSCROLL);
+    DWORD style = WS_CHILD | WS_CLIPSIBLINGS | (e->multiline ? (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) : ES_AUTOHSCROLL);
     e->hwnd = CreateWindowExW(0, L"EDIT", L"", style, 0, 0, 0, 0, w->hwnd, nullptr, rwG.instance, nullptr);
     if (!e->hwnd) { delete e; return nullptr; }
     SetWindowLongPtrW(e->hwnd, GWLP_USERDATA, (LONG_PTR)e);
@@ -288,6 +321,22 @@ extern "C" void rw_edit_set_enabled(rw_edit *e, int enabled) {
     if (e && e->hwnd && (IsWindowEnabled(e->hwnd) != 0) != (enabled != 0)) EnableWindow(e->hwnd, enabled ? TRUE : FALSE);
 }
 
+extern "C" void rw_edit_set_alignment(rw_edit *e, int alignment) {
+    if (!e || !e->hwnd) return;
+    LONG_PTR style = GetWindowLongPtrW(e->hwnd, GWL_STYLE);
+    LONG_PTR next = (style & ~(LONG_PTR)(ES_CENTER | ES_RIGHT)) |
+                    (alignment == RW_ALIGN_CENTER ? ES_CENTER : alignment == RW_ALIGN_TRAILING ? ES_RIGHT : ES_LEFT);
+    if (next == style) return;
+    SetWindowLongPtrW(e->hwnd, GWL_STYLE, next);
+    InvalidateRect(e->hwnd, nullptr, TRUE);
+}
+
+extern "C" void rw_edit_set_readonly(rw_edit *e, int readonly) {
+    if (!e || !e->hwnd) return;
+    bool now = (GetWindowLongPtrW(e->hwnd, GWL_STYLE) & ES_READONLY) != 0;
+    if (now != (readonly != 0)) SendMessageW(e->hwnd, EM_SETREADONLY, readonly ? TRUE : FALSE, 0);
+}
+
 extern "C" void rw_edit_focus(rw_edit *e, int selectAll) {
     if (!e || !e->hwnd) return;
     SetFocus(e->hwnd);
@@ -352,6 +401,20 @@ static void freeMenu(rw_menu *m) {
 }
 
 extern "C" void rw_menu_free(rw_menu *m) { if (m) freeMenu(m); }
+
+extern "C" rw_menu *rw_menubar_create(void) {
+    rw_menu *m = new rw_menu();
+    m->handle = CreateMenu();
+    return m;
+}
+
+HMENU rwMenuHandle(rw_menu *m) { return m->handle; }
+
+/// Frees the wrappers of a menu whose handle something else now owns.
+void rwMenuRelease(rw_menu *m) {
+    for (rw_menu *c : m->children) rwMenuRelease(c);
+    delete m;
+}
 
 // MARK: Colour
 

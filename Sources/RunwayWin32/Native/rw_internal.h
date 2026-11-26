@@ -35,6 +35,8 @@
 #include <shobjidl.h>
 #include <commdlg.h>
 #include <mmsystem.h>
+#include <ole2.h>
+#include <richedit.h>
 
 #include <math.h>
 #include <string.h>
@@ -114,10 +116,20 @@ struct rw_window {
     rw_color paintColor = {0, 0, 0, 1};
     float offsetX = 0, offsetY = 0;
     int clipDepth = 0;
+    std::vector<char> clipKinds;           // 0 rect, 1 layer (path)
     unsigned generation = 0;               // bumps when the render target is recreated
     bool painting = false;
 
     std::vector<rw_edit *> edits;
+    std::vector<struct rw_rich *> riches;
+
+    // AppKit support.
+    bool popup = false;
+    bool decorated = true;
+    HCURSOR ownedCursor = nullptr;         // made from an image; destroyed with the window
+    struct RwDropTarget *drop = nullptr;
+    unsigned downKeys[16] = {0};           // keys held, for repeats
+    int downCount = 0;
 
     double scale() const { return dpi / 96.0; }
 };
@@ -129,6 +141,23 @@ void rwEditsRefreshFonts(rw_window *w);
 void rwEditsApplyTheme(rw_window *w);
 LRESULT rwEditColor(HWND edit, HDC dc, bool *handled);
 void rwEditCommand(HWND edit, int code);
+
+// rw_appkit.cpp
+unsigned rwCurrentMods();
+// A key message for the window's raw-key handler; true when it was swallowed.
+bool rwRawKey(rw_window *w, UINT msg, WPARAM wp, LPARAM lp, bool nativeText);
+// A press or release in a native child, offered to the window (monitors).
+bool rwChildMouse(rw_window *w, HWND child, UINT msg, LPARAM lp, bool after);
+bool rwRichCommand(HWND child, int code);
+bool rwRichNotify(rw_window *w, NMHDR *hdr, LRESULT *result);
+void rwRichWindowGone(rw_window *w);
+void rwRichRefresh(rw_window *w);
+void rwDropRevoke(rw_window *w);
+void rwTrayMessage(WPARAM wp, LPARAM lp);
+extern const UINT rwTrayMessageId;
+HMENU rwMenuHandle(rw_menu *m);
+void rwMenuRelease(rw_menu *m);
+SIZE rwOuterSize(HWND h, DWORD style, UINT dpi, double width, double height);
 
 #endif
 #endif
