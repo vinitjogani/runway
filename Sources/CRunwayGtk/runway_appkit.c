@@ -1,5 +1,6 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 #include "runway_appkit.h"
+#include "runway_gtk.h"
 #include <string.h>
 
 typedef struct {
@@ -378,12 +379,14 @@ void runway_appkit_popup_menu(GtkWidget *parent, GMenuModel *model, GActionGroup
     gtk_widget_set_halign(pop, GTK_ALIGN_START);
     gboolean closed = FALSE;
     gulong id = g_signal_connect(pop, "closed", G_CALLBACK(popover_closed), &closed);
+    GSList *tips = runway_suppress_tooltips(parent);
     gtk_popover_popup(GTK_POPOVER(pop));
     while (!closed) g_main_context_iteration(NULL, TRUE);
     // Let the chosen item's action run before the popover goes.
     while (g_main_context_pending(NULL)) g_main_context_iteration(NULL, FALSE);
     g_signal_handler_disconnect(pop, id);
     gtk_widget_unparent(pop);
+    runway_restore_tooltips(tips);
 }
 
 typedef struct { RunwayIndexFunc2 fn; void *data; int index; } ActionTarget;

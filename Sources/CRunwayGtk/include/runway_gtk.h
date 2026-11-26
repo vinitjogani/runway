@@ -131,6 +131,11 @@ void runway_appmenu_free(RunwayAppMenu *m);
 void runway_register_fonts(const char *const *paths, int count, const char *const *aliases, int alias_pairs);
 /// Exact glyph positions, slight hinting, greyscale antialiasing (after gtk_init).
 void runway_tune_text_rendering(void);
+/// Turns off the tooltips of the widgets under the pointer in `anchor`'s
+/// window while a menu is open (as on the Mac); pass the result to
+/// runway_restore_tooltips when it closes.
+GSList *runway_suppress_tooltips(GtkWidget *anchor);
+void runway_restore_tooltips(GSList *list);
 
 G_END_DECLS
 #endif

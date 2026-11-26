@@ -840,6 +840,32 @@ void runway_timeout(unsigned ms, RunwayVoidFunc fn, void *user_data) {
     pair[1] = user_data;
     g_timeout_add(ms, timeout_trampoline, pair);
 }
+GSList *runway_suppress_tooltips(GtkWidget *anchor) {
+    GtkRoot *root = anchor ? gtk_widget_get_root(anchor) : NULL;
+    if (!root) return NULL;
+    GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(root));
+    GdkSeat *seat = gdk_display_get_default_seat(gtk_widget_get_display(GTK_WIDGET(root)));
+    GdkDevice *pointer = seat ? gdk_seat_get_pointer(seat) : NULL;
+    double x = 0, y = 0, tx = 0, ty = 0;
+    if (!surface || !pointer || !gdk_surface_get_device_position(surface, pointer, &x, &y, NULL)) return NULL;
+    gtk_native_get_surface_transform(GTK_NATIVE(root), &tx, &ty);
+    GSList *out = NULL;
+    for (GtkWidget *w = gtk_widget_pick(GTK_WIDGET(root), x - tx, y - ty, GTK_PICK_DEFAULT); w; w = gtk_widget_get_parent(w)) {
+        if (!gtk_widget_get_has_tooltip(w)) continue;
+        gtk_widget_set_has_tooltip(w, FALSE);
+        out = g_slist_prepend(out, g_object_ref(w));
+    }
+    return out;
+}
+
+void runway_restore_tooltips(GSList *list) {
+    for (GSList *l = list; l; l = l->next) {
+        gtk_widget_set_has_tooltip(l->data, TRUE);
+        g_object_unref(l->data);
+    }
+    g_slist_free(list);
+}
+
 #endif
 
 /* A label's first and last baselines (from its top, in points) when laid out
