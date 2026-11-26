@@ -11,8 +11,9 @@
 //   RunwayCore              The backend contract, paint/font/geometry
 //                           model, platform services, a headless backend.
 //   RunwayGTK (+CRunwayGtk) Linux: GTK 4 widgets, Cairo, GdkPixbuf.
-//   RunwayWin32             Windows: Mac-style controls drawn with Direct2D
-//                           and DirectWrite, over a C++ layer (Native/).
+//   RunwayDrawn             Mac-style controls Runway draws itself, over a flat
+//                           C layer: Win32/Direct2D on Windows, GTK/Cairo on
+//                           Linux (opt-in there: RUNWAY_BACKEND=drawn).
 //   RunwayPlatform          Picks the backend for the platform.
 //   Framework shims         CoreGraphics, ImageIO, UniformTypeIdentifiers,
 //                           NaturalLanguage, ServiceManagement, Security,
@@ -23,6 +24,7 @@ import PackageDescription
 
 let linux = TargetDependencyCondition.when(platforms: [.linux])
 let windows = TargetDependencyCondition.when(platforms: [.windows])
+let windowsOrLinux = TargetDependencyCondition.when(platforms: [.windows, .linux])
 let windowsOnly = BuildSettingCondition.when(platforms: [.windows])
 
 let package = Package(
@@ -47,10 +49,13 @@ let package = Package(
     targets: [
         // Native toolkits.
         .systemLibrary(name: "CGtk", pkgConfig: "gtk4", providers: [.apt(["libgtk-4-dev"])]),
-        .target(name: "CRunwayGtk", dependencies: [.target(name: "CGtk", condition: linux)]),
+        .target(name: "CRunwayGtk", dependencies: [.target(name: "CGtk", condition: linux)],
+                linkerSettings: ["fontconfig", "pangoft2-1.0"].map { .linkedLibrary($0, .when(platforms: [.linux])) }),
 
         // Core and backends.
-        .target(name: "RunwayCore", dependencies: ["CoreGraphics"]),
+        // Inter and JetBrains Mono (OFL), compiled into every app.
+        .target(name: "CRunwayFonts", exclude: ["fonts"]),
+        .target(name: "RunwayCore", dependencies: ["CoreGraphics", "CRunwayFonts"]),
         .target(name: "RunwayGTK", dependencies: [
             "RunwayCore",
             .target(name: "CGtk", condition: linux),
@@ -58,18 +63,20 @@ let package = Package(
         ]),
         // Windows: the Swift backend over a small C++ layer (Direct2D,
         // DirectWrite, WIC, Win32) that exposes a flat C API.
-        .target(name: "CRunwayWin32", path: "Sources/RunwayWin32/Native", linkerSettings: [
+        // The drawn backend's native layer: the same flat C API (runway_drawn.h)
+        // over Win32/Direct2D (Native/win32) and over GTK/Cairo/Pango (Native/gtk).
+        .target(name: "CRunwayDrawn", dependencies: [.target(name: "CGtk", condition: linux), .target(name: "CRunwayGtk", condition: linux)], path: "Sources/RunwayDrawn/Native", linkerSettings: [
             "user32", "gdi32", "d2d1", "dwrite", "dwmapi", "uxtheme", "comdlg32", "shell32", "ole32", "winmm", "advapi32",
         ].map { .linkedLibrary($0, windowsOnly) }),
-        .target(name: "RunwayWin32", dependencies: [
+        .target(name: "RunwayDrawn", dependencies: [
             "RunwayCore", "CoreGraphics",
-            .target(name: "CRunwayWin32", condition: windows),
+            .target(name: "CRunwayDrawn", condition: windowsOrLinux),
         ], exclude: ["Native", "README.md"]),
         .target(name: "RunwayPlatform", dependencies: [
             "RunwayCore",
             .target(name: "RunwayGTK", condition: linux),
             .target(name: "CGtk", condition: linux),
-            .target(name: "RunwayWin32", condition: windows),
+            .target(name: "RunwayDrawn", condition: windowsOrLinux),
         ]),
 
         // The UI layer.

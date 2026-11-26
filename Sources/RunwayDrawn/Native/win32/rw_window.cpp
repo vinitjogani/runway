@@ -136,6 +136,7 @@ static void applyBackdrop(rw_window *w) {
 static LRESULT CALLBACK messageProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     if (m == kWakeMessage) { rwSend(RW_EV_WAKE, nullptr); return 0; }
     if (m == rwTrayMessageId) { rwTrayMessage(wp, lp); return 0; }
+    if (m == WM_TIMER && wp == 7) { KillTimer(h, 7); rwSend(RW_EV_WAKE, nullptr); return 0; }
     return DefWindowProcW(h, m, wp, lp);
 }
 
@@ -168,6 +169,55 @@ static void activateCommonControls6() {
     ActivateActCtx(act, &cookie);   // kept active for the life of the process
 }
 
+// MARK: The app's own fonts
+
+static std::vector<std::wstring> pendingFonts;
+
+extern "C" void rw_register_fonts(const char *const *paths, int count, const char *const *aliases, int alias_pairs) {
+    (void)aliases; (void)alias_pairs;   // DirectWrite has no aliases: the Swift half maps Mac names
+    for (int i = 0; i < count; i++) {
+        std::wstring p = rwNativePath(paths[i]);
+        // GDI (EDIT and RichEdit text, menus) sees them in this process.
+        AddFontResourceExW(p.c_str(), FR_PRIVATE, nullptr);
+        pendingFonts.push_back(p);
+    }
+}
+
+/// DirectWrite's view of the registered files: a collection made from a
+/// font set (Windows 10 1703+; Wine). Without it, drawn text falls back to
+/// the system's fonts.
+static void buildPrivateFonts() {
+    if (pendingFonts.empty() || !rwG.dwrite) return;
+    IDWriteFactory5 *f5 = nullptr;
+    if (FAILED(rwG.dwrite->QueryInterface(__uuidof(IDWriteFactory5), (void **)&f5))) return;
+    IDWriteFontSetBuilder1 *builder = nullptr;
+    if (SUCCEEDED(f5->CreateFontSetBuilder(&builder))) {
+        for (auto &p : pendingFonts) {
+            IDWriteFontFile *file = nullptr;
+            if (SUCCEEDED(f5->CreateFontFileReference(p.c_str(), nullptr, &file))) {
+                builder->AddFontFile(file);
+                file->Release();
+            }
+        }
+        IDWriteFontSet *set = nullptr;
+        if (SUCCEEDED(builder->CreateFontSet(&set))) {
+            IDWriteFontCollection1 *c = nullptr;
+            if (SUCCEEDED(f5->CreateFontCollectionFromFontSet(set, &c))) rwG.privateFonts = c;
+            set->Release();
+        }
+        builder->Release();
+    }
+    f5->Release();
+}
+
+IDWriteFontCollection *rwCollectionFor(const wchar_t *family) {
+    if (!rwG.privateFonts || !family || !*family) return nullptr;
+    UINT32 index = 0;
+    BOOL exists = FALSE;
+    rwG.privateFonts->FindFamilyName(family, &index, &exists);
+    return exists ? rwG.privateFonts : nullptr;
+}
+
 extern "C" int rw_init(rw_event_fn callback) {
     rwG.callback = callback;
     rwG.instance = GetModuleHandleW(nullptr);
@@ -180,9 +230,11 @@ extern "C" int rw_init(rw_event_fn callback) {
 
     if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &rwG.d2d))) return 0;
     if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&rwG.dwrite))) return 0;
+    buildPrivateFonts();
     // The UI font: Windows 11's variable Segoe UI, else Segoe UI, else (Wine,
     // stripped-down systems) the closest humanist sans that is installed.
-    static const char *const ui[] = {"Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Open Sans", "Selawik",
+    // Runway's bundled Inter first (closest to the Mac's), when registered.
+    static const char *const ui[] = {"Inter", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Open Sans", "Selawik",
                                      "Liberation Sans", "DejaVu Sans", "Tahoma"};
     for (const char *f : ui) if (rw_font_available(f)) { rwG.uiFamily = rwWiden(f); break; }
 
@@ -209,6 +261,10 @@ extern "C" int rw_init(rw_event_fn callback) {
 
 extern "C" int rw_font_available(const char *family) {
     if (!rwG.dwrite) return 0;
+    {
+        std::wstring f = rwWiden(family);
+        if (rwCollectionFor(f.c_str())) return 1;
+    }
     IDWriteFontCollection *fonts = nullptr;
     if (FAILED(rwG.dwrite->GetSystemFontCollection(&fonts, FALSE))) return 0;
     UINT32 index = 0;
@@ -251,6 +307,12 @@ extern "C" void rw_run(void) { runLoop(nullptr); }
 extern "C" void rw_run_modal(volatile int *done) { runLoop(done); }
 extern "C" void rw_quit(void) { PostQuitMessage(0); }
 extern "C" void rw_wake(void) { PostMessageW(rwG.messageWindow, kWakeMessage, 0, 0); }
+
+static const UINT_PTR kWakeTimer = 7;
+extern "C" void rw_wake_after(int ms) {
+    KillTimer(rwG.messageWindow, kWakeTimer);
+    if (ms >= 0) SetTimer(rwG.messageWindow, kWakeTimer, (UINT)(ms > 0 ? ms : 1), nullptr);
+}
 
 // MARK: Windows
 

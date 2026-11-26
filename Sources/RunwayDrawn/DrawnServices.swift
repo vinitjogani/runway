@@ -2,14 +2,14 @@
 // ShellExecute, Explorer's SHOpenFolderAndSelectItems, system sounds via
 // PlaySound, the Common Item Dialogs, and alerts drawn like the Mac's.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
-import CRunwayWin32
+import CRunwayDrawn
 
 @MainActor final class Win32Services: PlatformServices {
-    unowned let backend: Win32Backend
-    init(backend: Win32Backend) { self.backend = backend }
+    unowned let backend: DrawnBackend
+    init(backend: DrawnBackend) { self.backend = backend }
 
     private var owner: OpaquePointer? { backend.activeWindow?.native }
 
@@ -72,8 +72,8 @@ import CRunwayWin32
         let cancel = titles.firstIndex(of: "Cancel") ?? (titles.count > 1 ? titles.count - 1 : 0)
         let width: CGFloat = 272, margin: CGFloat = 20, inner = width - 2 * margin
 
-        func label(_ s: String, size: CGFloat, weight: FontWeightValue) -> (W32Widget, CGSize) {
-            let w = backend.makeWidget(.text) as! W32Widget
+        func label(_ s: String, size: CGFloat, weight: FontWeightValue) -> (DrawnWidget, CGSize) {
+            let w = backend.makeWidget(.text) as! DrawnWidget
             var p = WidgetProps()
             p.text = StyledText(runs: [TextRun(string: s, font: FontSpec(size: size, weight: weight), color: nil)], alignment: .center)
             backend.update(w, props: p, events: WidgetEvents())
@@ -99,7 +99,7 @@ import CRunwayWin32
         let sideBySide = titles.count <= 2
         let buttonHeight: CGFloat = 24, gap: CGFloat = 8
         for (i, t) in titles.enumerated() {
-            let b = backend.makeWidget(.button) as! W32Widget
+            let b = backend.makeWidget(.button) as! DrawnWidget
             var p = WidgetProps()
             p.title = t
             p.isDefault = i == 0
@@ -136,7 +136,7 @@ import CRunwayWin32
         }
         window.onCloseRequest = { answer = cancel; done.pointee = 1; return false }
         window.show()
-        if (window as? W32Window)?.native == nil {
+        if (window as? DrawnWindow)?.native == nil {
             // No window (out of resources): fall back to a system message box.
             return Int(rw_message_box(owner, title, message, titles.count > 1 ? 1 : 0))
         }

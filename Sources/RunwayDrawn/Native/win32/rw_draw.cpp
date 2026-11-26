@@ -468,7 +468,7 @@ struct rw_text {
 
 static IDWriteTextFormat *makeFormat(const RwRange &r) {
     IDWriteTextFormat *f = nullptr;
-    HRESULT hr = rwG.dwrite->CreateTextFormat(r.family.c_str(), nullptr, r.weight, r.style, DWRITE_FONT_STRETCH_NORMAL, r.size, L"en-us", &f);
+    HRESULT hr = rwG.dwrite->CreateTextFormat(r.family.c_str(), rwCollectionFor(r.family.c_str()), r.weight, r.style, DWRITE_FONT_STRETCH_NORMAL, r.size, L"en-us", &f);
     if (FAILED(hr)) RW_LOG("CreateTextFormat failed: 0x%08lx", (unsigned long)hr);
     return f;
 }
@@ -497,6 +497,16 @@ static IDWriteTextLayout *makeLayout(rw_text *t, const std::wstring &s, bool sty
         DWRITE_TEXT_RANGE range = {styleRanges ? r.start : 0, styleRanges ? r.length : (UINT32)s.size()};
         if (range.length == 0) continue;
         layout->SetFontFamilyName(r.family.c_str(), range);
+        if (rwG.privateFonts) {
+            // Each run in the collection its family is in.
+            IDWriteFontCollection *c = rwCollectionFor(r.family.c_str());
+            if (!c) {
+                static IDWriteFontCollection *system = nullptr;
+                if (!system) rwG.dwrite->GetSystemFontCollection(&system, FALSE);
+                c = system;
+            }
+            if (c) layout->SetFontCollection(c, range);
+        }
         layout->SetFontSize(r.size, range);
         layout->SetFontWeight(r.weight, range);
         layout->SetFontStyle(r.style, range);

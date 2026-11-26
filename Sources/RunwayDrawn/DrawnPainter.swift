@@ -3,14 +3,14 @@
 // fields, sliders, progress, steppers, colour wells), text, images,
 // canvases and overlay scroll bars.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
 import CoreGraphics
-import CRunwayWin32
+import CRunwayDrawn
 
 @MainActor final class Painter {
-    unowned let window: W32Window
+    unowned let window: DrawnWindow
     private var n: OpaquePointer!
     private var theme = Theme(dark: false)
     private var scale: CGFloat = 1
@@ -20,7 +20,7 @@ import CRunwayWin32
     /// The shortest animation frame interval requested this pass (seconds).
     private var frameInterval: Double?
 
-    init(window: W32Window) { self.window = window }
+    init(window: DrawnWindow) { self.window = window }
 
     // MARK: The pass
 
@@ -53,7 +53,7 @@ import CRunwayWin32
     private func snap(_ v: CGFloat) -> CGFloat { (v * scale).rounded() / scale }
     private var hairline: CGFloat { scale >= 2 ? 0.5 : 1 / scale }
 
-    private func paint(_ w: W32Widget, origin: CGPoint, clip: CGRect, alpha: Double) {
+    private func paint(_ w: DrawnWidget, origin: CGPoint, clip: CGRect, alpha: Double) {
         let a = alpha * w.props.opacity
         guard a > 0.004 else { return }
         let f = CGRect(x: snap(origin.x + w.frame.minX), y: snap(origin.y + w.frame.minY),
@@ -213,7 +213,7 @@ import CRunwayWin32
         fillGradient(r, radius, top: base.adjusted(0.08), bottom: base)
     }
 
-    private func isPressed(_ w: W32Widget) -> Bool {
+    private func isPressed(_ w: DrawnWidget) -> Bool {
         if case let .press(p)? = window.drag, p === w { return window.pressedInside }
         return false
     }
@@ -225,7 +225,7 @@ import CRunwayWin32
 
     // MARK: Widgets
 
-    private func draw(_ w: W32Widget, _ f: CGRect, clip: CGRect, alpha: Double) {
+    private func draw(_ w: DrawnWidget, _ f: CGRect, clip: CGRect, alpha: Double) {
         let p = w.props
         let m = Metrics(size: p.controlSize)
         let size = f.size
@@ -285,7 +285,7 @@ import CRunwayWin32
         }
     }
 
-    private func pushButton(_ w: W32Widget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
+    private func pushButton(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
         let p = w.props
         let pressed = isPressed(w)
         let r = p.hasContent ? b : controlRect(b.size, m)
@@ -305,7 +305,7 @@ import CRunwayWin32
         text(title(w.label, p.title, m), r.insetBy(dx: m.padding - 2, dy: 0), fg)
     }
 
-    private func switchControl(_ w: W32Widget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
+    private func switchControl(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
         let p = w.props
         let s = m.switchSize
         let r = CGRect(x: 0, y: snap((b.height - s.height) / 2), width: s.width, height: s.height)
@@ -338,7 +338,7 @@ import CRunwayWin32
         }
     }
 
-    private func checkbox(_ w: W32Widget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
+    private func checkbox(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
         let p = w.props
         let s = m.checkbox
         let box = CGRect(x: 0, y: snap((b.height - s) / 2), width: s, height: s)
@@ -362,7 +362,7 @@ import CRunwayWin32
     private var snapOffsetX: CGFloat = 0
     private var snapOffsetY: CGFloat = 0
 
-    private func textField(_ w: W32Widget, _ f: CGRect, clip: CGRect, _ m: Metrics, _ tint: RGBA) {
+    private func textField(_ w: DrawnWidget, _ f: CGRect, clip: CGRect, _ m: Metrics, _ tint: RGBA) {
         let p = w.props
         let r = controlRect(f.size, m)
         let bg: RGBA
@@ -384,7 +384,7 @@ import CRunwayWin32
                          style: (size: m.font, text: textColor, background: bg))
     }
 
-    private func textEditor(_ w: W32Widget, _ f: CGRect, clip: CGRect, _ tint: RGBA) {
+    private func textEditor(_ w: DrawnWidget, _ f: CGRect, clip: CGRect, _ tint: RGBA) {
         let b = CGRect(origin: .zero, size: f.size)
         if w.isRich {
             // An AppKit text view: its background, then the RichEdit over it.
@@ -417,7 +417,7 @@ import CRunwayWin32
         return out
     }
 
-    private func slider(_ w: W32Widget, _ b: CGRect, _ tint: RGBA) {
+    private func slider(_ w: DrawnWidget, _ b: CGRect, _ tint: RGBA) {
         let p = w.props
         let knob: CGFloat = 18
         let span = p.range.upperBound - p.range.lowerBound
@@ -447,7 +447,7 @@ import CRunwayWin32
         PathBox.shared(key) { [.move(pts[0])] + pts.dropFirst().map { .line($0) } }
     }
 
-    private func stepper(_ w: W32Widget, _ b: CGRect, _ m: Metrics) {
+    private func stepper(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics) {
         let r = controlRect(b.size, m)
         let arrows = CGRect(x: r.maxX - 15, y: r.minY, width: 15, height: r.height)
         let field = CGRect(x: r.minX, y: r.minY, width: arrows.minX - 4, height: r.height)
@@ -470,7 +470,7 @@ import CRunwayWin32
         rw_draw_set_offset(n, Double(snapOffsetX), Double(snapOffsetY))
     }
 
-    private func popUpButton(_ w: W32Widget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
+    private func popUpButton(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics, _ tint: RGBA) {
         let p = w.props
         let r = controlRect(b.size, m)
         bezel(r, m.radius, face: theme.buttonFace, pressed: isPressed(w))
@@ -485,7 +485,7 @@ import CRunwayWin32
         rw_draw_set_offset(n, Double(snapOffsetX), Double(snapOffsetY))
     }
 
-    private func menuButton(_ w: W32Widget, _ b: CGRect, _ m: Metrics) {
+    private func menuButton(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics) {
         let p = w.props
         let r = controlRect(b.size, m)
         let pressed = isPressed(w)
@@ -507,7 +507,7 @@ import CRunwayWin32
     }
 
     /// Segment widths for the frame: each title's width plus padding, scaled to fit.
-    private func segmentWidths(_ w: W32Widget, width: CGFloat) -> [CGFloat] {
+    private func segmentWidths(_ w: DrawnWidget, width: CGFloat) -> [CGFloat] {
         let m = Metrics(size: w.props.controlSize)
         let natural = w.props.options.map { TextMetrics.size($0, size: m.font).width + 2 * m.padding }
         let total = natural.reduce(0, +)
@@ -515,7 +515,7 @@ import CRunwayWin32
         return natural.map { $0 * width / total }
     }
 
-    func segmentIndex(_ w: W32Widget, x: CGFloat, width: CGFloat) -> Int? {
+    func segmentIndex(_ w: DrawnWidget, x: CGFloat, width: CGFloat) -> Int? {
         var edge: CGFloat = 0
         for (i, s) in segmentWidths(w, width: width).enumerated() {
             edge += s
@@ -524,7 +524,7 @@ import CRunwayWin32
         return nil
     }
 
-    private func segmented(_ w: W32Widget, _ b: CGRect, _ m: Metrics) {
+    private func segmented(_ w: DrawnWidget, _ b: CGRect, _ m: Metrics) {
         let p = w.props
         let r = controlRect(b.size, m)
         fill(r, m.radius, theme.segmentTrack)
@@ -550,7 +550,7 @@ import CRunwayWin32
         }
     }
 
-    private func progressBar(_ w: W32Widget, _ b: CGRect, _ tint: RGBA) {
+    private func progressBar(_ w: DrawnWidget, _ b: CGRect, _ tint: RGBA) {
         let p = w.props
         let h: CGFloat = min(6, b.height)
         let r = CGRect(x: 0, y: snap((b.height - h) / 2), width: b.width, height: h)
@@ -574,7 +574,7 @@ import CRunwayWin32
         }
     }
 
-    private func spinner(_ w: W32Widget, _ b: CGRect) {
+    private func spinner(_ w: DrawnWidget, _ b: CGRect) {
         let p = w.props
         let s = min(b.width, b.height)
         let c = CGPoint(x: b.midX, y: b.midY)
@@ -617,7 +617,7 @@ import CRunwayWin32
         wantFrames(every: 1.0 / 12)
     }
 
-    private func image(_ w: W32Widget, _ b: CGRect) {
+    private func image(_ w: DrawnWidget, _ b: CGRect) {
         let p = w.props
         switch p.image {
         case let .symbol(name):
@@ -634,7 +634,7 @@ import CRunwayWin32
 
     // MARK: Canvas
 
-    private func canvas(_ w: W32Widget, _ f: CGRect, alpha: Double) {
+    private func canvas(_ w: DrawnWidget, _ f: CGRect, alpha: Double) {
         for (i, cmd) in w.props.drawing.enumerated() {
             switch cmd {
             case let .fill(shape, paint):
@@ -690,7 +690,7 @@ import CRunwayWin32
         return true
     }
 
-    private func drawShape(_ w: W32Widget, _ i: Int, _ shape: ShapePath, fill: Bool, width: CGFloat) {
+    private func drawShape(_ w: DrawnWidget, _ i: Int, _ shape: ShapePath, fill: Bool, width: CGFloat) {
         let f: Int32 = fill ? 1 : 0
         switch shape {
         case let .rect(r):
@@ -711,7 +711,7 @@ import CRunwayWin32
     // MARK: Scroll bars
 
     /// Overlay scroll bars, shown while the pointer is over the view.
-    private func scrollBars(_ w: W32Widget, _ f: CGRect, alpha: Double) {
+    private func scrollBars(_ w: DrawnWidget, _ f: CGRect, alpha: Double) {
         var dragging = false
         if case let .scrollThumb(s, _, _, _)? = window.drag, s === w { dragging = true }
         guard dragging || window.hoveredScroll === w else { return }

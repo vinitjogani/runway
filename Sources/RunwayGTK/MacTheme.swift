@@ -14,8 +14,9 @@
 import Foundation
 
 enum MacTheme {
-    /// SF can't ship with Runway; the closest installed face wins.
-    static let fontFamilies = ["SF Pro Text", "SF Pro", ".AppleSystemUIFont", "Inter Variable", "Inter", "Cantarell",
+    /// SF can't ship with Runway: Inter, which it bundles, stands in (with
+    /// RUNWAY_SYSTEM_FONTS=1, the closest installed face wins).
+    static let fontFamilies = ["SF Pro Text", "SF Pro", ".AppleSystemUIFont", "Inter", "Inter Variable", "Cantarell",
                                "Noto Sans", "Helvetica Neue", "Helvetica", "Liberation Sans", "Arial", "sans-serif"]
 
     static var pangoFamilies: String { fontFamilies.joined(separator: ",") }

@@ -125,6 +125,13 @@ void runway_appmenu_changed(RunwayAppMenu *m);
 gboolean runway_appmenu_has_host(RunwayAppMenu *m);
 void runway_appmenu_free(RunwayAppMenu *m);
 
+/// Registers font files with fontconfig for this process, and Mac family
+/// names that should draw with them (pairs: name, family). Call before
+/// text is first laid out; a font map made earlier is told of the change.
+void runway_register_fonts(const char *const *paths, int count, const char *const *aliases, int alias_pairs);
+/// Exact glyph positions, slight hinting, greyscale antialiasing (after gtk_init).
+void runway_tune_text_rendering(void);
+
 G_END_DECLS
 #endif
 #endif

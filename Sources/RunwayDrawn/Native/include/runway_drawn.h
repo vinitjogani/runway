@@ -10,8 +10,8 @@
 // on the thread that called rw_init. The declarations carry no Windows
 // types, so the header is valid (and unused) on every platform.
 
-#ifndef RUNWAY_WIN32_H
-#define RUNWAY_WIN32_H
+#ifndef RUNWAY_DRAWN_H
+#define RUNWAY_DRAWN_H
 
 #include <stdint.h>
 
@@ -119,8 +119,12 @@ int rw_init(rw_event_fn callback);      // 1 on success
 void rw_run(void);                      // until rw_quit
 void rw_quit(void);
 void rw_wake(void);                     // posts one RW_EV_WAKE
+void rw_wake_after(int milliseconds);   // one RW_EV_WAKE then (replaces the last; < 0 cancels)
 int rw_dark_mode(void);                 // apps use the dark theme
 int rw_font_available(const char *family);
+// Font files for this process, and Mac family names to draw with them
+// (pairs: name, family). Call before rw_init.
+void rw_register_fonts(const char *const *paths, int count, const char *const *aliases, int alias_pairs);
 void rw_free(void *p);                  // frees strings this API returns
 // The unshifted character a virtual key types in the current layout, or 0.
 int rw_key_char(int virtual_key);

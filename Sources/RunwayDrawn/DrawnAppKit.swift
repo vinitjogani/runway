@@ -8,11 +8,11 @@
 // the pointer, then to AppKit as ordinary events; keys go to AppKit before
 // any control sees them.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
 import CoreGraphics
-import CRunwayWin32
+import CRunwayDrawn
 
 extension RawModifiers {
     init(_ mods: UInt32) {
@@ -41,7 +41,7 @@ private func string(_ p: UnsafePointer<CChar>?) -> String { p.map { String(cStri
 
 // MARK: Window routing
 
-extension W32Window {
+extension DrawnWindow {
     func countClick(_ p: CGPoint, button: Int) {
         let now = uptime
         if let l = lastClick, l.button == button, now - l.time < 0.5, abs(l.point.x - p.x) < 5, abs(l.point.y - p.y) < 5 {
@@ -97,7 +97,7 @@ extension W32Window {
         return handler(RawDragEvent(kind: kind, location: CGPoint(x: ev.x, y: ev.y), fileURLs: files, strings: text.isEmpty ? [] : [text]))
     }
 
-    func setFocusedContainer(_ w: W32Widget?) {
+    func setFocusedContainer(_ w: DrawnWidget?) {
         guard w !== focusedContainer else { return }
         let old = focusedContainer
         focusedContainer = w
@@ -109,7 +109,7 @@ extension W32Window {
 
     /// A button whose key equivalent this is, anywhere in the window.
     func pressKeyEquivalent(_ press: KeyPress) -> Bool {
-        func find(_ w: W32Widget) -> W32Widget? {
+        func find(_ w: DrawnWidget) -> DrawnWidget? {
             if w.keyEquivalent == press, w.props.enabled, w.props.opacity > 0.01 { return w }
             for c in w.children { if let f = find(c) { return f } }
             if let d = w.document { return find(d) }
@@ -128,7 +128,7 @@ extension W32Window {
     }
 
     /// Creates or moves `w`'s RichEdit to its frame (called while painting).
-    func placeRich(_ w: W32Widget, frame: CGRect, clip: CGRect, background: RGBA) {
+    func placeRich(_ w: DrawnWidget, frame: CGRect, clip: CGRect, background: RGBA) {
         guard let n = native else { return }
         let id = ObjectIdentifier(w)
         backend.ensureRich(w, in: self)
@@ -198,17 +198,17 @@ enum MenuText {
     let transient: Bool
     let onClose: @MainActor () -> Void
     var keyHandler: (@MainActor (KeyPress) -> Bool)?
-    weak var anchor: W32Widget?
+    weak var anchor: DrawnWidget?
     var rect: CGRect
     var edge: PopoverEdge
-    init(transient: Bool, anchor: W32Widget, rect: CGRect, edge: PopoverEdge, onClose: @escaping @MainActor () -> Void) {
+    init(transient: Bool, anchor: DrawnWidget, rect: CGRect, edge: PopoverEdge, onClose: @escaping @MainActor () -> Void) {
         self.transient = transient; self.anchor = anchor; self.rect = rect; self.edge = edge; self.onClose = onClose
     }
 }
 
 // MARK: Tray
 
-@MainActor final class W32Tray {
+@MainActor final class DrawnTray {
     var native: OpaquePointer?
     let menu: @MainActor () -> [MenuItemSpec]
     let activate: @MainActor () -> Void
@@ -217,7 +217,7 @@ enum MenuText {
     }
     func clicked(secondary: Bool) {
         let items = menu()
-        if secondary || !items.isEmpty, let w = Win32Backend.current?.activeWindow, let n = w.native, !items.isEmpty {
+        if secondary || !items.isEmpty, let w = DrawnBackend.current?.activeWindow, let n = w.native, !items.isEmpty {
             // At the pointer: the tray sits outside every window.
             w.showMenu(items, at: w.screenPointer(), n)
         } else {
@@ -226,15 +226,15 @@ enum MenuText {
     }
 }
 
-extension W32Window {
+extension DrawnWindow {
     /// The pointer in this window's coordinates, wherever it is on screen.
     func screenPointer() -> CGPoint { mouse }
 }
 
 // MARK: The view system
 
-extension Win32Backend: ViewSystemBackend {
-    func w32(_ w: NativeWindow) -> W32Window? { w as? W32Window }
+extension DrawnBackend: ViewSystemBackend {
+    func w32(_ w: NativeWindow) -> DrawnWindow? { w as? DrawnWindow }
 
     public func setEventHandler(_ window: NativeWindow, _ handler: ((RawEvent) -> Bool)?) { w32(window)?.rawHandler = handler }
     public func setActivationHandler(_ window: NativeWindow, _ handler: ((Bool) -> Void)?) { w32(window)?.activationHandler = handler }
@@ -306,7 +306,7 @@ extension Win32Backend: ViewSystemBackend {
 
     public func setKeyboardFocus(_ widget: NativeWidget?, in window: NativeWindow) {
         guard let win = w32(window) else { return }
-        if let w = widget as? W32Widget {
+        if let w = widget as? DrawnWidget {
             focus(w)
         } else {
             win.setFocusedContainer(nil)
@@ -359,12 +359,12 @@ extension Win32Backend: ViewSystemBackend {
 
 // MARK: AppKit's controls
 
-extension Win32Backend: AppKitBackend {
-    private func widget(_ w: NativeWidget) -> W32Widget { w as! W32Widget }
+extension DrawnBackend: AppKitBackend {
+    private func widget(_ w: NativeWidget) -> DrawnWidget { w as! DrawnWidget }
 
     public func makeEventContainer(focusable: Bool, pointer: @escaping @MainActor (PointerEvent) -> Bool,
                                    key: @escaping @MainActor (KeyPress) -> Bool) -> NativeWidget {
-        let w = W32Widget(.container)
+        let w = DrawnWidget(.container)
         w.pointerHandler = pointer
         w.keyHandler = key
         w.focusable = focusable
@@ -449,7 +449,7 @@ extension Win32Backend: AppKitBackend {
 
     // Rich text.
     public func makeTextView() -> NativeWidget {
-        let w = W32Widget(.textEditor)
+        let w = DrawnWidget(.textEditor)
         w.isRich = true
         return w
     }
@@ -494,7 +494,7 @@ extension Win32Backend: AppKitBackend {
         setNativeSelection(w, range)
     }
 
-    private func setNativeSelection(_ w: W32Widget, _ range: Range<Int>) {
+    private func setNativeSelection(_ w: DrawnWidget, _ range: Range<Int>) {
         guard let r = w.rich?.pointer else { return }
         let a = TextOffsets.utf16Offset(scalar: range.lowerBound, in: w.richString)
         let b = TextOffsets.utf16Offset(scalar: range.upperBound, in: w.richString)
@@ -583,7 +583,7 @@ extension Win32Backend: AppKitBackend {
                             transient: Bool, onClose: @escaping @MainActor () -> Void) -> AnyObject {
         let a = widget(anchor)
         guard let owner = a.window else { return PopoverState(transient: transient, anchor: a, rect: rect, edge: edge, onClose: onClose) }
-        let pop = W32Window(WindowOptions(title: "", size: size, resizable: false, modal: false), parent: owner, backend: self, popup: true)
+        let pop = DrawnWindow(WindowOptions(title: "", size: size, resizable: false, modal: false), parent: owner, backend: self, popup: true)
         windows.append(pop)
         let state = PopoverState(transient: transient, anchor: a, rect: rect, edge: edge, onClose: onClose)
         pop.popover = state
@@ -597,7 +597,7 @@ extension Win32Backend: AppKitBackend {
         return pop
     }
 
-    private func placePopover(_ pop: W32Window, size: CGSize) {
+    private func placePopover(_ pop: DrawnWindow, size: CGSize) {
         guard let state = pop.popover, let a = state.anchor, let n = pop.native else { return }
         let f = a.windowFrame
         let r = state.rect == .zero ? CGRect(origin: f.origin, size: f.size) : state.rect.offsetBy(dx: f.minX, dy: f.minY)
@@ -613,7 +613,7 @@ extension Win32Backend: AppKitBackend {
     }
 
     public func setPopoverSize(_ popover: AnyObject, _ size: CGSize) {
-        guard let pop = popover as? W32Window else { return }
+        guard let pop = popover as? DrawnWindow else { return }
         pop.root.frame.size = size
         if let c = pop.root.children.first { setChildren(pop.root, [(c, CGRect(origin: .zero, size: size))], contentSize: size) }
         placePopover(pop, size: size)
@@ -621,25 +621,25 @@ extension Win32Backend: AppKitBackend {
     }
 
     public func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool) {
-        (popover as? W32Window)?.popover?.keyHandler = handler
+        (popover as? DrawnWindow)?.popover?.keyHandler = handler
     }
 
     public func closePopover(_ popover: AnyObject) {
-        guard let pop = popover as? W32Window else { return }
+        guard let pop = popover as? DrawnWindow else { return }
         pop.closePopoverWindow()
     }
 
     // Window chrome: the system title bar holds the title and buttons.
     public func labelAreaInsets(_ native: NativeWidget) -> EdgeInsetsValue { contentInsets(native) }
     public func beginWindowMove(_ window: NativeWindow, button: Int, at point: CGPoint, timestamp: TimeInterval) {
-        if Win32Backend.debugInput { FileHandle.standardError.write("beginWindowMove \(point)\n".data(using: .utf8)!) }
+        if DrawnBackend.debugInput { FileHandle.standardError.write("beginWindowMove \(point)\n".data(using: .utf8)!) }
         if button == 0, let n = w32(window)?.native { rw_window_begin_move(n) }
     }
     public func setPassesThrough(_ container: NativeWidget, _ passes: Bool) { widget(container).passesThrough = passes }
 
     // Status items.
     public func makeStatusItem(_ spec: StatusItemSpec, menu: @escaping @MainActor () -> [MenuItemSpec], activate: @escaping @MainActor () -> Void) -> AnyObject? {
-        let t = W32Tray(menu: menu, activate: activate)
+        let t = DrawnTray(menu: menu, activate: activate)
         let tip = spec.tooltip ?? spec.title
         guard let n = rw_tray_create(tip.isEmpty ? (ProcessInfo.processInfo.processName) : tip, Unmanaged.passUnretained(t).toOpaque()) else { return nil }
         t.native = n
@@ -648,12 +648,12 @@ extension Win32Backend: AppKitBackend {
         return t
     }
     public func updateStatusItem(_ item: AnyObject, _ spec: StatusItemSpec) {
-        guard let t = item as? W32Tray, let n = t.native else { return }
+        guard let t = item as? DrawnTray, let n = t.native else { return }
         let tip = spec.tooltip ?? spec.title
         rw_tray_update(n, tip.isEmpty ? ProcessInfo.processInfo.processName : tip, spec.visible ? 1 : 0)
     }
     public func removeStatusItem(_ item: AnyObject) {
-        guard let t = item as? W32Tray else { return }
+        guard let t = item as? DrawnTray else { return }
         if let n = t.native { rw_tray_destroy(n) }
         t.native = nil
         trays.removeAll { $0 === t }
@@ -675,9 +675,9 @@ extension Win32Backend: AppKitBackend {
 
 // MARK: Rich text plumbing
 
-extension Win32Backend {
+extension DrawnBackend {
     /// Makes `w`'s RichEdit in `window` (or moves it there).
-    func ensureRich(_ w: W32Widget, in window: W32Window) {
+    func ensureRich(_ w: DrawnWidget, in window: DrawnWindow) {
         if w.rich != nil, w.richWindow === window { return }
         guard let n = window.native else { return }
         w.rich = nil
@@ -695,9 +695,9 @@ extension Win32Backend {
         }
     }
 
-    func applyRichConfig(_ w: W32Widget, background: RGBA) {
+    func applyRichConfig(_ w: DrawnWidget, background: RGBA) {
         guard let r = w.rich?.pointer else { return }
-        let key = W32Widget.RichApplied(config: w.richConfig, background: background, typing: w.richEvents.insertText != nil)
+        let key = DrawnWidget.RichApplied(config: w.richConfig, background: background, typing: w.richEvents.insertText != nil)
         guard key != w.richConfigApplied else { return }
         w.richConfigApplied = key
         w.richBackground = background
@@ -751,7 +751,7 @@ extension Win32Backend {
         native.withUnsafeBufferPointer { body($0.baseAddress, Int32($0.count)) }
     }
 
-    func richEvent(_ w: W32Widget, _ ev: rw_event) -> Bool {
+    func richEvent(_ w: DrawnWidget, _ ev: rw_event) -> Bool {
         let e = w.richEvents
         switch ev.type {
         case RW_EV_RICH_CHANGED:

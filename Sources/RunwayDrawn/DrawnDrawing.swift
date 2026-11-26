@@ -2,11 +2,11 @@
 // views' `draw(_:)`, recorded by CGContext) with rw_draw_*, and lays out and
 // measures their text with the same text boxes the controls use.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
 import CoreGraphics
-import CRunwayWin32
+import CRunwayDrawn
 
 @MainActor enum DisplayListPlayer {
     /// Replays `list` in a widget whose top-left is at `origin` (window DIPs).

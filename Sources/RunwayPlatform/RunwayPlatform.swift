@@ -1,13 +1,16 @@
-// Picks the platform's backend: GTK 4 on Linux, Win32 on Windows. Set
-// RUNWAY_BACKEND=headless to run with no display (tests, CI, `--headless`).
+// Picks the platform's backend: GTK 4 on Linux, the drawn backend (over
+// Win32) on Windows. Set RUNWAY_BACKEND=headless to run with no display
+// (tests, CI, `--headless`), or RUNWAY_BACKEND=drawn on Linux for the drawn
+// backend over GTK: the same controls and behaviour as on Windows.
 
 import Foundation
 import RunwayCore
 #if os(Linux)
 import RunwayGTK
 import CGtk
+import RunwayDrawn
 #elseif os(Windows)
-import RunwayWin32
+import RunwayDrawn
 #endif
 
 @MainActor public enum RunwayPlatform {
@@ -27,9 +30,10 @@ import RunwayWin32
             return HeadlessBackend()
         }
         RuntimeDefaults.applyBeforeToolkitInit()
+        if env["RUNWAY_BACKEND"] == "drawn" { return DrawnBackend() }
         return GTKBackend()
         #elseif os(Windows)
-        return Win32Backend()
+        return DrawnBackend()
         #else
         return HeadlessBackend()
         #endif

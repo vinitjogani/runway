@@ -1,7 +1,7 @@
 // SF Symbols names → glyphs of Segoe Fluent Icons (Windows 11) or Segoe
 // MDL2 Assets (Windows 10), which share these code points.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
 

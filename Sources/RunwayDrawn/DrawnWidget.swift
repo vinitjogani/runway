@@ -3,11 +3,11 @@
 // Direct2D, so they can be translucent, rounded and antialiased, overlap
 // freely and cost no HWND. Only text input uses a native child (an EDIT).
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
 import CoreGraphics
-import CRunwayWin32
+import CRunwayDrawn
 
 // MARK: Native handles
 
@@ -49,7 +49,7 @@ enum Fonts {
         if rw_font_available("Segoe Fluent Icons") != 0 { icon = "Segoe Fluent Icons" }
         // The first installed of the usual code fonts (Wine and trimmed
         // systems lack Consolas).
-        for f in ["Cascadia Mono", "Consolas", "JetBrains Mono", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Courier New"]
+        for f in [BundledFonts.monoFamily, "Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Courier New"]
             where rw_font_available(f) != 0 {
             mono = f
             break
@@ -71,7 +71,11 @@ enum Fonts {
     static func family(for f: FontSpec) -> String? {
         if let fam = f.family, !fam.isEmpty, !fam.hasPrefix(".") {
             if ["SF Mono", "Menlo", "Monaco", "Courier", "SFMono-Regular"].contains(fam) { return mono }
-            if fam == "System" || fam == "SF Pro" || fam == "SF Pro Text" || fam == "Helvetica Neue" || fam == "Helvetica" { return nil }
+            if fam == "System" || fam == "Helvetica" { return nil }
+            // Mac faces apps name: what Runway draws them with.
+            if let alias = BundledFonts.aliases.first(where: { $0.0 == fam })?.1, !installed(fam) {
+                return alias == BundledFonts.monoFamily ? mono : nil
+            }
             return installed(fam) ? fam : (f.design == .monospaced ? mono : nil)
         }
         switch f.design {
@@ -239,19 +243,19 @@ final class PathBox {
 
 // MARK: Widgets
 
-@MainActor final class W32Widget: NativeWidget {
+@MainActor final class DrawnWidget: NativeWidget {
     let kind: WidgetKind
     var props = WidgetProps()
     var events = WidgetEvents()
     /// In the parent container's coordinates.
     var frame: CGRect = .zero
-    var children: [W32Widget] = []
-    weak var parent: W32Widget?
+    var children: [DrawnWidget] = []
+    weak var parent: DrawnWidget?
     /// Set on a window's root container.
-    weak var hostWindow: W32Window?
+    weak var hostWindow: DrawnWindow?
     var contentSize: CGSize = .zero
     /// A scroll view's document and position.
-    var document: W32Widget?
+    var document: DrawnWidget?
     var scrollOffset: CGPoint = .zero
 
     // Drawing resources.
@@ -264,7 +268,7 @@ final class PathBox {
 
     // Text input.
     var edit: NativeHandle?
-    weak var editWindow: W32Window?
+    weak var editWindow: DrawnWindow?
     var editFocused = false
     var editText = ""
 
@@ -299,7 +303,7 @@ final class PathBox {
     var richString = ""
     var richSelection = 0..<0
     var richHeight: CGFloat = 0
-    weak var richWindow: W32Window?
+    weak var richWindow: DrawnWindow?
     var richBackground: RGBA?
     var richLayers: (below: CGDisplayList?, above: CGDisplayList?) = (nil, nil)
     struct RichApplied: Equatable { let config: TextViewConfig; let background: RGBA; let typing: Bool }
@@ -313,7 +317,7 @@ final class PathBox {
 
     init(_ kind: WidgetKind) { self.kind = kind }
 
-    var window: W32Window? {
+    var window: DrawnWindow? {
         var w = self
         while let p = w.parent { w = p }
         return w.hostWindow

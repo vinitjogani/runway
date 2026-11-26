@@ -417,7 +417,19 @@ final class WorkBox {
     private var colorRules: [String: String] = [:]
 
     public init() {
+        // Runway's bundled fonts (Inter, JetBrains Mono) and the Mac names
+        // they stand in for, before GTK lays out any text.
+        let files = BundledFonts.filesToRegister()
+        if !files.isEmpty {
+            let owned = (files + BundledFonts.aliases.flatMap { [$0.0, $0.1] }).map { strdup($0) }
+            let ptrs = owned.map { UnsafePointer($0) }
+            ptrs.withUnsafeBufferPointer { b in
+                runway_register_fonts(b.baseAddress, Int32(files.count), b.baseAddress! + files.count, Int32(BundledFonts.aliases.count))
+            }
+            owned.forEach { free($0) }
+        }
         gtk_init()
+        if ProcessInfo.processInfo.environment["RUNWAY_NATIVE_LOOK"] == nil { runway_tune_text_rendering() }
         colorScheme = runway_prefers_dark() != 0 ? .dark : .light
         if let s = gtk_settings_get_default() {
             // Focusing selectable text (the first focusable view in a
@@ -868,7 +880,7 @@ final class WorkBox {
             let f = run.font
             var desc: [String] = []
             switch f.design {
-            case .monospaced: desc.append("Monospace")
+            case .monospaced: desc.append("\(BundledFonts.monoFamily),Monospace")
             case .serif: desc.append("Serif")
             default: if let fam = f.family { desc.append(fam) }
             }
@@ -1071,7 +1083,7 @@ final class WorkBox {
         guard let run, let name else { return }
         if colorRules[name] == nil {
             let f = run.font
-            let family = f.design == .monospaced ? "monospace" : f.design == .serif ? "serif"
+            let family = f.design == .monospaced ? "\"\(BundledFonts.monoFamily)\", monospace" : f.design == .serif ? "serif"
                 : MacTheme.fontFamilyCSS(f.family.map { [$0] } ?? systemFontFamilies)
             let weight: Int = switch f.weight {
             case .ultraLight: 100

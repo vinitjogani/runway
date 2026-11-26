@@ -711,7 +711,7 @@ extension GTKBackend: AppKitBackend {
     static func pangoFont(_ f: FontSpec) -> String {
         var d: [String] = []
         switch f.design {
-        case .monospaced: d.append("Monospace")
+        case .monospaced: d.append("\(BundledFonts.monoFamily),Monospace")
         case .serif: d.append("Serif")
         default: d.append(f.family ?? MacTheme.pangoFamilies)
         }

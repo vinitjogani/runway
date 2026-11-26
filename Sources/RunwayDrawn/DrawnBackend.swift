@@ -9,35 +9,49 @@
 // input uses real EDIT controls positioned over custom-drawn fields so IME,
 // selection, the clipboard and accessibility behave natively.
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
 import Foundation
 import RunwayCore
-import CRunwayWin32
+import CRunwayDrawn
 
 /// Native events arrive here and go to the window or widget in `ctx`.
 private let eventCallback: rw_event_fn = { event in
     guard let event else { return 0 }
     let ev = event.pointee
-    return MainActor.assumeIsolated { Win32Backend.current?.handle(ev) ?? 0 }
+    return MainActor.assumeIsolated { DrawnBackend.current?.handle(ev) ?? 0 }
 }
 
-@MainActor public final class Win32Backend: Backend {
+/// The drawn backend's former name, from when it ran on Windows only.
+public typealias Win32Backend = DrawnBackend
+
+@MainActor public final class DrawnBackend: Backend {
+    #if os(Windows)
     public let name = "win32"
+    #else
+    public let name = "drawn"
+    #endif
     public var onColorSchemeChange: (() -> Void)?
     public private(set) var colorScheme: ColorSchemeValue
     public lazy var services: PlatformServices = Win32Services(backend: self)
-    static weak var current: Win32Backend?
+    static weak var current: DrawnBackend?
     /// RUNWAY_DEBUG_INPUT=1: how presses are routed, on stderr.
     static let debugInput = ProcessInfo.processInfo.environment["RUNWAY_DEBUG_INPUT"] != nil
 
-    var windows: [W32Window] = []
-    var trays: [W32Tray] = []
+    var windows: [DrawnWindow] = []
+    var trays: [DrawnTray] = []
     /// The scheme AppKit asked for (nil: the system's).
     var preferredScheme: ColorSchemeValue?
     private var queue: [@MainActor () -> Void] = []
     private var wakePending = false
+    private var timersPumped = false
 
     public init() {
+        // Runway's bundled fonts, before any text is laid out.
+        let files = BundledFonts.filesToRegister()
+        let aliases = BundledFonts.aliases.flatMap { [$0.0, $0.1] }
+        Self.withCStrings(files) { paths, n in
+            Self.withCStrings(aliases) { names, _ in rw_register_fonts(paths, n, names, Int32(BundledFonts.aliases.count)) }
+        }
         _ = rw_init(eventCallback)
         Fonts.configure()
         colorScheme = rw_dark_mode() != 0 ? .dark : .light
@@ -46,15 +60,30 @@ private let eventCallback: rw_event_fn = { event in
 
     var theme: Theme { Theme(dark: colorScheme == .dark) }
 
+    private static func withCStrings<R>(_ strings: [String], _ body: (UnsafePointer<UnsafePointer<CChar>?>?, Int32) -> R) -> R {
+        let owned = strings.map { strdup($0) }
+        defer { owned.forEach { free($0) } }
+        let pointers = owned.map { UnsafePointer($0) }
+        return pointers.withUnsafeBufferPointer { body($0.baseAddress, Int32($0.count)) }
+    }
+
     /// The window to own dialogs: the frontmost one we made.
-    var activeWindow: W32Window? { windows.last { $0.isOpen } }
+    var activeWindow: DrawnWindow? { windows.last { $0.isOpen } }
 
     // MARK: Events
 
     func handle(_ ev: rw_event) -> Int32 {
+        let r = dispatch(ev)
+        // Timers the event scheduled get their wake-up.
+        if ev.type != RW_EV_PAINT, ev.type != RW_EV_WAKE, ev.type != RW_EV_RICH_PAINT { pumpRunLoop() }
+        return r
+    }
+
+    private func dispatch(_ ev: rw_event) -> Int32 {
         switch ev.type {
         case RW_EV_WAKE:
             drain()
+            pumpRunLoop()
             return 0
         case RW_EV_THEME_CHANGED:
             let scheme: ColorSchemeValue = preferredScheme ?? (rw_dark_mode() != 0 ? .dark : .light)
@@ -62,24 +91,24 @@ private let eventCallback: rw_event_fn = { event in
             return 0
         case RW_EV_RICH_CHANGED, RW_EV_RICH_SELECTION, RW_EV_RICH_FOCUS, RW_EV_RICH_CHAR, RW_EV_RICH_KEY, RW_EV_RICH_POINTER, RW_EV_RICH_HEIGHT, RW_EV_RICH_PAINT:
             guard let ctx = ev.ctx else { return 0 }
-            let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
+            let widget = Unmanaged<DrawnWidget>.fromOpaque(ctx).takeUnretainedValue()
             return richEvent(widget, ev) ? 1 : 0
         case RW_EV_TRAY:
             guard let ctx = ev.ctx else { return 0 }
-            Unmanaged<W32Tray>.fromOpaque(ctx).takeUnretainedValue().clicked(secondary: ev.button != 0)
+            Unmanaged<DrawnTray>.fromOpaque(ctx).takeUnretainedValue().clicked(secondary: ev.button != 0)
             return 0
         case RW_EV_EDIT_KEY:
             guard let ctx = ev.ctx else { return 0 }
-            let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
+            let widget = Unmanaged<DrawnWidget>.fromOpaque(ctx).takeUnretainedValue()
             guard let handler = widget.fieldKey, let press = Keys.press(Int(ev.key), mods: ev.mods) else { return 0 }
             return handler(press) ? 1 : 0
         case RW_EV_EDIT_CHANGED, RW_EV_EDIT_SUBMIT, RW_EV_EDIT_FOCUS, RW_EV_EDIT_BLUR:
             guard let ctx = ev.ctx else { return 0 }
-            let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
+            let widget = Unmanaged<DrawnWidget>.fromOpaque(ctx).takeUnretainedValue()
             return editEvent(widget, ev.type) ? 1 : 0
         default:
             guard let ctx = ev.ctx else { return 0 }
-            let window = Unmanaged<W32Window>.fromOpaque(ctx).takeUnretainedValue()
+            let window = Unmanaged<DrawnWindow>.fromOpaque(ctx).takeUnretainedValue()
             if ev.type == RW_EV_DRAG { return Int32(window.dragEvent(ev).rawValue) }
             return window.handle(ev) ? 1 : 0
         }
@@ -91,7 +120,7 @@ private let eventCallback: rw_event_fn = { event in
         onColorSchemeChange?()
     }
 
-    private func editEvent(_ w: W32Widget, _ type: Int32) -> Bool {
+    private func editEvent(_ w: DrawnWidget, _ type: Int32) -> Bool {
         switch type {
         case RW_EV_EDIT_CHANGED:
             guard let e = w.edit, let c = rw_edit_copy_text(e.pointer) else { return false }
@@ -127,9 +156,9 @@ private let eventCallback: rw_event_fn = { event in
     // MARK: Widgets
 
     public func makeWidget(_ kind: WidgetKind) -> NativeWidget {
-        let w = W32Widget(kind)
+        let w = DrawnWidget(kind)
         if case .scroll = kind {
-            let doc = W32Widget(.container)
+            let doc = DrawnWidget(.container)
             doc.parent = w
             w.document = doc
         }
@@ -137,7 +166,7 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func update(_ widget: NativeWidget, props p: WidgetProps, events: WidgetEvents) {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         let old = w.props
         w.events = events
         w.props = p
@@ -169,7 +198,7 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         let p = w.props
         let m = Metrics(size: p.controlSize)
         func titleSize(_ s: String) -> CGSize { TextMetrics.size(s, size: m.font) }
@@ -236,7 +265,7 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         guard w.kind == .text, let p = w.label.pointer else { return nil }
         var lines = [Double](repeating: 0, count: 256)
         let n = Int(lines.withUnsafeMutableBufferPointer { rw_text_baselines(p, Double(width ?? 0), $0.baseAddress, 256) })
@@ -245,7 +274,7 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func contentInsets(_ widget: NativeWidget) -> EdgeInsetsValue {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         guard w.kind == .button else { return .zero }
         let m = Metrics(size: w.props.controlSize)
         let h = m.padding - 2
@@ -253,18 +282,18 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func childContainer(_ widget: NativeWidget) -> NativeWidget {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         return w.document ?? w
     }
 
     public func setChildren(_ container: NativeWidget, _ children: [(NativeWidget, CGRect)], contentSize: CGSize) {
-        let c = container as! W32Widget
+        let c = container as! DrawnWidget
         c.contentSize = contentSize
-        var list: [W32Widget] = []
+        var list: [DrawnWidget] = []
         list.reserveCapacity(children.count)
         var placed = Set<ObjectIdentifier>()
         for (child, frame) in children {
-            let w = child as! W32Widget
+            let w = child as! DrawnWidget
             if let old = w.parent, old !== c { old.children.removeAll { $0 === w } }
             w.parent = c
             w.frame = frame
@@ -283,7 +312,7 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func destroy(_ widget: NativeWidget) {
-        let w = widget as! W32Widget
+        let w = widget as! DrawnWidget
         let window = w.window
         window?.forget(w)
         window?.invalidate()
@@ -295,12 +324,12 @@ private let eventCallback: rw_event_fn = { event in
     // MARK: Windows and the loop
 
     public func makeWindow(_ options: WindowOptions, parent: NativeWindow?) -> NativeWindow {
-        let w = W32Window(options, parent: parent as? W32Window, backend: self)
+        let w = DrawnWindow(options, parent: parent as? DrawnWindow, backend: self)
         windows.append(w)
         return w
     }
 
-    func windowClosed(_ w: W32Window) { windows.removeAll { $0 === w } }
+    func windowClosed(_ w: DrawnWindow) { windows.removeAll { $0 === w } }
 
     public func run(_ start: @escaping @MainActor () -> Void) {
         schedule(start)
@@ -313,11 +342,20 @@ private let eventCallback: rw_event_fn = { event in
     }
 
     public func schedule(_ work: @escaping @MainActor () -> Void) {
+        defer { if !timersPumped { timersPumped = true; pumpRunLoop() } }
         queue.append(work)
         if !wakePending {
             wakePending = true
             rw_wake()
         }
+    }
+
+    /// Fires RunLoop.main's due timers (Timer, perform(afterDelay:)) and
+    /// wakes again for the next one: the loop here is the toolkit's.
+    func pumpRunLoop() {
+        guard let next = RunLoop.main.limitDate(forMode: .default) else { rw_wake_after(-1); return }
+        let ms = next.timeIntervalSinceNow * 1000
+        rw_wake_after(ms > 86_400_000 ? -1 : Int32(max(1, ms.rounded(.up))))
     }
 
     private func drain() {

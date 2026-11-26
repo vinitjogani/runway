@@ -27,6 +27,7 @@
 #include <d2d1.h>
 #include <d2d1helper.h>
 #include <dwrite.h>
+#include <dwrite_3.h>
 #include <wincodec.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -45,7 +46,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "runway_win32.h"
+#include "runway_drawn.h"
 
 // Diagnostics for development builds (-DRW_DEBUG).
 #ifdef RW_DEBUG
@@ -71,6 +72,7 @@ struct RwGlobals {
     IWICImagingFactory *wic = nullptr;
     HWND messageWindow = nullptr;
     std::wstring uiFamily = L"Segoe UI";
+    IDWriteFontCollection *privateFonts = nullptr;   // fonts the app brings (rw_register_fonts)
 };
 extern RwGlobals rwG;
 
@@ -160,6 +162,8 @@ extern const UINT rwTrayMessageId;
 HMENU rwMenuHandle(rw_menu *m);
 void rwMenuRelease(rw_menu *m);
 bool rwEnsureWIC();
+/// The collection a family is in: the app's own fonts, else the system's (nullptr).
+IDWriteFontCollection *rwCollectionFor(const wchar_t *family);
 void rwPaintDC(rw_window *surface, HDC dc, RECT rc, UINT dpi, const void *underlay, int event, void *ctx, int button);
 SIZE rwOuterSize(HWND h, DWORD style, UINT dpi, double width, double height);
 
