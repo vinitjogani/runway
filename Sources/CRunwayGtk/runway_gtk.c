@@ -700,7 +700,14 @@ void runway_menu_button_set(GtkWidget *menu_button, const char *const *titles, c
         g_object_unref(a);
         char detailed[40];
         g_snprintf(detailed, sizeof detailed, "rw.%s", name);
-        g_menu_append(sections[depth], titles[i], detailed);
+        // "Title\t<Control>z": the shortcut shown trailing, as menus show them.
+        const char *tab = strchr(titles[i], '\t');
+        char *label = tab ? g_strndup(titles[i], (gsize)(tab - titles[i])) : g_strdup(titles[i]);
+        GMenuItem *item = g_menu_item_new(label, detailed);
+        if (tab && tab[1]) g_menu_item_set_attribute(item, "accel", "s", tab + 1);
+        g_menu_append_item(sections[depth], item);
+        g_object_unref(item);
+        g_free(label);
     }
     gtk_widget_insert_action_group(menu_button, "rw", G_ACTION_GROUP(group));
     gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(stack[0]));

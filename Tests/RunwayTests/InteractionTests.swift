@@ -584,6 +584,24 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(box.picked, "open")
     }
 
+    func testMenuItemsCarrySymbolsShortcutsAndRoles() {
+        let (_, root) = render(Text("row").contextMenu {
+            Button("Copy Line", systemImage: "doc.on.doc") {}.keyboardShortcut("c", modifiers: [.command, .shift])
+            Label("Comment", systemImage: "plus.bubble")
+            Button("Delete", role: .destructive) {}
+            Toggle("Wrap", isOn: .constant(true))
+        })
+        for a in pointerWidgets(root) { _ = HeadlessBackend.record(a).pointer?(PointerEvent(kind: .down, location: CGPoint(x: 2, y: 2), button: 1)) }
+        let menu = HeadlessBackend.poppedUpMenus.last ?? []
+        let copy = menu.first { $0.title == "Copy Line" }
+        XCTAssertEqual(copy?.symbol, "doc.on.doc")
+        XCTAssertEqual(copy?.shortcut, KeyPress(key: "c", command: true, shift: true))
+        XCTAssertEqual(copy?.shortcut?.displayText, "Ctrl+Shift+C")
+        XCTAssertEqual(copy?.shortcut?.gtkAccelerator, "<Control><Shift>c")
+        XCTAssertEqual(menu.first { $0.title == "Delete" }?.destructive, true)
+        XCTAssertEqual(menu.first { $0.title == "Wrap" }?.checked, true)
+    }
+
     func testTableSortsSelectsAndOpens() {
         var opened: [Set<Int>] = []
         let (_, root) = render(TableProbe { opened.append($0) }, size: CGSize(width: 400, height: 300))

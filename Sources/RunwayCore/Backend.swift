@@ -257,6 +257,19 @@ public struct KeyPress: Hashable, Sendable {
         parts.append(names[key] ?? (key.count == 1 ? key.uppercased() : key.capitalized))
         return parts.joined(separator: "+")
     }
+    /// In GTK's accelerator syntax ("<Control><Shift>z").
+    public var gtkAccelerator: String {
+        let names = ["return": "Return", "escape": "Escape", "delete": "Delete", "backspace": "BackSpace", "tab": "Tab", "space": "space",
+                     "up": "Up", "down": "Down", "left": "Left", "right": "Right", "pageup": "Page_Up", "pagedown": "Page_Down",
+                     "home": "Home", "end": "End", ",": "comma", ".": "period", "/": "slash", ";": "semicolon", "[": "bracketleft",
+                     "]": "bracketright", "-": "minus", "=": "equal", "+": "plus", "\\": "backslash", "'": "apostrophe", "`": "grave"]
+        var s = ""
+        if command { s += "<Control>" }
+        if shift { s += "<Shift>" }
+        if option { s += "<Alt>" }
+        if control { s += "<Super>" }
+        return s + (names[key] ?? (key.count > 1 && key.hasPrefix("f") ? key.uppercased() : key))
+    }
     public var key: String           // "return", "escape", "tab", "a"…, lowercased
     public var command: Bool         // ⌘ on macOS; Ctrl on Linux and Windows
     public var shift: Bool

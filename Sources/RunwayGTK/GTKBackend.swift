@@ -1123,7 +1123,7 @@ final class WorkBox {
         var flat: [MenuItemSpec] = []
         func walk(_ list: [MenuItemSpec], _ depth: Int32) {
             for i in list {
-                titles.append(i.title)
+                titles.append(i.shortcut.map { i.title + "\t" + $0.gtkAccelerator } ?? i.title)
                 depths.append(depth)
                 enabled.append(i.enabled ? 1 : 0)
                 checked.append(i.checked ? 1 : 0)

@@ -1021,7 +1021,7 @@ extension GTKBackend: AppKitBackend {
         var flat: [MenuItemSpec] = []
         func walk(_ list: [MenuItemSpec], _ depth: Int32) {
             for i in list {
-                titles.append(i.title); depths.append(depth); enabled.append(i.enabled ? 1 : 0); checked.append(i.checked ? 1 : 0); flat.append(i)
+                titles.append(i.shortcut.map { i.title + "\t" + $0.gtkAccelerator } ?? i.title); depths.append(depth); enabled.append(i.enabled ? 1 : 0); checked.append(i.checked ? 1 : 0); flat.append(i)
                 if i.isSeparator { kinds.append(1) } else if !i.children.isEmpty { kinds.append(2); walk(i.children, depth + 1) } else { kinds.append(0) }
             }
         }
