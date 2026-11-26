@@ -542,8 +542,12 @@ void rw_window_set_resizable(rw_window *w, int resizable) {
 
 void rw_window_show(rw_window *w) {
     if (!w) return;
-    if (w->popup) gtk_popover_popup(GTK_POPOVER(w->window));
-    else gtk_window_present(GTK_WINDOW(w->window));
+    if (w->popup) { gtk_popover_popup(GTK_POPOVER(w->window)); return; }
+    gtk_window_present(GTK_WINDOW(w->window));
+    if (w->has_pending_position) {
+        w->has_pending_position = FALSE;
+        rw_window_set_position(w, w->pending_x, w->pending_y);
+    }
 }
 
 void rw_window_show_inactive(rw_window *w) {
@@ -555,7 +559,24 @@ void rw_window_show_inactive(rw_window *w) {
 void rw_window_center(rw_window *w) { (void)w; }   // the desktop places windows
 
 void rw_window_set_position(rw_window *w, double x, double y) {
-    (void)w; (void)x; (void)y;   // GTK 4 leaves placement to the desktop
+    if (!w || w->popup) return;
+#ifdef GDK_WINDOWING_X11
+    // X11 lets a client place its windows (Wayland doesn't: there the
+    // compositor does, and this does nothing).
+    GtkNative *native = gtk_widget_get_native(w->window);
+    GdkSurface *surface = native ? gtk_native_get_surface(native) : NULL;
+    if (surface && GDK_IS_X11_SURFACE(surface)) {
+        int scale = gdk_surface_get_scale_factor(surface);
+        XMoveWindow(GDK_SURFACE_XDISPLAY(surface), GDK_SURFACE_XID(surface), (int)lround(x * scale), (int)lround(y * scale));
+        return;
+    }
+    // Not yet realised: placed once it is.
+    w->pending_x = x;
+    w->pending_y = y;
+    w->has_pending_position = TRUE;
+#else
+    (void)x; (void)y;
+#endif
 }
 
 void rw_window_invalidate(rw_window *w) { if (w && w->area && !w->cr) gtk_widget_queue_draw(w->area); }

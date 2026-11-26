@@ -67,7 +67,7 @@ let package = Package(
         // over Win32/Direct2D (Native/win32) and over GTK/Cairo/Pango (Native/gtk).
         .target(name: "CRunwayDrawn", dependencies: [.target(name: "CGtk", condition: linux), .target(name: "CRunwayGtk", condition: linux)], path: "Sources/RunwayDrawn/Native", linkerSettings: [
             "user32", "gdi32", "d2d1", "dwrite", "dwmapi", "uxtheme", "comdlg32", "shell32", "ole32", "winmm", "advapi32",
-        ].map { .linkedLibrary($0, windowsOnly) }),
+        ].map { .linkedLibrary($0, windowsOnly) } + [.linkedLibrary("X11", .when(platforms: [.linux]))]),
         .target(name: "RunwayDrawn", dependencies: [
             "RunwayCore", "CoreGraphics",
             .target(name: "CRunwayDrawn", condition: windowsOrLinux),

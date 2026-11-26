@@ -52,6 +52,8 @@ struct rw_window {
     GdkCursor *cursor;
     GtkDropTarget *drop;
     double popup_x, popup_y;      // where a popup's content sits in its owner
+    double pending_x, pending_y;  // a position asked for before the window was shown
+    gboolean has_pending_position;
 
     // A drawing pass.
     cairo_t *cr;
