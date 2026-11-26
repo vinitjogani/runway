@@ -7,6 +7,7 @@
 @_exported import Observation
 // On macOS, SwiftUI re-exports AppKit (NSView, NSViewRepresentable hosts…).
 @_exported import AppKit
+@_spi(Runway) import AppKit
 // iOS SwiftUI source likewise sees UIKit types without an explicit import.
 @_exported @_spi(Runway) import UIKit
 import RunwayCore
@@ -388,7 +389,7 @@ extension EnvironmentValues {
     let window: NativeWindow
     let host: ViewHost
     var onClose: (() -> Void)?
-    var extraKeys: ((KeyPress) -> Bool)?
+    var extraKeys: ((RunwayCore.KeyPress) -> Bool)?
 
     init(title: String, view: AnyView, size: CGSize?, sizedToContent: Bool, parent: NativeWindow? = nil, modal: Bool = false, environment: EnvironmentValues = EnvironmentValues()) {
         let backend = Runway.backend
@@ -398,7 +399,9 @@ extension EnvironmentValues {
         host = ViewHost(view, backend: backend, container: content, environment: environment)
         let ideal = size == nil ? host.idealSize() : .zero
         let initial = size ?? CGSize(width: max(ideal.width, 200).rounded(.up), height: max(ideal.height, 80).rounded(.up))
-        window = backend.makeWindow(WindowOptions(title: title, size: initial, resizable: !sizedToContent, modal: modal), parent: parent)
+        // A modal window over another is a sheet: no titlebar row, as on the Mac.
+        window = backend.makeWindow(WindowOptions(title: title, size: initial, resizable: !sizedToContent, modal: modal,
+                                                  titlebar: modal && parent != nil ? .none : .standard), parent: parent)
         host.window = window
         backend.setChildren(window.content, [(content, CGRect(origin: .zero, size: initial))], contentSize: initial)
         host.setSize(initial)
@@ -435,7 +438,7 @@ extension EnvironmentValues {
 // MARK: Sheets and alerts
 
 /// A modal window presented from a view (sheet, alert, confirmation dialog).
-@MainActor final class Presentation {
+@MainActor class Presentation {
     var content: () -> AnyView
     var onDismiss: () -> Void
     var environment: EnvironmentValues
@@ -454,7 +457,7 @@ extension EnvironmentValues {
         windowHost?.host.baseEnvironment = presentationEnvironment
         windowHost?.host.setRoot(content())
     }
-    private var presentationEnvironment: EnvironmentValues {
+    var presentationEnvironment: EnvironmentValues {
         var env = environment
         env.dismiss = DismissAction { [weak self] in self?.onDismiss() }
         env.isPresented = true
@@ -474,6 +477,77 @@ extension EnvironmentValues {
         let w = windowHost
         windowHost = nil
         w?.window.close()
+    }
+}
+
+public enum PopoverAttachmentAnchor {
+    public enum Rect { case bounds; case rect(CGRect) }
+    case rect(Rect)
+    case point(UnitPoint)
+}
+
+/// A popover's content, hosted in the toolkit's popover over an anchor widget.
+@MainActor final class PopoverPresentation: Presentation {
+    let anchor: NativeWidget
+    let edge: PopoverEdge
+    private var host: ViewHost?
+    private var handle: AnyObject?
+    private var size = CGSize.zero
+
+    init(anchor: NativeWidget, edge: PopoverEdge, environment: EnvironmentValues, content: @escaping () -> AnyView, onDismiss: @escaping () -> Void) {
+        self.anchor = anchor
+        self.edge = edge
+        super.init(title: "", environment: environment, content: content, onDismiss: onDismiss)
+    }
+
+    override func update(_ other: Presentation) {
+        environment = other.environment
+        content = other.content
+        onDismiss = other.onDismiss
+        host?.baseEnvironment = presentationEnvironment
+        host?.setRoot(content())
+    }
+
+    override func open(parent: NativeWindow?) {
+        guard let appKit = Runway.appKit else { return super.open(parent: parent) }
+        let backend = Runway.backend
+        let container = backend.makeWidget(.container)
+        let h = ViewHost(content(), backend: backend, container: container, environment: presentationEnvironment)
+        h.window = parent
+        host = h
+        size = Self.rounded(h.idealSize())
+        h.setSize(size)
+        h.onIdealSizeChange = { [weak self] s in
+            guard let self, let handle = self.handle else { return }
+            let r = Self.rounded(s)
+            guard r != self.size else { return }
+            self.size = r
+            appKit.setPopoverSize(handle, r)
+            self.host?.setSize(r)
+        }
+        h.render()
+        handle = appKit.showPopover(container, size: size, anchor: anchor, rect: .zero, edge: edge, transient: true) { [weak self] in
+            guard let self, self.handle != nil else { return }
+            self.handle = nil
+            self.host?.tearDown()
+            self.host = nil
+            self.onDismiss()
+        }
+        if let handle {
+            appKit.setPopoverKeyHandler(handle) { [weak self] key in self?.host?.handleKey(key) ?? false }
+        }
+    }
+
+    override func dismissWindow() {
+        guard let handle else { return }
+        self.handle = nil
+        Runway.appKit?.closePopover(handle)
+        host?.tearDown()
+        host = nil
+    }
+
+    private static func rounded(_ s: CGSize) -> CGSize {
+        CGSize(width: max(1, s.width.rounded(.up)), height: max(1, s.height.rounded(.up)))
     }
 }
 
@@ -502,8 +576,47 @@ extension View {
         }
     }
 
-    public func popover<Content: View>(isPresented: Binding<Bool>, attachmentAnchor: Any? = nil, arrowEdge: Edge? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
-        sheet(isPresented: isPresented, content: content)
+    /// A popover pointing at this view: sized to its content, closed by a
+    /// click outside or Escape (and by setting `isPresented` to false).
+    /// Without a popover-capable backend it presents as a sheet.
+    public func popover<Content: View>(isPresented: Binding<Bool>, attachmentAnchor: PopoverAttachmentAnchor = .rect(.bounds), arrowEdge: Edge? = nil, @ViewBuilder content: @escaping () -> Content) -> some View {
+        nodes("popover") { ns, ctx in
+            guard !ctx.dryRun, Runway.appKit != nil else {
+                if isPresented.wrappedValue, !ctx.dryRun {
+                    ctx.host.present(ctx.path, Presentation(title: "", environment: ctx.env, content: { AnyView(content()) }, onDismiss: {
+                        if isPresented.wrappedValue { isPresented.wrappedValue = false }
+                    }))
+                }
+                return ns
+            }
+            let anchor = ctx.host.customWidget(ctx.path + "#anchor", fresh: false) {
+                let w = ctx.host.backend.makeWidget(.container)
+                Runway.appKit?.setPassesThrough(w, true)
+                return w
+            }
+            if isPresented.wrappedValue {
+                // The anchor's edge the popover hangs from.
+                let edge: PopoverEdge = switch arrowEdge ?? .bottom {
+                case .top: .top
+                case .bottom: .bottom
+                case .leading: .leading
+                case .trailing: .trailing
+                }
+                ctx.host.present(ctx.path, PopoverPresentation(anchor: anchor, edge: edge, environment: ctx.env,
+                                                               content: { AnyView(content()) }, onDismiss: {
+                    if isPresented.wrappedValue { isPresented.wrappedValue = false }
+                }))
+            }
+            let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
+            return [ContainerNode.modifier(anchor, ctx.host.backend, inner)]
+        }
+    }
+
+    public func popover<Item: Identifiable, Content: View>(item: Binding<Item?>, attachmentAnchor: PopoverAttachmentAnchor = .rect(.bounds), arrowEdge: Edge? = nil, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+        let shown = Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } })
+        return popover(isPresented: shown, attachmentAnchor: attachmentAnchor, arrowEdge: arrowEdge) {
+            if let value = item.wrappedValue { content(value).id(value.id) }
+        }
     }
 
     public func alert<A: View>(_ title: String, isPresented: Binding<Bool>, @ViewBuilder actions: @escaping () -> A) -> some View {
@@ -607,6 +720,10 @@ struct AlertBody: View {
 open class NSHostingController<Content: View>: NSViewController {
     public var rootView: Content { didSet { hostingView.rootView = rootView } }
     public var sizingOptions: NSHostingSizingOptions = [.minSize, .intrinsicContentSize, .maxSize]
+    /// The safe area the hosted view respects. A window here has no safe
+    /// area insets of its own (no notch, no titlebar over full-size
+    /// content), so any choice lays out the same.
+    public var safeAreaRegions: SafeAreaRegions = .all
     private lazy var hostingView = NSHostingView(rootView: rootView)
 
     public init(rootView: Content) {
@@ -651,8 +768,13 @@ open class NSHostingView<Content: View>: NSView, KeyHandling {
         let container = Runway.backend.makeWidget(.container)
         host = ViewHost(rootView, container: container)
         super.init(frame: .zero)
+        host.hostingView = self
         Runway.backend.setChildren(widget, [(container, .zero)], contentSize: .zero)
     }
+
+    /// Top-left origin, as SwiftUI lays out (NSViewRepresentable views are
+    /// framed in it).
+    open override var isFlipped: Bool { true }
     public required init?(coder: NSCoder) { fatalError("NSCoder isn't supported") }
 
     open override var managesOwnContent: Bool { true }
@@ -669,7 +791,7 @@ open class NSHostingView<Content: View>: NSView, KeyHandling {
     }
     open override var intrinsicContentSize: CGSize { fittingSize }
 
-    public func handleKey(_ key: KeyPress) -> Bool { host.handleKey(key) }
+    public func handleKey(_ key: RunwayCore.KeyPress) -> Bool { host.handleKey(key) }
 }
 
 extension Color {
@@ -727,12 +849,16 @@ public protocol NSViewRepresentable: View where Body == Never {
     func updateNSView(_ nsView: NSViewType, context: Context)
     func makeCoordinator() -> Coordinator
     static func dismantleNSView(_ nsView: NSViewType, coordinator: Coordinator)
+    /// The view's size for a proposal; nil for its intrinsic size (or the
+    /// proposal where it has none).
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSViewType, context: Context) -> CGSize?
     typealias Context = NSViewRepresentableContext<Self>
 }
 
 extension NSViewRepresentable {
     public var body: Never { fatalError() }
     public static func dismantleNSView(_ nsView: NSViewType, coordinator: Coordinator) {}
+    public func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSViewType, context: Context) -> CGSize? { nil }
 }
 extension NSViewRepresentable where Coordinator == Void {
     public func makeCoordinator() {}
@@ -809,22 +935,41 @@ extension NSViewRepresentable {
             box.value = RepresentableState(view: makeNSView(context: context), coordinator: coordinator)
         }
         let state = box.value!
-        updateNSView(state.view, context: NSViewRepresentableContext<Self>(coordinator: state.coordinator, environment: ctx.env))
-        return [RepresentedNode(state.view)]
+        let context = NSViewRepresentableContext<Self>(coordinator: state.coordinator, environment: ctx.env)
+        updateNSView(state.view, context: context)
+        // Leaving the tree: out of the AppKit hierarchy, then dismantled.
+        ctx.host.appear(key + "#dismantle", onAppear: nil, onDisappear: { [weak host = ctx.host] in
+            host?.hostingView?.detachHostedSubview(state.view)
+            Self.dismantleNSView(state.view, coordinator: state.coordinator)
+        })
+        let node = RepresentedNode(state.view)
+        let representable = self
+        node.fits = { p in representable.sizeThatFits(ProposedViewSize(width: p.width, height: p.height), nsView: state.view, context: context) }
+        return [node]
     }
 }
 
 /// Places an NSView's container and sizes the view to its frame.
 final class RepresentedNode: LayoutNode {
     let view: NSView
+    /// The representable's own sizeThatFits, when it has one.
+    var fits: ((ProposedSize) -> CGSize?)?
     init(_ view: NSView) { self.view = view }
+    /// Its own answer, else its intrinsic size on axes that have one, else
+    /// the proposal (flexible, infinity included, as SwiftUI's).
     override func sizeThatFits(_ p: ProposedSize) -> CGSize {
+        if let s = fits?(p) { return s }
         let i = view.intrinsicContentSize
-        return CGSize(width: p.width.flatMap { $0.isFinite ? $0 : nil } ?? (i.width > 0 ? i.width : 10),
-                      height: p.height.flatMap { $0.isFinite ? $0 : nil } ?? (i.height > 0 ? i.height : 10))
+        return CGSize(width: i.width > 0 ? i.width : p.width ?? 10, height: i.height > 0 ? i.height : p.height ?? 10)
     }
     override func place(_ rect: CGRect, _ sink: PlacementSink) {
-        if view.frame.size != rect.size { view.frame = CGRect(origin: .zero, size: rect.size) }
+        if let hosting = sink.host?.hostingView, hosting !== view {
+            let inHost = CGRect(x: sink.hostOrigin.x + rect.minX - sink.offset.x, y: sink.hostOrigin.y + rect.minY - sink.offset.y,
+                                width: rect.width, height: rect.height)
+            hosting.attachHostedSubview(view, topLeftFrame: inHost)
+        } else if view.frame.size != rect.size {
+            view.frame = CGRect(origin: .zero, size: rect.size)
+        }
         sink.add(view.widget, rect)
     }
 }

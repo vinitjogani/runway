@@ -6,7 +6,10 @@
 //   FileManager.trashItem(at:resultingItemURL:)  the freedesktop Trash
 //   CFData, CFString, CFDictionary…          the toll-free bridged names
 
-import Foundation
+// Re-exported so `RunwayFoundation.write(…)` (what `Darwin.write(…)`
+// becomes) finds the C library through Foundation, and the Darwin-shaped
+// overloads declared here beside it.
+@_exported import Foundation
 #if os(Linux)
 import CRunwayZlib
 // DistributedNotificationCenter: Foundation has it on the Mac, corelibs doesn't.
@@ -144,7 +147,10 @@ public enum Deflate {
         return out
     }
 
-    public static func decompress(_ input: Data) throws -> Data { try Inflater(Array(input)).run() }
+    public static func decompress(_ input: Data) throws -> Data {
+        var inflater = Inflater(Array(input))
+        return try inflater.run()
+    }
     #endif
 }
 

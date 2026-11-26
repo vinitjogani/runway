@@ -12,6 +12,9 @@ import Darwin
 #elseif canImport(ucrt)
 import ucrt
 #endif
+#if os(Windows)
+import Foundation
+#endif
 
 public enum RunwayMetrics {
     /// RUNWAY_METRICS is set.
@@ -20,16 +23,24 @@ public enum RunwayMetrics {
     /// Wall-clock milliseconds since the Unix epoch (comparable with the
     /// harness's `date +%s%N`).
     public static func wallMillis() -> Double {
+        #if os(Windows)
+        return Date().timeIntervalSince1970 * 1000
+        #else
         var ts = timespec()
         clock_gettime(CLOCK_REALTIME, &ts)
         return Double(ts.tv_sec) * 1000 + Double(ts.tv_nsec) / 1_000_000
+        #endif
     }
 
     /// Monotonic milliseconds, for durations.
     public static func monoMillis() -> Double {
+        #if os(Windows)
+        return Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000
+        #else
         var ts = timespec()
         clock_gettime(CLOCK_MONOTONIC, &ts)
         return Double(ts.tv_sec) * 1000 + Double(ts.tv_nsec) / 1_000_000
+        #endif
     }
 
     /// Resident and anonymous memory in MB, from /proc/self/status (Linux).
@@ -53,7 +64,11 @@ public enum RunwayMetrics {
         var line = "runway-metrics " + event
         for (k, v) in fields { line += " \(k)=\(v)" }
         line += "\n"
+        #if os(Windows)
+        FileHandle.standardError.write(Data(line.utf8))
+        #else
         _ = line.withCString { fputs($0, stderr) }
         fflush(stderr)
+        #endif
     }
 }

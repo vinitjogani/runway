@@ -182,6 +182,8 @@ public struct Text: View, PrimitiveView, Equatable {
         var strikethrough = false
         var tracking: CGFloat?
         var timer: IntervalTimer?
+        var background: Color?
+        var link: URL?
 
         func content(at date: Date) -> String { timer?.text(at: date) ?? string }
     }
@@ -227,7 +229,31 @@ public struct Text: View, PrimitiveView, Equatable {
     nonisolated(unsafe) private static var localizationCache: [String: String] = [:]
     @_disfavoredOverload public init<S: StringProtocol>(_ content: S) { segments = [Segment(string: String(content))] }
     public init(verbatim content: String) { segments = [Segment(string: content)] }
-    public init(_ attributed: AttributedString) { segments = [Segment(string: String(attributed.characters))] }
+    /// Its runs' fonts, colours, highlights, lines, links and Markdown
+    /// presentation intents, as SwiftUI shows them.
+    public init(_ attributed: AttributedString) {
+        typealias UI = AttributeScopes.SwiftUIAttributes
+        typealias MD = AttributeScopes.RunwayMarkdownAttributes
+        var out: [Segment] = []
+        for run in attributed.runs {
+            var seg = Segment(string: String(attributed[run.range].characters))
+            seg.font = run[UI.FontAttribute.self]
+            seg.color = run[UI.ForegroundColorAttribute.self]
+            seg.background = run[UI.BackgroundColorAttribute.self]
+            seg.underline = run[UI.UnderlineStyleAttribute.self] != nil
+            seg.strikethrough = run[UI.StrikethroughStyleAttribute.self] != nil
+            if let t = run[UI.TrackingAttribute.self] ?? run[UI.KernAttribute.self] { seg.tracking = t }
+            if let intent = run[MD.InlinePresentationIntentAttribute.self] {
+                if intent.contains(.stronglyEmphasized) { seg.weight = .bold }
+                if intent.contains(.emphasized) { seg.italic = true }
+                if intent.contains(.strikethrough) { seg.strikethrough = true }
+                if intent.contains(.code) { seg.font = (seg.font ?? .body).monospaced() }
+            }
+            if let link = run.link { seg.link = link }
+            out.append(seg)
+        }
+        segments = out.isEmpty ? [Segment(string: "")] : out
+    }
     public init<F: FormatStyle>(_ input: F.FormatInput, format: F) where F.FormatOutput == String { segments = [Segment(string: format.format(input))] }
     public init(_ date: Date, style: DateStyle) {
         var interp = LocalizedStringKey.StringInterpolation(literalCapacity: 0, interpolationCount: 1)
@@ -317,8 +343,10 @@ public struct Text: View, PrimitiveView, Equatable {
             case .lowercase: content.lowercased(with: env.locale)
             case nil: content
             }
-            return TextRun(string: string, font: f, color: color, underline: s.underline,
-                           strikethrough: s.strikethrough, tracking: s.tracking ?? env._textTracking)
+            let linkColor = s.link != nil && s.color == nil ? (env._tint ?? Color.accentColor).resolve(env) : nil
+            return TextRun(string: string, font: f, color: linkColor ?? color, underline: s.underline,
+                           strikethrough: s.strikethrough, tracking: s.tracking ?? env._textTracking,
+                           background: s.background?.resolve(env), link: s.link?.absoluteString)
         }
         let align: TextAlignmentValue = switch env.multilineTextAlignment {
         case .leading: .leading
@@ -330,7 +358,10 @@ public struct Text: View, PrimitiveView, Equatable {
         case .middle: .middle
         case .tail: .tail
         }
-        return StyledText(runs: runs, alignment: align, lineLimit: env.lineLimit, truncation: trunc)
+        var styled = StyledText(runs: runs, alignment: align, lineLimit: env.lineLimit, truncation: trunc)
+        styled.selectable = env._textSelectable
+        styled.lineSpacing = env._lineSpacing
+        return styled
     }
 
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
@@ -357,6 +388,14 @@ public struct Text: View, PrimitiveView, Equatable {
         }
         return [WidgetNode(w, backend: ctx.host.backend, text: plainText(at: now))]
     }
+}
+
+struct TextSelectableKey: EnvironmentKey { static let defaultValue = false }
+struct LineSpacingKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+
+extension EnvironmentValues {
+    var _textSelectable: Bool { get { self[TextSelectableKey.self] } set { self[TextSelectableKey.self] = newValue } }
+    var _lineSpacing: CGFloat { get { self[LineSpacingKey.self] } set { self[LineSpacingKey.self] = newValue } }
 }
 
 private struct TextCaseKey: EnvironmentKey { static let defaultValue: Text.Case? = nil }

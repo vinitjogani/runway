@@ -123,8 +123,8 @@ extension View {
 
     public func offset(_ offset: CGSize) -> some View { eachNode("offset") { n, _ in OffsetNode(n, offset) } }
     public func offset(x: CGFloat = 0, y: CGFloat = 0) -> some View { offset(CGSize(width: x, height: y)) }
-    public func position(x: CGFloat = 0, y: CGFloat = 0) -> some View { offset(x: x, y: y) }
-    public func position(_ p: CGPoint) -> some View { offset(x: p.x, y: p.y) }
+    public func position(x: CGFloat = 0, y: CGFloat = 0) -> some View { position(CGPoint(x: x, y: y)) }
+    public func position(_ p: CGPoint) -> some View { eachNode("position") { n, _ in PositionNode(n, p) } }
 
     public func overlay<V: View>(alignment: Alignment = .center, @ViewBuilder content: () -> V) -> some View {
         layered(content(), alignment: alignment, behind: false)
@@ -257,35 +257,28 @@ extension View {
     // MARK: Gestures
 
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> some View {
-        tapArea(action: action)
+        tapArea(count: count, action: action)
     }
     /// The preview backends deliver the position in the tapped view's local coordinates.
     public func onTapGesture(count: Int = 1, coordinateSpace: CoordinateSpace = .local, perform action: @escaping (CGPoint) -> Void) -> some View {
-        tapArea(spatialAction: action)
+        tapArea(count: count, spatialAction: action)
     }
-    private func tapArea(action: (() -> Void)? = nil, spatialAction: ((CGPoint) -> Void)? = nil) -> some View {
+    private func tapArea(count: Int = 1, action: (() -> Void)? = nil, spatialAction: ((CGPoint) -> Void)? = nil) -> some View {
         nodes("tap") { ns, ctx in
             let w = ctx.widget(.tapArea, "tap")
             var events = WidgetEvents()
             events.onTap = action
             events.onTapLocation = spatialAction
-            if let w { ctx.host.backend.update(w, props: ctx.baseProps(), events: events) }
+            var p = ctx.baseProps()
+            p.tapCount = max(1, count)
+            if let w { ctx.host.backend.update(w, props: p, events: events) }
             let inner: LayoutNode = ns.count == 1 ? ns[0] : ZStackNode(alignment: .center, children: ns)
-            return [ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)]
+            let node = ContainerNode(widget: w, backend: ctx.host.backend, content: inner, sizing: .hug)
+            node.layoutPriority = inner.layoutPriority
+            return [node]
         }
     }
     public func onLongPressGesture(minimumDuration: Double = 0.5, perform action: @escaping () -> Void) -> some View { self }
-    public func onHover(perform action: @escaping (Bool) -> Void) -> some View { self }
-    public func onContinuousHover(perform action: @escaping (HoverPhase) -> Void) -> some View { self }
-    public func onKeyPress(_ key: KeyEquivalent, action: @escaping () -> KeyPressResult) -> some View { self }
-    public func onKeyPress(action: @escaping (KeyPressInfo) -> KeyPressResult) -> some View { self }
-    public func onDrag(_ data: @escaping () -> NSItemProvider) -> some View { self }
-    public func onDrag<V: View>(_ data: @escaping () -> NSItemProvider, @ViewBuilder preview: () -> V) -> some View { self }
-    public func contentShape<S: Shape>(_ shape: S, eoFill: Bool = false) -> some View { self }
-    public func contentShape<K, S: Shape>(_ kind: K, _ shape: S, eoFill: Bool = false) -> some View { self }
-    public func allowsHitTesting(_ enabled: Bool) -> some View { self }
-    public func contextMenu<M: View>(@ViewBuilder menuItems: () -> M) -> some View { self }
-    public func contextMenu<I: Hashable, M: View>(forSelectionType itemType: I.Type = I.self, @ViewBuilder menu: @escaping (Set<I>) -> M, primaryAction: ((Set<I>) -> Void)? = nil) -> some View { self }
     public func onOpenURL(perform action: @escaping (URL) -> Void) -> some View { self }
     public func onExitCommand(perform action: (() -> Void)?) -> some View {
         nodes("exit") { ns, ctx in
@@ -299,8 +292,6 @@ extension View {
 }
 
 public enum HoverPhase: Sendable { case active(CGPoint), ended }
-public enum KeyPressResult: Sendable { case handled, ignored }
-public struct KeyPressInfo: Sendable { public let key: KeyEquivalent; public let characters: String; public let modifiers: EventModifiers }
 public enum MoveCommandDirection: Sendable { case up, down, left, right }
 
 // MARK: Effects only Apple's renderer draws (accepted, no-ops)
@@ -363,10 +354,38 @@ public struct ContentTransition: Sendable {
     public static func symbolEffect<T: SymbolEffect>(_ effect: T, options: SymbolEffectOptions = .default) -> ContentTransition { ContentTransition() }
 }
 
+/// Liquid Glass. Without a live blur of what's behind, it's drawn as the
+/// Mac shows it over a calm background: a frosted fill in the shape, a
+/// bright rim with a faint outer edge, a soft shadow, and the tint.
 public struct Glass: Sendable {
-    public static let regular = Glass(), clear = Glass(), identity = Glass()
-    public func tint(_ c: Color?) -> Glass { self }
+    var tintColor: Color?
+    var isClear = false
+    var isIdentity = false
+    public static let regular = Glass()
+    public static let clear = Glass(isClear: true)
+    public static let identity = Glass(isIdentity: true)
+    public func tint(_ c: Color?) -> Glass { var g = self; g.tintColor = c; return g }
     public func interactive(_ on: Bool = true) -> Glass { self }
+}
+
+/// The surface glassEffect draws behind its content.
+struct GlassSurface<S: Shape>: View {
+    let shape: S
+    let glass: Glass
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let dark = scheme == .dark
+        let frost = dark ? Color.white.opacity(glass.isClear ? 0.05 : 0.10) : Color.white.opacity(glass.isClear ? 0.38 : 0.74)
+        ZStack {
+            shape.fill(frost)
+            if let t = glass.tintColor { shape.fill(t) }
+            // The rim: a highlight inside, a faint edge outside.
+            shape.stroke(Color.black.opacity(dark ? 0.5 : 0.13), lineWidth: 1)
+            shape.stroke(Color.white.opacity(dark ? 0.14 : 0.9), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(dark ? 0.30 : 0.08), radius: 5, x: 0, y: 1.5)
+        .allowsHitTesting(false)
+    }
 }
 
 public struct ScrollEdgeEffectStyle: Sendable {
@@ -412,18 +431,25 @@ public struct AccessibilityTraits: OptionSet, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
     public static let isButton = AccessibilityTraits(rawValue: 1), isHeader = AccessibilityTraits(rawValue: 2), isSelected = AccessibilityTraits(rawValue: 4)
+    public static let isModal = AccessibilityTraits(rawValue: 256), isSearchField = AccessibilityTraits(rawValue: 512), isSummaryElement = AccessibilityTraits(rawValue: 1024)
+    public static let playsSound = AccessibilityTraits(rawValue: 2048), startsMediaSession = AccessibilityTraits(rawValue: 4096), allowsDirectInteraction = AccessibilityTraits(rawValue: 8192)
+    public static let causesPageTurn = AccessibilityTraits(rawValue: 16384), isKeyboardKey = AccessibilityTraits(rawValue: 32768), isTabBar = AccessibilityTraits(rawValue: 65536)
     public static let isLink = AccessibilityTraits(rawValue: 8), isImage = AccessibilityTraits(rawValue: 16), isStaticText = AccessibilityTraits(rawValue: 32)
     public static let updatesFrequently = AccessibilityTraits(rawValue: 64), isToggle = AccessibilityTraits(rawValue: 128)
 }
 
-public struct AccessibilityChildBehavior: Sendable {
-    public static let ignore = AccessibilityChildBehavior(), combine = AccessibilityChildBehavior(), contain = AccessibilityChildBehavior()
+public struct AccessibilityChildBehavior: Sendable, Hashable {
+    let value: AccessibilityProps.Children
+    public static let ignore = AccessibilityChildBehavior(value: .ignore), combine = AccessibilityChildBehavior(value: .combine)
+    public static let contain = AccessibilityChildBehavior(value: .contain)
 }
 
 public struct AccessibilityActionKind: Sendable {
-    public static let `default` = AccessibilityActionKind(), escape = AccessibilityActionKind(), magicTap = AccessibilityActionKind()
-    public init(named: Text) {}
-    init() {}
+    let name: String
+    public static let `default` = AccessibilityActionKind(name: "default"), escape = AccessibilityActionKind(name: "escape")
+    public static let magicTap = AccessibilityActionKind(name: "magicTap")
+    @MainActor public init(named: Text) { name = named.plainText }
+    init(name: String) { self.name = name }
 }
 
 public enum AccessibilityAdjustmentDirection: Sendable { case increment, decrement }
@@ -435,16 +461,30 @@ extension View {
     public func contentTransition(_ t: ContentTransition) -> some View { self }
     public func symbolEffect<E: SymbolEffect>(_ effect: E, options: SymbolEffectOptions = .default, isActive: Bool = true) -> some View { self }
     public func symbolEffect<E: SymbolEffect, U: Equatable>(_ effect: E, options: SymbolEffectOptions = .default, value: U) -> some View { self }
-    public func glassEffect(_ glass: Glass = .regular, in shape: some Shape = Capsule(), isEnabled: Bool = true) -> some View { self }
+    @ViewBuilder
+    public func glassEffect<S: Shape>(_ glass: Glass = .regular, in shape: S = Capsule(), isEnabled: Bool = true) -> some View {
+        if isEnabled, !glass.isIdentity {
+            self.background { GlassSurface(shape: shape, glass: glass) }
+        } else {
+            self
+        }
+    }
     public func glassEffectID<ID: Hashable>(_ id: ID, in namespace: Namespace.ID) -> some View { self }
     public func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectStyle?, for edges: Edge.Set) -> some View { self }
     public func scrollBounceBehavior(_ behavior: ScrollBounceBehavior, axes: Axis.Set = [.vertical]) -> some View { self }
-    public func scrollContentBackground(_ visibility: Visibility) -> some View { self }
-    public func scrollIndicators(_ visibility: Visibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View { self }
+    /// Text editors (and lists) inside draw no background of their own.
+    public func scrollContentBackground(_ visibility: Visibility) -> some View { environment { $0._scrollContentBackgroundHidden = visibility == .hidden } }
+    /// Scroll views inside hide their scroll bars (still scrolling by wheel and keys).
+    public func scrollIndicators(_ visibility: ScrollIndicatorVisibility, axes: Axis.Set = [.vertical, .horizontal]) -> some View {
+        environment { env in
+            if axes.contains(.vertical) { env._scrollIndicatorsVertical = visibility }
+            if axes.contains(.horizontal) { env._scrollIndicatorsHorizontal = visibility }
+        }
+    }
     public func scrollPosition<ID: Hashable>(id: Binding<ID?>, anchor: UnitPoint? = nil) -> some View { self }
     public func scrollTargetBehavior<T>(_ behavior: T) -> some View { self }
     public func scrollTargetLayout(isEnabled: Bool = true) -> some View { self }
-    public func defaultScrollAnchor(_ anchor: UnitPoint?) -> some View { self }
+
     public func shadow(color: Color = Color(white: 0, opacity: 0.33), radius: CGFloat, x: CGFloat = 0, y: CGFloat = 0) -> some View { self }
     public func blur(radius: CGFloat, opaque: Bool = false) -> some View { self }
     public func brightness(_ amount: Double) -> some View { self }
@@ -466,25 +506,7 @@ extension View {
     public func scaleEffect(_ s: CGSize, anchor: UnitPoint = .center) -> some View { self }
     public func scaleEffect(x: CGFloat = 1, y: CGFloat = 1, anchor: UnitPoint = .center) -> some View { self }
     public func matchedGeometryEffect<ID: Hashable>(id: ID, in namespace: Namespace.ID, isSource: Bool = true) -> some View { self }
-    public func accessibilityLabel(_ label: Text) -> some View { self }
-    public func accessibilityLabel(_ label: LocalizedStringKey) -> some View { self }
-    @_disfavoredOverload public func accessibilityLabel<S: StringProtocol>(_ label: S) -> some View { self }
-    public func accessibilityValue(_ value: Text) -> some View { self }
-    public func accessibilityValue(_ value: LocalizedStringKey) -> some View { self }
-    @_disfavoredOverload public func accessibilityValue<S: StringProtocol>(_ value: S) -> some View { self }
-    public func accessibilityHint(_ hint: Text) -> some View { self }
-    public func accessibilityHint(_ hint: LocalizedStringKey) -> some View { self }
-    public func accessibilityElement(children: AccessibilityChildBehavior = .ignore) -> some View { self }
-    public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> some View { self }
-    public func accessibilityRemoveTraits(_ traits: AccessibilityTraits) -> some View { self }
-    public func accessibilityHidden(_ hidden: Bool) -> some View { self }
-    public func accessibilityIdentifier(_ id: String) -> some View { self }
-    public func accessibilityAction(_ kind: AccessibilityActionKind = .default, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAction(named name: Text, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAction(named name: LocalizedStringKey, _ handler: @escaping () -> Void) -> some View { self }
-    public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> some View { self }
-    public func accessibilitySortPriority(_ p: Double) -> some View { self }
-    public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { self }
+    public func textSelection<S: TextSelectability>(_ selectability: S) -> some View { environment { $0._textSelectable = S.allowsSelection } }
     @_disfavoredOverload public func textContentType(_ type: Any?) -> some View { self }
     public func autocorrectionDisabled(_ disabled: Bool = true) -> some View { self }
     public func privacySensitive(_ sensitive: Bool = true) -> some View { self }
@@ -546,4 +568,25 @@ public struct Namespace: DynamicProperty, Sendable {
     public struct ID: Hashable, Sendable { let raw = UUID() }
     public init() {}
     public var wrappedValue: ID { ID() }
+}
+
+public struct ScrollIndicatorVisibility: Hashable, Sendable {
+    enum Kind: Hashable, Sendable { case automatic, visible, hidden, never }
+    let kind: Kind
+    public static let automatic = Self(kind: .automatic), visible = Self(kind: .visible), hidden = Self(kind: .hidden), never = Self(kind: .never)
+    var shows: Bool { kind == .automatic || kind == .visible }
+}
+
+struct ScrollIndicatorsVKey: EnvironmentKey { static var defaultValue: ScrollIndicatorVisibility { .automatic } }
+struct ScrollIndicatorsHKey: EnvironmentKey { static var defaultValue: ScrollIndicatorVisibility { .automatic } }
+extension EnvironmentValues {
+    var _scrollIndicatorsVertical: ScrollIndicatorVisibility { get { self[ScrollIndicatorsVKey.self] } set { self[ScrollIndicatorsVKey.self] = newValue } }
+    var _scrollIndicatorsHorizontal: ScrollIndicatorVisibility { get { self[ScrollIndicatorsHKey.self] } set { self[ScrollIndicatorsHKey.self] = newValue } }
+    public var horizontalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsHorizontal }
+    public var verticalScrollIndicatorVisibility: ScrollIndicatorVisibility { _scrollIndicatorsVertical }
+}
+
+struct ScrollContentBackgroundHiddenKey: EnvironmentKey { static var defaultValue: Bool { false } }
+extension EnvironmentValues {
+    var _scrollContentBackgroundHidden: Bool { get { self[ScrollContentBackgroundHiddenKey.self] } set { self[ScrollContentBackgroundHiddenKey.self] = newValue } }
 }

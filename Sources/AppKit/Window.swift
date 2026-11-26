@@ -372,6 +372,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                                                         titlebar: titled ? .standard : .none), parent: parent)
         native = n
         n.onResize = { [weak self] s in self?.nativeResized(s) }
+        n.onMove = { [weak self] topLeft in self?.nativeMoved(topLeft) }
         n.onCloseRequest = { [weak self] in
             guard let self else { return true }
             if self.delegate?.windowShouldClose(self) == false { return false }
@@ -397,7 +398,20 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         attachContent()
         updateTitlebarTitle()
         dropTargetsChanged()
+        applyPosition()
         return n
+    }
+
+    /// The user (or the desktop) moved the window.
+    private func nativeMoved(_ topLeft: CGPoint) {
+        let ph = NSScreen.screens.first?.frame.height ?? 0
+        let origin = CGPoint(x: topLeft.x, y: ph - topLeft.y - _frame.height)
+        guard origin != _frame.origin else { return }
+        let old = _frame
+        _frame.origin = origin
+        KVO.didChange(self, "frame", old: old, new: _frame)
+        saveFrameIfAutosaving()
+        post(Self.didMoveNotification) { $0.windowDidMove($1) }
     }
 
     private func nativeResized(_ canvas: CGSize) {
@@ -539,7 +553,20 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         let x = s.midX - _frame.width / 2
         let y = s.minY + (s.height - _frame.height) * 2 / 3
         _frame.origin = CGPoint(x: x.rounded(), y: y.rounded())
+        placed = true
         native?.center()
+        applyPosition()
+    }
+
+    /// Whether the app placed the window (center, setFrame…): its position
+    /// then goes to the native window; otherwise the desktop places it.
+    private var placed = false
+
+    /// The frame's place on the desktop, for backends that can move windows.
+    private func applyPosition() {
+        guard placed, let n = native else { return }
+        let ph = NSScreen.screens.first?.frame.height ?? 0
+        n.setPosition(CGPoint(x: _frame.minX, y: ph - _frame.maxY))
     }
     open func cascadeTopLeft(from p: NSPoint) -> NSPoint {
         if p == .zero { return CGPoint(x: _frame.minX, y: _frame.maxY) }
@@ -564,7 +591,11 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             layoutIfNeeded()
             post(Self.didResizeNotification) { $0.windowDidResize($1) }
         }
-        if moved { post(Self.didMoveNotification) { $0.windowDidMove($1) } }
+        if moved {
+            placed = true
+            applyPosition()
+            post(Self.didMoveNotification) { $0.windowDidMove($1) }
+        }
         saveFrameIfAutosaving()
     }
     open func setFrame(_ r: NSRect, display: Bool, animate: Bool) { setFrame(r, display: display) }
@@ -574,7 +605,18 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     }
     open func setFrameOrigin(_ p: NSPoint) { setFrame(CGRect(origin: p, size: _frame.size), display: true) }
     open func setFrameTopLeftPoint(_ p: NSPoint) { setFrameOrigin(CGPoint(x: p.x, y: p.y - _frame.height)) }
-    open func constrainFrameRect(_ r: NSRect, to screen: NSScreen?) -> NSRect { r }
+    /// As the Mac does: the title bar stays on the screen (the frame moves
+    /// down below its top, and up to show the title bar above its bottom).
+    open func constrainFrameRect(_ r: NSRect, to screen: NSScreen?) -> NSRect {
+        guard styleMask.contains(.titled), let v = (screen ?? self.screen ?? NSScreen.main)?.visibleFrame, v.height > 0 else { return r }
+        var out = r
+        if out.maxY > v.maxY { out.origin.y = v.maxY - out.height }
+        let titlebar = max(chromeAbove, 28)
+        if out.maxY < v.minY + titlebar { out.origin.y = v.minY + titlebar - out.height }
+        if out.minX > v.maxX - 40 { out.origin.x = v.maxX - 40 }
+        if out.maxX < v.minX + 40 { out.origin.x = v.minX + 40 - out.width }
+        return out
+    }
     open func animationResizeTime(_ r: NSRect) -> TimeInterval { 0.2 }
 
     /// Grows the window to what its content's required constraints need,
@@ -635,7 +677,10 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         guard n.count >= 4, n[2] > 0, n[3] > 0 else { return }
         let saving = frameAutosaveName
         frameAutosaveName = ""
-        setFrame(CGRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true)
+        let saved = CGRect(x: n[0], y: n[1], width: n[2], height: n[3])
+        // On whichever screen it's on now, with its title bar showing.
+        let screen = NSScreen.screens.first { $0.frame.intersects(saved) } ?? NSScreen.main
+        setFrame(constrainFrameRect(saved, to: screen), display: true)
         frameAutosaveName = saving
     }
     public static func removeFrame(usingName name: FrameAutosaveName) { UserDefaults.standard.removeObject(forKey: "NSWindow Frame \(name)") }
@@ -689,7 +734,12 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     @discardableResult
     open func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         let target = responder ?? self
-        if firstResponder === target { return true }
+        if firstResponder === target {
+            // Already first responder, but the toolkit's focus may have left
+            // its widget (removed and shown again): put it back.
+            if let v = target as? NSView, v.usesNativeKeyboardFocus, let n = native, let vs = viewSystem { vs.setKeyboardFocus(v.widget, in: n) }
+            return true
+        }
         if let cur = firstResponder, cur !== self, !cur.resignFirstResponder() { return false }
         if let r = responder, r !== self {
             guard r.acceptsFirstResponder || r is NSWindow else { firstResponder = self; return false }
@@ -795,6 +845,8 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
 
     /// Raw backend input → NSEvent → NSApp.sendEvent. Returns whether the
     /// event was used (so native widgets don't also act on it).
+    private var pressOnNativeControl = false
+
     func handleRaw(_ raw: RawEvent) -> Bool {
         let flags = EventTranslation.flags(raw.modifiers)
         NSEvent.modifierFlags = flags
@@ -807,28 +859,23 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             if NSCursor.hideUntilMove, raw.kind == .mouseMoved { NSCursor.hideUntilMove = false; NSCursor.unhide() }
         }
         guard !ignoresMouseEvents || raw.kind == .keyDown || raw.kind == .keyUp || raw.kind == .flagsChanged else { return false }
+        if raw.monitorPhase { return offerToMonitors(raw, loc, flags) }
         defer { ViewSystem.flush() }
         switch raw.kind {
         case .mouseDown:
-            NSEvent.pressedMouseButtons |= 1 << raw.button
-            var count = 1
-            if let l = lastClick, l.button == raw.button, raw.timestamp - l.time < NSEvent.doubleClickInterval,
-               abs(l.location.x - loc.x) < 5, abs(l.location.y - loc.y) < 5 { count = l.count + 1 }
-            lastClick = (raw.timestamp, loc, raw.button, count)
-            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseDown : raw.button == 1 ? .rightMouseDown : .otherMouseDown
-            dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: count, buttonNumber: raw.button, eventNumber: eventCounter))
+            // A SwiftUI control took this press natively: it isn't a drag
+            // of the window from its title bar.
+            pressOnNativeControl = raw.onNativeControl
+            defer { pressOnNativeControl = false }
+            if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             return true
         case .mouseUp:
-            NSEvent.pressedMouseButtons &= ~(1 << raw.button)
-            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseUp : raw.button == 1 ? .rightMouseUp : .otherMouseUp
-            dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: lastClick?.count ?? 1, buttonNumber: raw.button, eventNumber: eventCounter))
+            if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             return true
         case .mouseMoved:
             let buttons = NSEvent.pressedMouseButtons
             if buttons != 0 {
-                let b = buttons & 1 != 0 ? 0 : buttons & 2 != 0 ? 1 : 2
-                let type: NSEvent.EventType = b == 0 ? .leftMouseDragged : b == 1 ? .rightMouseDragged : .otherMouseDragged
-                dispatch(NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, buttonNumber: b, eventNumber: eventCounter))
+                if let e = takeMonitored(raw) ?? buttonEvent(raw, loc, flags) { dispatch(e) }
             } else {
                 dispatch(NSEvent(type: .mouseMoved, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, eventNumber: eventCounter))
             }
@@ -859,7 +906,9 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                 if h.handleKey(KeyPress(key: legacyKeyName(raw), command: flags.contains(.command), shift: flags.contains(.shift), option: flags.contains(.option))) { return true }
             }
             KeyDispatch.unhandled = false
-            let nativeFocus = (firstResponder as? NSView)?.usesNativeKeyboardFocus ?? false
+            // A SwiftUI text field or editor isn't a responder AppKit knows:
+            // the toolkit says when native text input has focus.
+            let nativeFocus = ((firstResponder as? NSView)?.usesNativeKeyboardFocus ?? false) || raw.nativeTextFocus
             if nativeFocus, type == .keyDown, let tv = firstResponder as? NSTextView, tv.takesKeyEvents,
                flags.contains(.command) || KeyBindings.selector(for: e) != nil {
                 // A text view takes its commands as events (keyDown(with:) →
@@ -896,6 +945,60 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         var n = 0
         while let cur = r, n < 256 { if let h = cur as? KeyHandling { return h }; r = cur.nextResponder; n += 1 }
         return nil
+    }
+
+    /// The NSEvent for a press, release or drag, updating the button and
+    /// click-count state (once per event, whichever phase builds it).
+    private func buttonEvent(_ raw: RawEvent, _ loc: CGPoint, _ flags: NSEvent.ModifierFlags) -> NSEvent? {
+        switch raw.kind {
+        case .mouseDown:
+            NSEvent.pressedMouseButtons |= 1 << raw.button
+            var count = 1
+            if let l = lastClick, l.button == raw.button, raw.timestamp - l.time < NSEvent.doubleClickInterval,
+               abs(l.location.x - loc.x) < 5, abs(l.location.y - loc.y) < 5 { count = l.count + 1 }
+            lastClick = (raw.timestamp, loc, raw.button, count)
+            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseDown : raw.button == 1 ? .rightMouseDown : .otherMouseDown
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: count, buttonNumber: raw.button, eventNumber: eventCounter)
+        case .mouseUp:
+            NSEvent.pressedMouseButtons &= ~(1 << raw.button)
+            let type: NSEvent.EventType = raw.button == 0 ? .leftMouseUp : raw.button == 1 ? .rightMouseUp : .otherMouseUp
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, clickCount: lastClick?.count ?? 1, buttonNumber: raw.button, eventNumber: eventCounter)
+        case .mouseMoved:
+            let buttons = NSEvent.pressedMouseButtons
+            guard buttons != 0 else { return nil }
+            let b = buttons & 1 != 0 ? 0 : buttons & 2 != 0 ? 1 : 2
+            let type: NSEvent.EventType = b == 0 ? .leftMouseDragged : b == 1 ? .rightMouseDragged : .otherMouseDragged
+            return NSEvent(type: type, location: loc, modifierFlags: flags, timestamp: raw.timestamp, window: self, buttonNumber: b, eventNumber: eventCounter)
+        default:
+            return nil
+        }
+    }
+
+    /// An event the local monitors have already seen, before native
+    /// widgets did: delivered after them without running the monitors again.
+    private var monitored: (time: TimeInterval, kind: RawEvent.Kind, button: Int, event: NSEvent)?
+
+    private func takeMonitored(_ raw: RawEvent) -> NSEvent? {
+        guard let m = monitored else { return nil }
+        monitored = nil
+        guard m.time == raw.timestamp, m.kind == raw.kind, m.kind == .mouseMoved || m.button == raw.button else { return nil }
+        EventMonitors.alreadyFiltered = m.event
+        return m.event
+    }
+
+    /// A press, release or drag before the views under it get it: local
+    /// monitors may take it (return nil), which keeps it from native
+    /// controls too, as AppKit's monitors keep it from views.
+    private func offerToMonitors(_ raw: RawEvent, _ loc: CGPoint, _ flags: NSEvent.ModifierFlags) -> Bool {
+        monitored = nil
+        guard EventMonitors.watches(raw.kind) else { return false }
+        if raw.kind == .mouseMoved, NSEvent.pressedMouseButtons == 0 { return false }
+        guard let e = buttonEvent(raw, loc, flags) else { return false }
+        NSApp.setCurrentEvent(e)
+        defer { NSApp.setCurrentEvent(nil); ViewSystem.flush() }
+        guard let result = EventMonitors.filter(e) else { return true }
+        monitored = (raw.timestamp, raw.kind, raw.button, result)
+        return false
     }
 
     private func dispatch(_ e: NSEvent) {
@@ -938,7 +1041,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     open func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            if event.type == .leftMouseDown, titlebarMouseDown(event) { return }
+            if event.type == .leftMouseDown, !pressOnNativeControl, titlebarMouseDown(event) { return }
             guard let hit = toolbarHit(event.locationInWindow) ?? contentView?.hitTest(event.locationInWindow) else { return }
             mouseDownView = hit
             if event.type == .leftMouseDown, hit !== firstResponder, hit.acceptsFirstResponder {
@@ -1010,7 +1113,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             func walk(_ v: NSView) {
                 guard !v.isHidden else { return }
                 trackingCache += v.trackingAreas
-                v.subviews.forEach(walk)
+                v.treeChildren.forEach(walk)
             }
             contentView.map(walk)
         }
@@ -1110,7 +1213,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                 v.discardCursorRects()
                 v.resetCursorRects()
                 for (r, c) in v.cursorRects { cursorRectList.append((v.convert(r, to: nil).intersection(v.convert(v.visibleRect, to: nil)), c)) }
-                v.subviews.forEach(walk)
+                v.treeChildren.forEach(walk)
             }
             contentView.map(walk)
         }

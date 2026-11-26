@@ -2,6 +2,9 @@
 // enabled state, actions such as dismiss and openURL).
 
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 import RunwayCore
 
 public protocol EnvironmentKey {
@@ -20,9 +23,17 @@ public struct EnvironmentValues: @unchecked Sendable {
             // Writing what's already there would copy the storage (it's
             // shared with the parent's environment) and make every view
             // below look like it got a new environment.
-            if MainThread.isCurrent, let old = values[ObjectIdentifier(key)], MainActor.assumeIsolated({ FieldLayout.equalAny(old, newValue) }) { return }
+            if MainThread.isCurrent, let old = values[ObjectIdentifier(key)], MainActor.assumeIsolated({ FieldLayout.equalAny(old, newValue) }),
+               Self.nilness(old) == Self.nilness(newValue) { return }
             values[ObjectIdentifier(key)] = newValue
         }
+    }
+
+    /// Whether an optional value is nil (nil for non-optionals): values that
+    /// compare as view inputs do (closures ignored) still differ in this.
+    static func nilness(_ v: Any) -> Bool? {
+        let m = Mirror(reflecting: v)
+        return m.displayStyle == .optional ? m.children.isEmpty : nil
     }
 
     /// Whether two environments hold the same values (a view resolved in
@@ -79,6 +90,9 @@ public struct EnvironmentValues: @unchecked Sendable {
     public var undoManager: AnyObject? { nil }
     public var scenePhase: ScenePhase { get { self[ScenePhaseKey.self] } set { self[ScenePhaseKey.self] = newValue } }
     public var accessibilityReduceMotion: Bool { false }
+    public var accessibilityReduceTransparency: Bool { false }
+    public var accessibilityDifferentiateWithoutColor: Bool { false }
+    public var accessibilityInvertColors: Bool { false }
     public var colorSchemeContrast: ColorSchemeContrast { .standard }
 
     var _foreground: AnyShapeStyle? { get { self[ForegroundKey.self] } set { self[ForegroundKey.self] = newValue } }
@@ -116,6 +130,11 @@ struct WeakHost { weak var host: ViewHost? }
 /// Whether this is the main thread, without Foundation's Thread.isMainThread
 /// (a system call on Linux): the main thread's pthread, read once.
 enum MainThread {
+    #if os(Windows)
+    nonisolated(unsafe) private static var main: DWORD? = nil
+    static func record() { if main == nil { main = GetCurrentThreadId() } }
+    static var isCurrent: Bool { main == GetCurrentThreadId() }
+    #else
     nonisolated(unsafe) private static var main: pthread_t? = nil
     /// Called on the main thread before any view is resolved.
     static func record() { if main == nil { main = pthread_self() } }
@@ -123,6 +142,7 @@ enum MainThread {
         guard let m = main else { return false }
         return pthread_equal(m, pthread_self()) != 0
     }
+    #endif
 }
 
 struct FontKey: EnvironmentKey { static var defaultValue: Font? { nil } }
@@ -365,8 +385,8 @@ public struct KeyboardShortcut: Hashable, Sendable {
     public static let cancelAction = KeyboardShortcut(.escape, modifiers: [])
 
     /// ⌘ maps to Ctrl on Linux and Windows.
-    var keyPress: KeyPress {
-        KeyPress(key: key.keyName, command: modifiers.contains(.command), shift: modifiers.contains(.shift),
+    var keyPress: RunwayCore.KeyPress {
+        RunwayCore.KeyPress(key: key.keyName, command: modifiers.contains(.command), shift: modifiers.contains(.shift),
                  option: modifiers.contains(.option), control: modifiers.contains(.control))
     }
 }

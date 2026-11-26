@@ -166,6 +166,16 @@ public struct StatusItemSpec {
                             key: @escaping @MainActor (KeyPress) -> Bool) -> NativeWidget
     /// Gives a widget keyboard focus.
     func focus(_ widget: NativeWidget)
+    /// Takes keyboard focus away from a widget (its window keeps none).
+    func resignFocus(_ widget: NativeWidget)
+    /// Whether a widget and what's inside it take pointer events.
+    func setHitTestable(_ widget: NativeWidget, _ testable: Bool)
+    /// Which points of a container are its own when the toolkit picks the
+    /// widget under the pointer (what's inside it is asked first): an
+    /// AppKit view answers as its `hitTest(_:)` does, so a view that lets
+    /// clicks through doesn't hide the controls beneath it. Points are in
+    /// the container's top-left coordinates.
+    func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?)
     /// Focus entering (true) or leaving a focusable container.
     func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void)
     func setCursor(_ widget: NativeWidget, _ cursor: CursorKind)
@@ -225,6 +235,9 @@ public struct StatusItemSpec {
     func showPopover(_ content: NativeWidget, size: CGSize, anchor: NativeWidget, rect: CGRect, edge: PopoverEdge,
                      transient: Bool, onClose: @escaping @MainActor () -> Void) -> AnyObject
     func setPopoverSize(_ popover: AnyObject, _ size: CGSize)
+    /// Key presses in the popover, before its controls see them (a rect of
+    /// `.zero` in showPopover points at the whole anchor).
+    func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool)
     func closePopover(_ popover: AnyObject)
 
     // Window chrome.
@@ -237,6 +250,9 @@ public struct StatusItemSpec {
     /// may float them at the band's leading edge, as a Mac window with a
     /// unified toolbar has them.
     func setToolbarBand(_ window: NativeWindow, height: CGFloat)
+    /// Whether the content runs under the toolbar band (full-size content):
+    /// apps then leave room at its leading edge for the window buttons.
+    func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool)
     /// The close, minimise and zoom buttons' frames in the window's canvas
     /// (y down from its top) while they're over the content; nil while they
     /// have a titlebar row of their own.
@@ -306,12 +322,17 @@ extension AppKitBackend {
         return TextCharacterLayout(rect: r, lineTop: r.minY, lineBottom: r.maxY, baseline: r.minY + r.height * 0.8)
     }
 
+    public func resignFocus(_ widget: NativeWidget) {}
+    public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {}
+    public func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?) {}
     /// Backends without interactive moves leave the window where it is.
     public func beginWindowMove(_ window: NativeWindow, button: Int, at point: CGPoint, timestamp: TimeInterval) {}
     /// Backends that route input themselves needn't do anything.
     public func setPassesThrough(_ container: NativeWidget, _ passes: Bool) {}
     public func setTitlebarShowsTitle(_ window: NativeWindow, _ shows: Bool) {}
     public func setToolbarBand(_ window: NativeWindow, height: CGFloat) {}
+    public func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool) {}
+    public func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool) {}
     public func windowButtonFrames(_ window: NativeWindow) -> [CGRect]? { nil }
     public func labelAreaInsets(_ widget: NativeWidget) -> EdgeInsetsValue { contentInsets(widget) }
 }

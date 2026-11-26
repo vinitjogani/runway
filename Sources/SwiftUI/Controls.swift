@@ -53,6 +53,19 @@ extension ResolveContext {
     }
 }
 
+// MARK: Menu items
+
+/// Labels that show an SF Symbol (Label with an Image icon, an Image):
+/// what a menu item shows beside its title.
+protocol _MenuSymbolLabel { var _menuSymbol: String? { get } }
+extension Image: _MenuSymbolLabel {
+    var _menuSymbol: String? { if case let .symbol(s) = imageSource { return s }; return nil }
+}
+extension Label: _MenuSymbolLabel where Icon == Image {
+    var _menuSymbol: String? { icon._menuSymbol }
+}
+func menuSymbol<L: View>(_ label: L) -> String? { (label as? _MenuSymbolLabel)?._menuSymbol }
+
 // MARK: Button
 
 public struct Button<Label: View>: View, PrimitiveView {
@@ -75,7 +88,9 @@ public struct Button<Label: View>: View, PrimitiveView {
         let after = env[AfterButtonActionKey.self]
         let base = self.action
         let action: @MainActor () -> Void = { base(); after?.run() }
-        let item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, action: action)
+        var item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, symbol: menuSymbol(label), action: action)
+        if let s = env._shortcut, s != .defaultAction, s != .cancelAction { item.shortcut = s.keyPress }
+        item.destructive = role == .destructive
         ctx.registerShortcut(action)
         if role == .cancel, env._shortcut == nil, !ctx.dryRun { ctx.host.cancelAction = ctx.host.cancelAction ?? action }
 
@@ -188,8 +203,20 @@ public struct Label<Title: View, Icon: View>: View, PrimitiveView {
     let title: Title
     let icon: Icon
     public init(@ViewBuilder title: () -> Title, @ViewBuilder icon: () -> Icon) { self.title = title(); self.icon = icon() }
+    public init(_ configuration: LabelStyleConfiguration) where Title == LabelStyleConfiguration.Title, Icon == LabelStyleConfiguration.Icon {
+        title = configuration.title; icon = configuration.icon
+    }
 
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        if let custom = ctx.env._customLabelStyle, !ctx.env._inMenu {
+            // The style lays the label out; a Label(configuration) inside
+            // it lays out plainly.
+            let title = self.title, icon = self.icon
+            let inner = ctx.with { $0._customLabelStyle = nil }
+            let config = LabelStyleConfiguration(title: _StyleContent { c in c.with { $0._customLabelStyle = nil }.resolve(title, "title") },
+                                                 icon: _StyleContent { c in c.with { $0._customLabelStyle = nil }.resolve(icon, "icon") })
+            return inner.resolve(custom.make(config), "style")
+        }
         let style = ctx.env._labelStyle
         let t = style == .iconOnly ? [] : ctx.resolve(title, "title")
         let i = style == .titleOnly ? [] : ctx.resolve(icon, "icon")
@@ -227,7 +254,8 @@ public struct Toggle<Label: View>: View, PrimitiveView {
         events.onToggle = { isOn.wrappedValue = $0 }
         var p = ctx.baseProps()
         p.isOn = isOn.wrappedValue
-        let item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, checked: p.isOn) { isOn.wrappedValue.toggle() }
+        var item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, checked: p.isOn, symbol: menuSymbol(label)) { isOn.wrappedValue.toggle() }
+        if let s = env._shortcut, s != .defaultAction, s != .cancelAction { item.shortcut = s.keyPress }
         let kind: ToggleKind = style == .switch ? .switch : style == .button ? .button : .checkbox
         let title = ctx.plainTitle(label) ?? ctx.labelText(label)
         // Checkboxes and toggle buttons carry their own title; switches sit
@@ -288,6 +316,7 @@ public struct TextField<Label: View>: View, PrimitiveView {
         if env._mobilePreview || env.font != nil { p.text = Text(verbatim: "").styled(env) }
         let w = ctx.widget(.textField(secure: secure))
         if let w { backend.update(w, props: p, events: events) }
+        ctx.adoptFocus(w, textField: true)
         let field = WidgetNode(w, backend: backend)
         field.flexibleWidth = true
         field.idealWidth = 120
@@ -350,15 +379,29 @@ extension SecureField where Label == Text {
 public struct TextEditor: View, PrimitiveView {
     public typealias Body = Never
     let text: Binding<String>
+    var selection: Binding<TextSelection?>?
     public init(text: Binding<String>) { self.text = text }
+    public init(text: Binding<String>, selection: Binding<TextSelection?>) { self.text = text; self.selection = selection }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let text = self.text
         var events = WidgetEvents()
         events.onText = { if text.wrappedValue != $0 { text.wrappedValue = $0 } }
         var p = ctx.baseProps()
         p.string = text.wrappedValue
+        p.clearBackground = ctx.env._scrollContentBackgroundHidden
+        if let font = ctx.env.font { p.text = Text(verbatim: "").font(font).styled(ctx.env) }
+        if let selection {
+            let string = text.wrappedValue
+            p.selection = selection.wrappedValue.map { $0.scalarRange(in: string) }
+            events.onSelection = { r in
+                let current = text.wrappedValue
+                let new = TextSelection(scalarRange: r, in: current)
+                if selection.wrappedValue != new { selection.wrappedValue = new }
+            }
+        }
         let w = ctx.widget(.textEditor)
         if let w { ctx.host.backend.update(w, props: p, events: events) }
+        ctx.adoptFocus(w, textField: true)
         let n = WidgetNode(w, backend: ctx.host.backend)
         n.flexibleWidth = true
         n.flexibleHeight = true

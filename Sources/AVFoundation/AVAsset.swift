@@ -284,10 +284,6 @@ public final class AVMetadataItem: NSObject, @unchecked Sendable {
     public override init() { super.init() }
 }
 
-/// Darwin's fcntl command that turns off SIGPIPE for a descriptor. Linux has
-/// none (writers use MSG_NOSIGNAL or ignore SIGPIPE); this is F_GETFD, so
-/// the call is harmless.
-public let F_SETNOSIGPIPE: Int32 = 1
 
 public let AVURLAssetPreferPreciseDurationAndTimingKey = "AVURLAssetPreferPreciseDurationAndTimingKey"
 public let AVURLAssetReferenceRestrictionsKey = "AVURLAssetReferenceRestrictionsKey"

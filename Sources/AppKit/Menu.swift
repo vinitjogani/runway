@@ -148,7 +148,9 @@ open class NSMenu: NSObject {
         let window = view?.window ?? NSApp.keyWindow
         guard let window, let native = window.nativeWindow, let vs = Runway.backend as? ViewSystemBackend else { return false }
         let inWindow = view?.convert(location, to: nil) ?? location
-        let point = CGPoint(x: inWindow.x, y: window.contentLayoutRect.height - inWindow.y)
+        // Window coordinates are y-up over the whole canvas (under a full-size
+        // content view's title bar too), as events' locations are.
+        let point = CGPoint(x: inWindow.x, y: window.canvasSize.height - inWindow.y)
         delegate?.menuWillOpen(self)
         let model = MenuModel(self, includeSelf: false)
         var chosen = false
@@ -283,6 +285,27 @@ open class NSMenuItem: NSObject, NSValidatedUserInterfaceItem, NSUserInterfaceIt
     }
 
     /// The accelerator for GTK menus ("<Control><Shift>n"), for display.
+    /// The SF Symbol of the item's image, for menus that show it.
+    var menuSymbol: String? {
+        if let i = image, case let .symbol(name) = i.source { return name }
+        return nil
+    }
+
+    /// The key equivalent as a key press (menus show it beside the title).
+    var shortcut: KeyPress? {
+        guard !keyEquivalent.isEmpty, let c = keyEquivalent.unicodeScalars.first else { return nil }
+        let m = keyEquivalentModifierMask
+        let isLetter = keyEquivalent.lowercased() != keyEquivalent.uppercased()
+        let names: [Int: String] = [NSUpArrowFunctionKey: "up", NSDownArrowFunctionKey: "down", NSLeftArrowFunctionKey: "left",
+                                    NSRightArrowFunctionKey: "right", NSDeleteFunctionKey: "delete", 0x7f: "backspace", 0x08: "backspace",
+                                    0x0d: "return", 0x09: "tab", 0x1b: "escape", 0x20: "space", NSHomeFunctionKey: "home",
+                                    NSEndFunctionKey: "end", NSPageUpFunctionKey: "pageup", NSPageDownFunctionKey: "pagedown"]
+        var key = names[Int(c.value)] ?? keyEquivalent.lowercased()
+        if (NSF1FunctionKey...NSF12FunctionKey).contains(Int(c.value)) { key = "f\(Int(c.value) - NSF1FunctionKey + 1)" }
+        return KeyPress(key: key, command: m.contains(.command), shift: m.contains(.shift) || (isLetter && keyEquivalent != keyEquivalent.lowercased()),
+                        option: m.contains(.option), control: m.contains(.control))
+    }
+
     var accelerator: String? {
         guard !keyEquivalent.isEmpty, let c = keyEquivalent.unicodeScalars.first else { return nil }
         var m = keyEquivalentModifierMask
@@ -329,7 +352,7 @@ open class NSMenuItem: NSObject, NSValidatedUserInterfaceItem, NSUserInterfaceIt
                 out.append(MenuNode(id: item.id, kind: .submenu, title: title, enabled: item.isEnabled, children: build(sub)))
             } else {
                 out.append(MenuNode(id: item.id, kind: .item, title: item.title, enabled: item.isEnabled, checked: item.state != .off,
-                                    accelerator: item.accelerator))
+                                    accelerator: item.accelerator, symbol: item.menuSymbol))
             }
         }
         return out

@@ -13,7 +13,7 @@ public struct VStack<Content: View>: View, PrimitiveView {
     }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let kids = ctx.with { $0._stackAxis = .vertical }.resolve(content, "v")
-        return [StackNode(axis: .vertical, alignment: alignment, spacing: spacing, children: kids)]
+        return [StackNode(axis: .vertical, guide: alignment.guide, spacing: spacing, children: kids)]
     }
 }
 
@@ -27,7 +27,7 @@ public struct HStack<Content: View>: View, PrimitiveView {
     }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
         let kids = ctx.with { $0._stackAxis = .horizontal }.resolve(content, "h")
-        return [StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: spacing, children: kids)]
+        return [StackNode(axis: .horizontal, guide: alignment.guide, spacing: spacing, children: kids)]
     }
 }
 
@@ -99,18 +99,34 @@ public struct ScrollView<Content: View>: View, PrimitiveView {
         let scrollContent = clearance > 0 ? PaddingNode(EdgeInsets(bottom: clearance), inner) : inner
         let widget = ctx.widget(enabled ? .scroll(horizontal: h, vertical: v) : .container)
         if let widget { ctx.host.backend.update(widget, props: WidgetProps(), events: WidgetEvents()) }
+        if enabled, let widget, let appKit = ctx.host.backend as? AppKitBackend {
+            let showsV = v && showsIndicators && ctx.env._scrollIndicatorsVertical.shows
+            let showsH = h && showsIndicators && ctx.env._scrollIndicatorsHorizontal.shows
+            if !(showsV == v && showsH == h) {
+                appKit.setScrollers(widget, horizontal: showsH, vertical: showsV, autohides: true, bordered: false)
+            }
+            ctx.host.registerScrollView(widget, anchor: ctx.env._defaultScrollAnchor)
+        }
         return [ContainerNode(widget: widget, backend: ctx.host.backend, content: scrollContent, sizing: .scroll(horizontal: h, vertical: v, enabled: enabled))]
     }
 }
 
+/// Scrolls the scroll views around a `ScrollViewReader` to views by `.id`.
 public struct ScrollViewProxy {
-    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {}
+    weak var host: ViewHost?
+    public func scrollTo<ID: Hashable>(_ id: ID, anchor: UnitPoint? = nil) {
+        let key = AnyHashable(id)
+        MainActor.assumeIsolated { host?.scrollTo(key, anchor: anchor) }
+    }
 }
 
-public struct ScrollViewReader<Content: View>: View {
+public struct ScrollViewReader<Content: View>: View, PrimitiveView {
+    public typealias Body = Never
     let content: (ScrollViewProxy) -> Content
     public init(@ViewBuilder content: @escaping (ScrollViewProxy) -> Content) { self.content = content }
-    public var body: some View { content(ScrollViewProxy()) }
+    func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        ctx.resolve(content(ScrollViewProxy(host: ctx.dryRun ? nil : ctx.host)), "reader")
+    }
 }
 
 public struct GridItem: Hashable, Sendable {
@@ -171,7 +187,7 @@ public struct GridRow<Content: View>: View, PrimitiveView {
     let content: Content
     public init(alignment: VerticalAlignment? = nil, @ViewBuilder content: () -> Content) { self.alignment = alignment ?? .center; self.content = content() }
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
-        [StackNode(axis: .horizontal, alignment: alignment.fraction, spacing: nil, children: ctx.with { $0._stackAxis = .horizontal }.resolve(content, "row"))]
+        [StackNode(axis: .horizontal, guide: alignment.guide, spacing: nil, children: ctx.with { $0._stackAxis = .horizontal }.resolve(content, "row"))]
     }
 }
 
@@ -198,7 +214,9 @@ public struct GeometryReader<Content: View>: View, PrimitiveView {
         let c = ctx.with { $0._stackAxis = nil }
         // Its content depends on the size: resizes run bodies again.
         if !ctx.dryRun { ctx.host.readsGeometry = true }
-        return [GeometryNode { size in c.host.resolveLate { c.resolve(content(GeometryProxy(size: size)), "geo") } }]
+        let owner = ctx.scope
+        let reader = LateReader()
+        return [GeometryNode { [weak owner] size in c.host.resolveLate(owner: owner, reader: reader) { c.resolve(content(GeometryProxy(size: size)), "geo") } }]
     }
 }
 
@@ -216,3 +234,6 @@ public struct GlassEffectContainer<Content: View>: View {
     public init(spacing: CGFloat? = nil, @ViewBuilder content: () -> Content) { self.content = content() }
     public var body: some View { content }
 }
+
+/// Identifies one GeometryReader's late-resolved content on its owner.
+final class LateReader {}

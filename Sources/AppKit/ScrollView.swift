@@ -13,11 +13,128 @@ public enum NSBorderType: UInt, Sendable { case noBorder = 0, lineBorder, bezelB
 open class NSScroller: NSControl {
     public enum Style: Int, Sendable { case legacy = 0, overlay = 1 }
     public enum KnobStyle: Int, Sendable { case `default` = 0, dark, light }
-    open var knobProportion: CGFloat = 1
-    open var scrollerStyle: Style = .overlay
-    open var knobStyle: KnobStyle = .default
+    public enum Part: UInt, Sendable { case noPart = 0, decrementPage = 1, knob = 2, incrementPage = 3, decrementLine = 4, incrementLine = 5, knobSlot = 6 }
+    public enum UsableParts: UInt, Sendable { case noScrollerParts = 0, onlyScrollerArrows = 1, allScrollerParts = 2 }
+    public enum ArrowPosition: UInt, Sendable { case scrollerArrowsMaxEnd = 0, scrollerArrowsMinEnd = 1, scrollerArrowsNone = 2 }
+
+    open var knobProportion: CGFloat = 1 { didSet { needsDisplay = true } }
+    open var scrollerStyle: Style = .overlay { didSet { needsDisplay = true } }
+    open var knobStyle: KnobStyle = .default { didSet { needsDisplay = true } }
     public static var preferredScrollerStyle: Style { .overlay }
-    public static func scrollerWidth(for controlSize: NSControl.ControlSize, scrollerStyle: Style) -> CGFloat { scrollerStyle == .overlay ? 0 : 15 }
+    public static func scrollerWidth(for controlSize: NSControl.ControlSize, scrollerStyle: Style) -> CGFloat {
+        scrollerStyle == .overlay ? 0 : controlSize == .regular ? 15 : 11
+    }
+    open class var isCompatibleWithOverlayScrollers: Bool { true }
+    /// The part the pointer pressed in the current (or last) track.
+    open private(set) var hitPart: Part = .noPart
+    open var usableParts: UsableParts { knobProportion < 1 && isEnabled ? .allScrollerParts : .noScrollerParts }
+    open var arrowsPosition: ArrowPosition = .scrollerArrowsNone
+
+    /// The scroller's value, 0…1: where the knob is along the slot.
+    open override var doubleValue: Double {
+        get { _value }
+        set { _value = min(max(newValue, 0), 1); needsDisplay = true }
+    }
+    private var _value: Double = 0
+    private var grab: CGFloat = 0
+
+    public override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+    public required init?(coder: NSCoder) { super.init(coder: coder) }
+
+    open override var isFlipped: Bool { true }
+    var isHorizontal: Bool { bounds.width > bounds.height }
+
+    /// Where a part is drawn, in the scroller's coordinates.
+    open func rect(for part: Part) -> NSRect {
+        let slot = bounds.insetBy(dx: isHorizontal ? 2 : 0, dy: isHorizontal ? 0 : 2)
+        let length = isHorizontal ? slot.width : slot.height
+        guard usableParts != .noScrollerParts, length > 0 else { return part == .knobSlot ? slot : .zero }
+        let knobLength = max(min(length, 18), (length * max(0, min(1, knobProportion))).rounded())
+        let start = ((length - knobLength) * CGFloat(_value)).rounded()
+        let knob = isHorizontal ? CGRect(x: slot.minX + start, y: slot.minY, width: knobLength, height: slot.height)
+                                : CGRect(x: slot.minX, y: slot.minY + start, width: slot.width, height: knobLength)
+        switch part {
+        case .knob: return knob
+        case .knobSlot: return slot
+        case .decrementPage:
+            return isHorizontal ? CGRect(x: slot.minX, y: slot.minY, width: knob.minX - slot.minX, height: slot.height)
+                                : CGRect(x: slot.minX, y: slot.minY, width: slot.width, height: knob.minY - slot.minY)
+        case .incrementPage:
+            return isHorizontal ? CGRect(x: knob.maxX, y: slot.minY, width: slot.maxX - knob.maxX, height: slot.height)
+                                : CGRect(x: slot.minX, y: knob.maxY, width: slot.width, height: slot.maxY - knob.maxY)
+        case .noPart, .decrementLine, .incrementLine: return .zero
+        }
+    }
+
+    /// The part under a point (in the window's coordinates).
+    open func testPart(_ point: NSPoint) -> Part {
+        let p = convert(point, from: nil)
+        for part in [Part.knob, .decrementPage, .incrementPage] where rect(for: part).contains(p) { return part }
+        return bounds.contains(p) ? .knobSlot : .noPart
+    }
+
+    open func drawKnob() {
+        let knob = rect(for: .knob)
+        guard !knob.isEmpty else { return }
+        let thickness: CGFloat = scrollerStyle == .overlay ? 7 : 8
+        let r = isHorizontal ? CGRect(x: knob.minX, y: knob.midY - thickness / 2, width: knob.width, height: thickness)
+                             : CGRect(x: knob.midX - thickness / 2, y: knob.minY, width: thickness, height: knob.height)
+        let dark = knobStyle == .light
+        NSColor(white: dark ? 1 : 0, alpha: 0.42).setFill()
+        NSBezierPath(roundedRect: r, xRadius: thickness / 2, yRadius: thickness / 2).fill()
+    }
+    open func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {
+        guard scrollerStyle == .legacy else { return }
+        NSColor(white: 0.5, alpha: 0.08).setFill()
+        NSBezierPath(rect: slotRect).fill()
+    }
+    open override func draw(_ dirtyRect: NSRect) {
+        drawKnobSlot(in: rect(for: .knobSlot), highlight: false)
+        drawKnob()
+    }
+
+    // MARK: Tracking
+
+    open override func mouseDown(with event: NSEvent) {
+        guard isEnabled, usableParts == .allScrollerParts else { return }
+        let part = testPart(event.locationInWindow)
+        hitPart = part
+        let p = convert(event.locationInWindow, from: nil)
+        switch part {
+        case .knob:
+            let knob = rect(for: .knob)
+            grab = isHorizontal ? p.x - knob.minX : p.y - knob.minY
+        case .decrementPage, .incrementPage:
+            // Pages move by the action; the value follows the document.
+            sendAction(action, to: target)
+            hitPart = .knob
+            let knob = rect(for: .knob)
+            grab = isHorizontal ? knob.width / 2 : knob.height / 2
+        default:
+            break
+        }
+    }
+
+    open override func mouseDragged(with event: NSEvent) {
+        guard hitPart == .knob else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        let slot = rect(for: .knobSlot), knob = rect(for: .knob)
+        let travel = isHorizontal ? slot.width - knob.width : slot.height - knob.height
+        guard travel > 0 else { return }
+        let pos = (isHorizontal ? p.x - slot.minX : p.y - slot.minY) - grab
+        doubleValue = Double(pos / travel)
+        sendAction(action, to: target)
+    }
+
+    open override func mouseUp(with event: NSEvent) {
+        if hitPart == .knob { sendAction(action, to: target) }
+        hitPart = .noPart
+    }
+
+    open func trackKnob(with event: NSEvent) { mouseDown(with: event) }
+    open func trackScrollButtons(with event: NSEvent) {}
 }
 
 /// The scroll view's visible area; its bounds origin is the scroll position.

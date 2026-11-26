@@ -47,6 +47,16 @@ public struct RawEvent: Sendable {
     public var characters: String = ""
     public var charactersIgnoringModifiers: String = ""
     public var isRepeat = false
+    /// Keys: a native text input (a SwiftUI text field or editor, say) has
+    /// keyboard focus, so typing and its editing keys are the toolkit's.
+    public var nativeTextFocus = false
+    /// Presses: on a native control that handles the click itself (a
+    /// SwiftUI button in a hosting view), not on AppKit's own views.
+    public var onNativeControl = false
+    /// Presses, releases and drags offered before native widgets see them,
+    /// for local event monitors; the same event comes again afterwards
+    /// unless the handler returned true (consumed).
+    public var monitorPhase = false
     public init(kind: Kind) { self.kind = kind }
 }
 
@@ -60,6 +70,14 @@ public struct RawDragEvent: Sendable {
     public init(kind: Kind, location: CGPoint, fileURLs: [URL] = [], strings: [String] = []) {
         self.kind = kind; self.location = location; self.fileURLs = fileURLs; self.strings = strings
     }
+}
+
+/// What a drag carries out of the app: text and files.
+public struct DragPayload: Sendable, Equatable {
+    public var strings: [String]
+    public var fileURLs: [URL]
+    public init(strings: [String] = [], fileURLs: [URL] = []) { self.strings = strings; self.fileURLs = fileURLs }
+    public var isEmpty: Bool { strings.isEmpty && fileURLs.isEmpty }
 }
 
 /// What a drop target accepts (AppKit's NSDragOperation bits).
@@ -90,8 +108,12 @@ public struct MenuNode: Hashable, Sendable {
     /// GTK accelerator syntax ("<Control>n", "<Control><Shift>z"), for display.
     public var accelerator: String?
     public var children: [MenuNode]
-    public init(id: Int, kind: Kind = .item, title: String, enabled: Bool = true, checked: Bool = false, accelerator: String? = nil, children: [MenuNode] = []) {
-        self.id = id; self.kind = kind; self.title = title; self.enabled = enabled; self.checked = checked; self.accelerator = accelerator; self.children = children
+    /// An SF Symbol shown before the title.
+    public var symbol: String?
+    public init(id: Int, kind: Kind = .item, title: String, enabled: Bool = true, checked: Bool = false, accelerator: String? = nil,
+                children: [MenuNode] = [], symbol: String? = nil) {
+        self.id = id; self.kind = kind; self.title = title; self.enabled = enabled; self.checked = checked; self.accelerator = accelerator
+        self.children = children; self.symbol = symbol
     }
 }
 

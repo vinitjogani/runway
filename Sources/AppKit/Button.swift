@@ -220,7 +220,7 @@ open class NSButton: NSControl {
     }
 
     /// Whether the button shows an image (and so lays out its own label).
-    private var hasImageContent: Bool { image != nil && nativeKind == .button && imagePosition != .noImage }
+    private var hasImageContent: Bool { image != nil && (nativeKind == .button || nativeKind == .toggle(.button)) && imagePosition != .noImage }
 
     open override func controlValueChanged() { controlStateChanged() }
     open override func controlStateChanged() {

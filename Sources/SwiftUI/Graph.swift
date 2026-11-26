@@ -70,17 +70,41 @@ import RunwayCore
     }
 }
 
+/// The scope whose body is running, for reads that register a dependency.
+enum ScopeReads {
+    nonisolated(unsafe) static weak var current: Scope?
+}
+
 /// Storage a dynamic property links to, kept per path across renders.
 final class StateBox<Value>: @unchecked Sendable {
     var value: Value
     weak var host: ViewHost?
     /// The scope whose body reads it (re-run when it changes).
     weak var scope: Scope?
+    /// Other scopes that read it while their bodies ran, through a Binding
+    /// passed down: re-run too, as SwiftUI tracks a binding's reads.
+    private var readers: [WeakScope] = []
     init(_ value: Value, host: ViewHost) { self.value = value; self.host = host }
+
+    /// The value, noting the running body (if not the owner's) as a reader.
+    func read() -> Value {
+        if let s = ScopeReads.current, s !== scope, !readers.contains(where: { $0.scope === s }) {
+            readers.removeAll { $0.scope == nil }
+            readers.append(WeakScope(s))
+        }
+        return value
+    }
+
     @MainActor func set(_ v: Value) {
         value = v
         host?.invalidate(scope: scope)
+        for r in readers { if let s = r.scope { host?.invalidate(scope: s) } }
     }
+}
+
+final class WeakScope: @unchecked Sendable {
+    weak var scope: Scope?
+    init(_ s: Scope) { scope = s }
 }
 
 /// Implemented by @State, @Environment, @Bindable…: linked before a body runs.
@@ -127,12 +151,15 @@ extension DynamicProperty { public mutating func update() {} }
     var ownKeys: [StorageKey] = []
     /// The scopes resolved within it, in order.
     var children: [Scope] = []
+    /// What its GeometryReaders' content (resolved at layout) last touched,
+    /// per reader: kept alive and collected with it.
+    var late: [ObjectIdentifier: (keys: [StorageKey], scopes: [Scope])] = [:]
 
     init(path: String) { self.path = path }
 }
 
 struct StorageKey {
-    enum Kind: UInt8 { case state, widget, appear, task, value, presentation }
+    enum Kind: UInt8 { case state, widget, appear, task, value, presentation, interaction }
     let kind: Kind
     let key: String
 }
@@ -184,6 +211,10 @@ final class ScopeNode: LayoutNode {
     override var menuItem: MenuItemSpec? { target.menuItem }
     override var isSpacer: Bool { target.isSpacer }
     override var isEmptyLayout: Bool { target.isEmptyLayout }
+    override var guideChild: LayoutNode? { target }
+    override var cachesSizes: Bool { false }
+    /// Not remembered above it: the target changes when the scope's body runs again.
+    override var guidesInfo: (has: Bool, stable: Bool) { (target.guidesInfo.has, false) }
     override func sizeThatFits(_ p: ProposedSize) -> CGSize { target.size(p) }
     override func place(_ rect: CGRect, _ sink: PlacementSink) { target.place(rect, sink) }
     override var debugName: String { target.debugName }
@@ -212,6 +243,12 @@ final class ScopeNode: LayoutNode {
     public var baseEnvironment: EnvironmentValues
     public private(set) var size: CGSize = .zero
     weak var window: NativeWindow?
+    /// The NSHostingView showing this host, if any: NSViewRepresentable
+    /// views join its view hierarchy.
+    weak var hostingView: NSView?
+    /// The window sheets and alerts present over: the host's own, or the
+    /// AppKit window of the NSHostingView showing it.
+    var presentingWindow: NativeWindow? { window ?? hostingView?.window?.nativeWindow }
     /// Called when the ideal size changes (windows sized to content).
     var onIdealSizeChange: ((CGSize) -> Void)?
     var onTitleChange: ((String) -> Void)?
@@ -220,7 +257,7 @@ final class ScopeNode: LayoutNode {
     private var visitedStates: Set<String> = []
     private var widgets: [String: (WidgetKind, NativeWidget)] = [:]
     private var usedWidgets: Set<String> = []
-    private var scheduled = false
+    private(set) var scheduled = false
     private var rendering = false
     private(set) var renderCount = 0
     /// How many renders ran bodies from the root, spliced scopes, or only
@@ -237,7 +274,9 @@ final class ScopeNode: LayoutNode {
     private var generation = 0
     /// The scope whose body is being resolved (state, widgets and effects
     /// touched now belong to it).
-    private var currentScope: Scope?
+    private var currentScope: Scope? {
+        didSet { ScopeReads.current = currentScope }
+    }
     /// GeometryReader resolves its content during layout: a size change
     /// must run bodies again.
     var readsGeometry = false
@@ -258,11 +297,24 @@ final class ScopeNode: LayoutNode {
     /// Window-level actions bodies register; any change marks the scope
     /// being resolved as volatile (see Scope.volatile).
     private var effectStamp = 0
-    var shortcuts: [(KeyPress, () -> Void)] = [] { didSet { effectStamp += 1 } }
+    var shortcuts: [(RunwayCore.KeyPress, () -> Void)] = [] { didSet { effectStamp += 1 } }
     var defaultAction: (() -> Void)? { didSet { effectStamp += 1 } }
     var cancelAction: (() -> Void)? { didSet { effectStamp += 1 } }
     var presentations: [String: Presentation] = [:]
     private var visitedPresentations: Set<String> = []
+    /// Focus targets and key handlers registered by modifiers, by path
+    /// (see Interaction.swift); kept alive like state.
+    var interactions: [String: AnyObject] = [:]
+    var visitedInteractions: Set<String> = []
+    /// The path of the view holding keyboard focus in this host, if any.
+    var keyFocusPath: String?
+    var focusSyncScheduled = false
+    var focusSyncRequested = false
+    /// Where views with an `.id` were last placed: their scroll view and
+    /// frame in its document.
+    var idFrames: [AnyHashable: (scroll: ObjectIdentifier, frame: CGRect)] = [:]
+    var scrollViews: [ObjectIdentifier: ScrollRecord] = [:]
+    var lastDispatchedKey: (key: RunwayCore.KeyPress, path: String, handled: Bool)?
     var title: String? { didSet { effectStamp += 1 } }
     public private(set) var lastRoot: LayoutNode?
 
@@ -271,6 +323,7 @@ final class ScopeNode: LayoutNode {
         let backend = backend ?? Runway.backend
         self.backend = backend
         self.container = container ?? backend.makeWidget(.container)
+        (backend as? AppKitBackend)?.setPassesThrough(self.container, true)
         self.baseEnvironment = environment
         self.root = { ctx in ctx.resolve(view, "root") }
     }
@@ -335,7 +388,10 @@ final class ScopeNode: LayoutNode {
         if let s = scopes[ctx.path] { scope = s } else { scope = Scope(path: ctx.path); scopes[ctx.path] = scope }
         let parent = ctx.scope ?? rootScope
         scope.parent = parent
-        if lateDepth == 0 { parent.children.append(scope) }
+        // A scope belongs to the body running around it (reusing that body
+        // must keep it alive), even inside GeometryReader content; content
+        // resolved late outside any body goes to the late sink instead.
+        if lateDepth == 0 || currentScope != nil { parent.children.append(scope) } else { lateSink?.scopes.append(scope) }
         if !scope.dirty, !scope.containsDirty, !scope.volatile, let old = scope.input,
            old.ctx.env.memoEquals(ctx.env), let typed = old as? TypedScopeInput<V>, FieldLayout.equal(typed.view, view) {
             // Same input, nothing inside changed: keep it as it is.
@@ -358,6 +414,7 @@ final class ScopeNode: LayoutNode {
         scope.volatile = false
         scope.ownKeys.removeAll(keepingCapacity: true)
         scope.children.removeAll(keepingCapacity: true)
+        scope.late.removeAll()
         var ctx = input.ctx
         ctx.scope = scope
         let outer = currentScope
@@ -396,6 +453,10 @@ final class ScopeNode: LayoutNode {
         scope.generation = generation
         for k in scope.ownKeys { visit(k) }
         for c in scope.children { markAlive(c) }
+        for (_, l) in scope.late {
+            for k in l.keys { visit(k) }
+            for c in l.scopes where c !== scope { markAlive(c) }
+        }
     }
 
     private func visit(_ k: StorageKey) {
@@ -405,25 +466,48 @@ final class ScopeNode: LayoutNode {
         case .appear: visitedAppear.insert(k.key)
         case .task: visitedTasks.insert(k.key)
         case .presentation: visitedPresentations.insert(k.key)
+        case .interaction: visitedInteractions.insert(k.key)
         }
     }
 
-    private func record(_ kind: StorageKey.Kind, _ key: String) {
-        currentScope?.ownKeys.append(StorageKey(kind: kind, key: key))
+    func record(_ kind: StorageKey.Kind, _ key: String) {
+        if let s = currentScope { s.ownKeys.append(StorageKey(kind: kind, key: key)) }
+        else if lateSink != nil { lateSink!.keys.append(StorageKey(kind: kind, key: key)) }
     }
+    private var lateSink: (keys: [StorageKey], scopes: [Scope])?
 
     /// Resolves content outside the normal walk: GeometryReader's, built at
     /// layout time for the size it gets. What it touches is kept alive by
     /// being touched (layout runs before garbage collection) rather than
     /// recorded on a scope, which would grow on every layout.
     private var lateDepth = 0
-    func resolveLate(_ body: () -> [LayoutNode]) -> [LayoutNode] {
-        let outer = currentScope, outerBuilding = LayoutNode.buildingScope
+    ///
+    /// Observable reads it makes (the content closure's own, outside any
+    /// nested view's body) re-run `owner`, the view that holds the
+    /// GeometryReader, as they would had it read them in its body.
+    func resolveLate(owner: Scope? = nil, reader: AnyObject? = nil, _ body: () -> [LayoutNode]) -> [LayoutNode] {
+        let outer = currentScope, outerBuilding = LayoutNode.buildingScope, outerSink = lateSink
         currentScope = nil
-        LayoutNode.buildingScope = nil
+        // Nodes made here belong to the owner: when a scope inside it runs
+        // again alone and changes size, the owner's epoch moves on and they
+        // measure afresh (instead of placing what follows at old sizes).
+        LayoutNode.buildingScope = owner
         lateDepth += 1
-        defer { currentScope = outer; LayoutNode.buildingScope = outerBuilding; lateDepth -= 1 }
-        return body()
+        lateSink = ([], [])
+        defer {
+            if let owner, let reader, let sink = lateSink { owner.late[ObjectIdentifier(reader)] = sink }
+            currentScope = outer; LayoutNode.buildingScope = outerBuilding; lateDepth -= 1; lateSink = outerSink
+        }
+        return withObservationTracking {
+            body()
+        } onChange: { [weak self, weak owner] in
+            let ref = UncheckedScopeRef(host: self, scope: owner)
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { ref.invalidate() }
+            } else {
+                Task { @MainActor in ref.invalidate() }
+            }
+        }
     }
 
     private var typeKeys: [ObjectIdentifier: String] = [:]
@@ -503,8 +587,23 @@ final class ScopeNode: LayoutNode {
             destroy(w)
         }
         let w = backend.makeWidget(kind)
+        // SwiftUI's containers take no hits themselves, only their content.
+        if kind == .container { (backend as? AppKitBackend)?.setPassesThrough(w, true) }
         widgets[key] = (kind, w)
         WidgetKinds.set(w, kind)
+        return w
+    }
+
+    /// A widget the caller makes itself (an event container), kept by key
+    /// like `widget(_:_:)`.
+    func customWidget(_ key: String, fresh: Bool, make: () -> NativeWidget) -> NativeWidget {
+        usedWidgets.insert(key)
+        record(.widget, key)
+        if let (_, w) = widgets[key], !fresh { return w }
+        if let (_, w) = widgets[key] { destroy(w) }
+        let w = make()
+        widgets[key] = (.container, w)
+        WidgetKinds.set(w, .container)
         return w
     }
 
@@ -561,7 +660,7 @@ final class ScopeNode: LayoutNode {
             existing.update(p)
         } else {
             presentations[key] = p
-            effects.append { [weak self] in self?.presentations[key]?.open(parent: self?.window) }
+            effects.append { [weak self] in self?.presentations[key]?.open(parent: self?.presentingWindow) }
         }
     }
 
@@ -604,6 +703,7 @@ final class ScopeNode: LayoutNode {
         let run = effects
         effects.removeAll()
         for e in run { e() }
+        syncFocus()
     }
 
     private func beginPass() {
@@ -613,6 +713,7 @@ final class ScopeNode: LayoutNode {
         visitedAppear.removeAll(keepingCapacity: true)
         visitedTasks.removeAll(keepingCapacity: true)
         visitedPresentations.removeAll(keepingCapacity: true)
+        visitedInteractions.removeAll(keepingCapacity: true)
     }
 
     /// Resolves the whole tree, reusing scopes whose input didn't change.
@@ -630,6 +731,7 @@ final class ScopeNode: LayoutNode {
         env.colorScheme = backend.colorScheme == .dark ? .dark : .light
         env._host = self
         rootScope.ownKeys.removeAll(keepingCapacity: true)
+        rootScope.late.removeAll()
         rootScope.children.removeAll(keepingCapacity: true)
         rootScope.generation = generation
         rootScope.dirty = false
@@ -684,6 +786,7 @@ final class ScopeNode: LayoutNode {
             // Its size may have changed: everything above it measures again.
             var a = d.parent
             while let s = a { s.layoutEpoch += 1; a = s.parent }
+            LayoutNode.generation += 1
             splices += 1
         }
         pendingGC = .partial(keys: oldKeys, scopes: oldScopes)
@@ -693,6 +796,10 @@ final class ScopeNode: LayoutNode {
     private func collect(_ s: Scope, keys: inout [StorageKey], scopes list: inout [Scope]) {
         keys += s.ownKeys
         for c in s.children { list.append(c); collect(c, keys: &keys, scopes: &list) }
+        for (_, l) in s.late {
+            keys += l.keys
+            for c in l.scopes where c !== s { list.append(c); collect(c, keys: &keys, scopes: &list) }
+        }
     }
 
     /// Releases what the last resolve no longer reached.
@@ -719,6 +826,7 @@ final class ScopeNode: LayoutNode {
                 presentations[key] = nil
                 p.dismissWindow()
             }
+            for key in interactions.keys where !visitedInteractions.contains(key) { interactions[key] = nil }
             for (key, s) in scopes where s.generation != generation { scopes[key] = nil }
             for (key, r) in committed where r.generation != commitGeneration { committed[key] = nil }
         case let .partial(keys, oldScopes):
@@ -736,6 +844,8 @@ final class ScopeNode: LayoutNode {
                     if !visitedTasks.contains(k.key), let t = tasks[k.key] { t.task.cancel(); tasks[k.key] = nil }
                 case .presentation:
                     if !visitedPresentations.contains(k.key), let p = presentations[k.key] { presentations[k.key] = nil; p.dismissWindow() }
+                case .interaction:
+                    if !visitedInteractions.contains(k.key) { interactions[k.key] = nil }
                 }
             }
             for s in oldScopes where s.generation != generation && scopes[s.path] === s { scopes[s.path] = nil }
@@ -797,12 +907,19 @@ final class ScopeNode: LayoutNode {
         return lastRoot.map(idealSize) ?? .zero
     }
 
+    /// The ideal width, then the height at that width (text that wraps
+    /// at a fixed width is taller than its unwrapped ideal).
     private func idealSize(_ node: LayoutNode) -> CGSize {
-        node.size(.unspecified)
+        let ideal = node.size(.unspecified)
+        guard ideal.width.isFinite, ideal.width > 0 else { return ideal }
+        let fitted = node.size(ProposedSize(width: ideal.width, height: nil))
+        return CGSize(width: ideal.width, height: max(ideal.height, fitted.height.isFinite ? fitted.height : ideal.height))
     }
 
     /// Handles a key press: shortcuts first, then Return and Escape.
-    public func handleKey(_ key: KeyPress) -> Bool {
+    public func handleKey(_ key: RunwayCore.KeyPress) -> Bool {
+        // The focused view and the views around it see a key first.
+        if let path = keyFocusPath, dispatchKey(key, from: path) { return true }
         for (k, action) in shortcuts where k == key { action(); return true }
         if key.key == "return", !key.command, let a = defaultAction { a(); return true }
         if key.key == "escape", let a = cancelAction { a(); return true }
@@ -850,6 +967,12 @@ struct UncheckedScopeRef: @unchecked Sendable {
     weak var host: ViewHost?
     var offset: CGPoint = .zero
     var drawingTransform: CGAffineTransform = .identity
+    /// The enclosing scroll view's document, and this container's origin in it.
+    weak var scrollDocument: NativeWidget?
+    var documentOrigin: CGPoint = .zero
+    /// This container's origin in the host's root container (as currently
+    /// scrolled).
+    var hostOrigin: CGPoint = .zero
     var items: [(NativeWidget, CGRect)] = []
     init(container: NativeWidget, backend: Backend, host: ViewHost? = nil) { self.container = container; self.backend = backend; self.host = host }
 
@@ -861,6 +984,9 @@ struct UncheckedScopeRef: @unchecked Sendable {
     func nested(_ container: NativeWidget, origin: CGPoint) -> PlacementSink {
         let s = PlacementSink(container: container, backend: backend, host: host)
         s.offset = origin
+        s.scrollDocument = scrollDocument
+        s.documentOrigin = documentOrigin
+        s.hostOrigin = hostOrigin
         return s
     }
 
@@ -928,7 +1054,7 @@ protocol MemoComparable {
         var collected: [Field] = []
         var linked: [Link] = []
         let isClass = type is AnyClass
-        let reflected = !isClass && _forEachField(of: type, options: [.ignoreUnknown]) { name, offset, fieldType, kind in
+        var reflected = !isClass && _forEachField(of: type, options: [.ignoreUnknown]) { name, offset, fieldType, kind in
             if fieldType is DynamicPropertyLink.Type || fieldType is DynamicProperty.Type {
                 linked.append(Link(offset: offset, label: String(cString: name), load: Self.loader(fieldType)))
             }
@@ -947,6 +1073,10 @@ protocol MemoComparable {
             collected.append(Field(offset: offset, compare: c))
             return true
         }
+        // Enums (Optional among them) reflect as having no fields, which
+        // would make all their values equal; a struct with no fields has
+        // no size.
+        if reflected, collected.isEmpty, Self.size(type) > 0 { reflected = false }
         if reflected {
             isStruct = true
             fields = collected

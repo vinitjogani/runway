@@ -163,6 +163,16 @@ import CoreGraphics
         return CGSize(width: widest, height: CGFloat(max(count, 1)) * lineHeight(size))
     }
 
+    /// Lines of `lineHeight(size)` with the baseline at 80% of each.
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? {
+        let w = widget as! HeadlessWidget
+        guard w.kind == .text, let t = w.props.text else { return nil }
+        let size = t.runs.map(\.font.size).max() ?? 13
+        let line = Self.lineHeight(size)
+        let h = Self.measureText(t, width: width).height
+        return (line * 0.8, h - line * 0.2)
+    }
+
     public func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize {
         let w = widget as! HeadlessWidget
         let p = w.props

@@ -34,13 +34,13 @@ private let signalCallback1: @convention(c) (UnsafeMutableRawPointer?, UnsafeMut
 }
 /// GtkGestureClick::released (gesture, n_press, x, y, data).
 private final class ClickHandler {
-    let fire: (CGPoint) -> Void
-    init(_ fire: @escaping (CGPoint) -> Void) { self.fire = fire }
+    let fire: (CGPoint, Int) -> Void
+    init(_ fire: @escaping (CGPoint, Int) -> Void) { self.fire = fire }
 }
 
-private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { _, _, x, y, data in
+private let clickCallback: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, Double, UnsafeMutableRawPointer?) -> Void = { _, n, x, y, data in
     guard let data else { return }
-    Unmanaged<ClickHandler>.fromOpaque(data).takeUnretainedValue().fire(CGPoint(x: x, y: y))
+    Unmanaged<ClickHandler>.fromOpaque(data).takeUnretainedValue().fire(CGPoint(x: x, y: y), Int(n))
 }
 /// Signals returning gboolean (activate-link, close-request).
 private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> gboolean = { instance, data in
@@ -72,6 +72,12 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
     var menuItems: [MenuItemSpec] = []
     var size: CGSize = .zero
     var textureSize: CGSize?
+    /// destroy() released the GTK widget.
+    var destroyed = false
+    /// Where setChildren last placed it, and what it last placed (help-tag pruning).
+    weak var parentBox: GtkBox?
+    var childBoxes: [GtkBox] = []
+    var prunedFor: String?
 
     init(kind: WidgetKind, outer: GW) {
         self.kind = kind
@@ -92,7 +98,7 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         _ = runway_connect(instance, signal, unsafeBitCast(boolCallback, to: GCallback.self), Unmanaged.passUnretained(h).toOpaque())
     }
 
-    func onClick(_ f: @escaping (CGPoint) -> Void) {
+    func onClick(_ f: @escaping (CGPoint, Int) -> Void) {
         let g = gtk_gesture_click_new()!
         let h = ClickHandler(f)
         clickHandler = h
@@ -163,8 +169,11 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         runway_widget_add_css(handle, "titlebar")
         runway_widget_add_css(handle, "rw-titlebar")
         gtk_window_set_titlebar(typed(window), handle)
-        titlebar = handle; menuSlot = slot; titleLabel = label
+        titlebar = handle; menuSlot = slot; titleLabel = label; rowControls = controls
     }
+    /// The window buttons in the titlebar row (hidden while they float in
+    /// the toolbar band).
+    private var rowControls: GW?
 
     /// Shows the menu bar in the titlebar row (false: no row to show it in).
     func setMenuBar(_ bar: GW?) -> Bool {
@@ -184,14 +193,17 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
 
     // MARK: Window buttons in the toolbar band
 
-    /// Window buttons floating over the content, for windows whose titlebar
-    /// row would hold nothing else: with the menu bar on the desktop's top
-    /// bar and a toolbar band, the Mac draws them at the band's leading
-    /// edge, and the row goes away.
+    /// Window buttons floating over the content's toolbar band, as the Mac
+    /// draws them for a full-size-content window with a toolbar: apps leave
+    /// room for them at the band's leading edge. With the menu bar on the
+    /// desktop's top bar the titlebar row then goes away; with the menu bar
+    /// in the window, the row stays for the menu alone, so the room the app
+    /// left in its band still holds the buttons rather than a gap.
     private var floatingControls: GW?
     private var globalMenu = false
     private(set) var bandHeight: CGFloat = 0
     private(set) var buttonsInBand = false
+    private var rowHidden = false
     static let lightSize: CGFloat = 12, lightGap: CGFloat = 8, lightInset: CGFloat = 12
 
     func setBandHeight(_ h: CGFloat) {
@@ -200,17 +212,34 @@ private let boolCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutabl
         updateMerge()
     }
 
+    private var contentUnderBand = false
+    func setContentUnderBand(_ under: Bool) {
+        guard under != contentUnderBand else { return }
+        contentUnderBand = under
+        updateMerge()
+    }
+
     private func updateMerge() {
-        let merged = globalMenu && bandHeight > 0 && titlebar != nil
+        // In the band when the row would hold nothing else (global menu), or
+        // when the content runs under the band and has room for them.
+        let inBand = bandHeight > 0 && titlebar != nil && (globalMenu || contentUnderBand)
+        let hideRow = inBand && globalMenu
         if let floatingControls {
             gtk_widget_set_margin_top(floatingControls, Int32(((bandHeight - Self.lightSize) / 2).rounded()))
         }
-        guard merged != buttonsInBand, let titlebar, let floatingControls else { return }
-        buttonsInBand = merged
-        if merged { runway_widget_add_css(titlebar, "rw-titlebar-merged") } else { runway_widget_remove_css(titlebar, "rw-titlebar-merged") }
-        if let row = gtk_widget_get_first_child(titlebar) { gtk_widget_set_visible(row, merged ? 0 : 1) }
-        gtk_widget_set_visible(floatingControls, merged ? 1 : 0)
-        // The row's height goes to the content (the window keeps its size).
+        guard let titlebar, let floatingControls else { return }
+        if inBand != buttonsInBand {
+            buttonsInBand = inBand
+            gtk_widget_set_visible(floatingControls, inBand ? 1 : 0)
+            if let rowControls { gtk_widget_set_visible(rowControls, inBand ? 0 : 1) }
+            if inBand { runway_widget_add_css(titlebar, "rw-titlebar-menu-only") } else { runway_widget_remove_css(titlebar, "rw-titlebar-menu-only") }
+        }
+        if hideRow != rowHidden {
+            rowHidden = hideRow
+            if hideRow { runway_widget_add_css(titlebar, "rw-titlebar-merged") } else { runway_widget_remove_css(titlebar, "rw-titlebar-merged") }
+            if let row = gtk_widget_get_first_child(titlebar) { gtk_widget_set_visible(row, hideRow ? 0 : 1) }
+            // The row's height goes to the content (the window keeps its size).
+        }
     }
 
     /// Close, minimise and zoom, in the canvas (y down), while in the band.
@@ -336,6 +365,17 @@ final class KeyHandlerBox {
     init(_ f: @escaping (KeyPress) -> Bool) { self.f = f }
 }
 
+/// Routes `widget`'s key presses (captured before its children see them)
+/// to `f`; keep the returned box alive as long as the widget.
+@MainActor func addCaptureKeyHandler(_ widget: GW, _ f: @escaping (KeyPress) -> Bool) -> KeyHandlerBox {
+    let keys = KeyHandlerBox(f)
+    let controller = gtk_event_controller_key_new()!
+    gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE)
+    _ = runway_connect(UnsafeMutableRawPointer(controller), "key-pressed", unsafeBitCast(keyCallback, to: GCallback.self), Unmanaged.passUnretained(keys).toOpaque())
+    gtk_widget_add_controller(widget, controller)
+    return keys
+}
+
 private let closeRequestCallback: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> gboolean = { _, data in
     guard let data else { return 0 }
     Unmanaged<Handler>.fromOpaque(data).takeUnretainedValue().fire(nil)
@@ -383,8 +423,34 @@ final class WorkBox {
     private var colorRules: [String: String] = [:]
 
     public init() {
+        // Runway's bundled fonts (Inter, JetBrains Mono) and the Mac names
+        // they stand in for, before GTK lays out any text.
+        let files = BundledFonts.filesToRegister()
+        if !files.isEmpty {
+            let owned = (files + BundledFonts.aliases.flatMap { [$0.0, $0.1] }).map { strdup($0) }
+            let ptrs = owned.map { UnsafePointer($0) }
+            ptrs.withUnsafeBufferPointer { b in
+                runway_register_fonts(b.baseAddress, Int32(files.count), b.baseAddress! + files.count, Int32(BundledFonts.aliases.count))
+            }
+            owned.forEach { free($0) }
+        }
+        // The name assistive technologies and the desktop show for the app.
+        let info = Bundle.main.infoDictionary
+        let appName = info?["CFBundleDisplayName"] as? String ?? info?["CFBundleName"] as? String ?? ProcessInfo.processInfo.processName
+        g_set_application_name(appName)
+        if g_get_prgname() == nil { g_set_prgname(appName) }
         gtk_init()
+        if ProcessInfo.processInfo.environment["RUNWAY_NATIVE_LOOK"] == nil { runway_tune_text_rendering() }
         colorScheme = runway_prefers_dark() != 0 ? .dark : .light
+        if let s = gtk_settings_get_default() {
+            // Focusing selectable text (the first focusable view in a
+            // popover or sheet) doesn't select it all, as on the Mac.
+            var v = GValue()
+            g_value_init(&v, GType(5 << 2))   // G_TYPE_BOOLEAN
+            g_value_set_boolean(&v, 0)
+            g_object_set_property(UnsafeMutablePointer<GObject>(s), "gtk-label-select-on-focus", &v)
+            g_value_unset(&v)
+        }
         if colorScheme == .dark, let s = gtk_settings_get_default() {
             var v = GValue()
             g_value_init(&v, GType(5 << 2))   // G_TYPE_BOOLEAN
@@ -423,6 +489,23 @@ final class WorkBox {
 
     // MARK: Widgets
 
+    public func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget {
+        let gtkRole: GtkAccessibleRole
+        switch role {
+        case .heading: gtkRole = GTK_ACCESSIBLE_ROLE_HEADING
+        case .button, .menuButton: gtkRole = GTK_ACCESSIBLE_ROLE_BUTTON
+        case .toggleButton: gtkRole = GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON
+        case .link: gtkRole = GTK_ACCESSIBLE_ROLE_LINK
+        case .image: gtkRole = GTK_ACCESSIBLE_ROLE_IMG
+        case .staticText: gtkRole = GTK_ACCESSIBLE_ROLE_LABEL
+        default: gtkRole = GTK_ACCESSIBLE_ROLE_GROUP
+        }
+        let c = runway_canvas_new_with_role(gtkRole)!
+        let b = GtkBox(kind: .container, outer: c)
+        b.canvas = c
+        return b
+    }
+
     public func makeWidget(_ kind: WidgetKind) -> NativeWidget {
         switch kind {
         case .container:
@@ -450,11 +533,14 @@ final class WorkBox {
             b.connect(raw(btn), "clicked") { [unowned b] _ in b.events.onTap?() }
             return b
         case .tapArea:
-            let c = runway_canvas_new()!
+            // Clickable: a button to assistive technologies.
+            let c = runway_canvas_new_with_role(GTK_ACCESSIBLE_ROLE_BUTTON)!
             let b = GtkBox(kind: kind, outer: c)
             b.canvas = c
-            b.onClick { [unowned b] point in
-                guard b.props.enabled else { return }
+            runway_widget_set_interactive(c, 1)
+            b.onClick { [unowned b] point, clicks in
+                // A double-tap gesture fires on the second click only.
+                guard b.props.enabled, clicks == b.props.tapCount else { return }
                 if let action = b.events.onTapLocation { action(point) }
                 else { b.events.onTap?() }
             }
@@ -508,6 +594,8 @@ final class WorkBox {
             gtk_text_view_set_top_margin(typed(tv), 2)
             let b = GtkBox(kind: kind, outer: s)
             b.setClass("rw-editor", true)
+            // The box holds its own reference to `inner` (released in destroy).
+            g_object_ref(raw(tv))
             b.inner = tv
             let buffer = gtk_text_view_get_buffer(typed(tv))!
             b.connect(UnsafeMutableRawPointer(buffer), "changed") { [unowned b] _ in
@@ -517,6 +605,13 @@ final class WorkBox {
                 let c = gtk_text_buffer_get_text(buffer, &start, &end, 0)!
                 b.events.onText?(String(cString: c))
                 g_free(c)
+            }
+            b.connect(UnsafeMutableRawPointer(buffer), "notify::cursor-position", arity: 1) { [unowned b] _ in
+                guard !b.updating, let report = b.events.onSelection else { return }
+                var start = GtkTextIter(), end = GtkTextIter()
+                gtk_text_buffer_get_selection_bounds(buffer, &start, &end)
+                let a = Int(gtk_text_iter_get_offset(&start)), z = Int(gtk_text_iter_get_offset(&end))
+                report(min(a, z)..<max(a, z))
             }
             return b
         case .slider:
@@ -634,8 +729,9 @@ final class WorkBox {
         defer { b.updating = false }
         let w = b.outer
         if old.enabled != p.enabled || b.props == WidgetProps() { gtk_widget_set_sensitive(w, p.enabled ? 1 : 0) }
-        if old.tooltip != p.tooltip { gtk_widget_set_tooltip_text(w, p.tooltip) }
+        if old.tooltip != p.tooltip { gtk_widget_set_tooltip_text(w, p.tooltip); b.prunedFor = nil }
         if old.opacity != p.opacity { gtk_widget_set_opacity(w, p.opacity) }
+        if old.accessibility != p.accessibility { applyAccessibility(b.outer, p.accessibility) }
         b.setClass("rw-small", p.controlSize == .small || p.controlSize == .mini)
         b.setClass("rw-large", p.controlSize == .large || p.controlSize == .extraLarge)
 
@@ -674,23 +770,48 @@ final class WorkBox {
                 gtk_check_button_set_label(typed(w), p.title.isEmpty ? nil : p.title)
                 if gtk_check_button_get_active(typed(w)) != (p.isOn ? 1 : 0) { gtk_check_button_set_active(typed(w), p.isOn ? 1 : 0) }
             case .button:
-                gtk_button_set_label(typed(w), p.title)
+                // An image button that stays pressed (a preferences toolbar's
+                // selected tab): its content goes in a canvas, as a button's.
+                if p.hasContent {
+                    if b.canvas == nil {
+                        let c = runway_canvas_new()!
+                        gtk_button_set_child(typed(w), c)
+                        b.canvas = c
+                    }
+                    b.setClass("rw-content", true)
+                } else {
+                    gtk_button_set_label(typed(w), p.title)
+                }
+                b.setClass("flat", !p.bordered)
                 if gtk_toggle_button_get_active(typed(w)) != (p.isOn ? 1 : 0) { gtk_toggle_button_set_active(typed(w), p.isOn ? 1 : 0) }
             }
         case .textField:
             let current = String(cString: gtk_editable_get_text(opaque(w)))
             if current != p.string { gtk_editable_set_text(opaque(w), p.string) }
-            if old.placeholder != p.placeholder || b.props == WidgetProps() { gtk_entry_set_placeholder_text(typed(w), p.placeholder) }
+            if old.placeholder != p.placeholder || b.props == WidgetProps() {
+                gtk_entry_set_placeholder_text(typed(w), p.placeholder)
+                // The prompt names the field when nothing else does.
+                if p.accessibility?.label == nil, !p.placeholder.isEmpty { runway_accessible_label(w, p.placeholder) }
+            }
             gtk_entry_set_has_frame(typed(w), p.bordered ? 1 : 0)
             b.setClass("rw-plain", !p.bordered)
             if old.text != p.text || b.props == WidgetProps() { applyEntryFont(b, p.text?.runs.first) }
         case .textEditor:
+            b.setClass("rw-clear-background", p.clearBackground)
+            if old.text != p.text { applyEntryFont(b, p.text?.runs.first) }
             if let tv = b.inner, let buffer = gtk_text_view_get_buffer(typed(tv)) {
                 var start = GtkTextIter(), end = GtkTextIter()
                 gtk_text_buffer_get_bounds(buffer, &start, &end)
                 let c = gtk_text_buffer_get_text(buffer, &start, &end, 0)!
                 if String(cString: c) != p.string { gtk_text_buffer_set_text(buffer, p.string, -1) }
                 g_free(c)
+                if let r = p.selection, r != old.selection {
+                    var a = GtkTextIter(), z = GtkTextIter()
+                    gtk_text_buffer_get_iter_at_offset(buffer, &a, Int32(r.lowerBound))
+                    gtk_text_buffer_get_iter_at_offset(buffer, &z, Int32(r.upperBound))
+                    gtk_text_buffer_select_range(buffer, &z, &a)
+                    gtk_text_view_scroll_mark_onscreen(typed(tv), gtk_text_buffer_get_insert(buffer))
+                }
             }
         case .slider:
             applyTint(b, p.tint)
@@ -728,6 +849,7 @@ final class WorkBox {
                 updateImage(b, p)
             }
         case .canvas, .divider:
+            if old.hitTestable != p.hitTestable { gtk_widget_set_can_target(w, p.hitTestable ? 1 : 0) }
             if old.backdropBlur != p.backdropBlur {
                 runway_widget_set_backdrop_blur(w, Float(p.backdropBlur?.radius ?? 0), Float(p.backdropBlur?.cornerRadius ?? 0))
             }
@@ -792,7 +914,7 @@ final class WorkBox {
             let f = run.font
             var desc: [String] = []
             switch f.design {
-            case .monospaced: desc.append("Monospace")
+            case .monospaced: desc.append("\(BundledFonts.monoFamily),Monospace")
             case .serif: desc.append("Serif")
             default: if let fam = f.family { desc.append(fam) }
             }
@@ -816,6 +938,10 @@ final class WorkBox {
                 attrs += " foreground=\"\(String(c.hexString.prefix(7)))\" alpha=\"\(max(1, Int((c.a * 100).rounded())))%\""
             }
             if f.monospacedDigit { attrs += " font_features=\"tnum\"" }
+            if t.lineSpacing > 0, t.lineLimit != 1 {
+                // An absolute line height (Pango units), as AppKit adds spacing below each line.
+                attrs += " line_height=\"\(Int(((f.size * 1.2 + t.lineSpacing) * CGFloat(PANGO_SCALE)).rounded()))\""
+            }
             if run.underline { attrs += " underline=\"single\"" }
             if run.strikethrough { attrs += " strikethrough=\"true\"" }
             if run.tracking.isFinite, run.tracking != 0 {
@@ -823,9 +949,18 @@ final class WorkBox {
                 let tracking = Int32(max(CGFloat(Int32.min), min(CGFloat(Int32.max), units.rounded())))
                 attrs += " letter_spacing=\"\(tracking)\""
             }
+            if let bg = run.background {
+                attrs += " background=\"\(String(bg.hexString.prefix(7)))\" bgalpha=\"\(max(1, Int((bg.a * 100).rounded())))%\""
+            }
             let escaped = g_markup_escape_text(run.string, -1)!
-            out += "<span \(attrs)>\(String(cString: escaped))</span>"
+            var span = "<span \(attrs)>\(String(cString: escaped))</span>"
             g_free(escaped)
+            if let link = run.link {
+                let href = g_markup_escape_text(link, -1)!
+                span = "<a href=\"\(String(cString: href))\">\(span)</a>"
+                g_free(href)
+            }
+            out += span
         }
         return out
     }
@@ -839,6 +974,11 @@ final class WorkBox {
         }
         let x: Float = t.alignment == .center ? 0.5 : t.alignment == .trailing ? 1 : 0
         gtk_label_set_xalign(l, x)
+        if (gtk_label_get_selectable(l) != 0) != t.selectable {
+            gtk_label_set_selectable(l, t.selectable ? 1 : 0)
+            // Selecting shouldn't put a focus ring on every label clicked.
+            if t.selectable { gtk_widget_set_focus_on_click(b.outer, 0) }
+        }
         gtk_label_set_justify(l, t.alignment == .center ? GTK_JUSTIFY_CENTER : t.alignment == .trailing ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT)
         let ell: PangoEllipsizeMode = t.truncation == .head ? PANGO_ELLIPSIZE_START : t.truncation == .middle ? PANGO_ELLIPSIZE_MIDDLE : PANGO_ELLIPSIZE_END
         if t.lineLimit == 1 {
@@ -977,7 +1117,7 @@ final class WorkBox {
         guard let run, let name else { return }
         if colorRules[name] == nil {
             let f = run.font
-            let family = f.design == .monospaced ? "monospace" : f.design == .serif ? "serif"
+            let family = f.design == .monospaced ? "\"\(BundledFonts.monoFamily)\", monospace" : f.design == .serif ? "serif"
                 : MacTheme.fontFamilyCSS(f.family.map { [$0] } ?? systemFontFamilies)
             let weight: Int = switch f.weight {
             case .ultraLight: 100
@@ -995,6 +1135,7 @@ final class WorkBox {
             colorRules[name] = """
             entry.\(name), entry.\(name) > text { \(font) \(color) }
             entry.\(name) > text > placeholder { \(font) }
+            scrolledwindow.\(name) textview, scrolledwindow.\(name) textview > text { \(font) \(color) }
             """
             loadColorRules()
         }
@@ -1016,7 +1157,7 @@ final class WorkBox {
         var flat: [MenuItemSpec] = []
         func walk(_ list: [MenuItemSpec], _ depth: Int32) {
             for i in list {
-                titles.append(i.title)
+                titles.append(i.shortcut.map { i.title + "\t" + $0.gtkAccelerator } ?? i.title)
                 depths.append(depth)
                 enabled.append(i.enabled ? 1 : 0)
                 checked.append(i.checked ? 1 : 0)
@@ -1051,8 +1192,19 @@ final class WorkBox {
 
     // MARK: Measuring and placing
 
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? {
+        let b = widget as! GtkBox
+        guard b.kind == .text else { return nil }
+        var first = 0.0, last = 0.0
+        let w = width.flatMap { $0.isFinite ? Int32($0.rounded(.down)) : nil } ?? -1
+        guard runway_label_baselines(b.outer, w, &first, &last) != 0 else { return nil }
+        return (CGFloat(first), CGFloat(last))
+    }
+
     public func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize {
         let b = widget as! GtkBox
+        // A released widget has no GTK widget left to measure.
+        if b.destroyed { return .zero }
         let w = b.outer
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
         switch b.kind {
@@ -1114,7 +1266,7 @@ final class WorkBox {
         if b.kind == .menuButton, b.canvas != nil {
             return EdgeInsetsValue(top: 0, leading: 10, bottom: 0, trailing: 10)
         }
-        guard b.kind == .button, let c = b.canvas else { return .zero }
+        guard b.kind == .button || b.kind == .toggle(.button), let c = b.canvas else { return .zero }
         // The chrome is the button's size around an empty label area.
         runway_canvas_set_content_size(c, 0, 0)
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
@@ -1129,7 +1281,7 @@ final class WorkBox {
     /// the button's minimum size.
     public func labelAreaInsets(_ widget: NativeWidget) -> EdgeInsetsValue {
         let b = widget as! GtkBox
-        guard b.kind == .button, let c = b.canvas else { return .zero }
+        guard b.kind == .button || b.kind == .toggle(.button), let c = b.canvas else { return .zero }
         let big: Int32 = 400
         runway_canvas_set_content_size(c, big, big)
         var minW: Int32 = 0, natW: Int32 = 0, minH: Int32 = 0, natH: Int32 = 0
@@ -1145,7 +1297,62 @@ final class WorkBox {
         return CanvasRef.wrap(c, owner: b)
     }
 
+    /// Clears tooltips that repeat `inherited` in `b`'s subtree (once per value).
+    private func pruneTooltips(_ b: GtkBox, inherited: String?) {
+        guard b.prunedFor != inherited || b.prunedFor == nil else { return }
+        b.prunedFor = inherited
+        // Controls keep theirs: it names an icon-only button.
+        let control: Bool
+        switch b.kind {
+        case .button, .tapArea, .menuButton, .toggle, .link, .textField, .textEditor, .slider, .dropdown, .segmented, .stepper, .colorWell: control = true
+        default: control = false
+        }
+        if !control, let t = b.props.tooltip, t == inherited { gtk_widget_set_tooltip_text(b.outer, nil) }
+        let next = b.props.tooltip ?? inherited
+        for c in b.childBoxes { pruneTooltips(c, inherited: next) }
+    }
+
+    /// What accessibility modifiers declared, on a GTK widget.
+    func applyAccessibility(_ w: GW, _ a: AccessibilityProps?, hideAll: Bool = false) {
+        let label = a?.label, hint = a?.hint, value = a?.value
+        runway_accessible_apply(w, label, hint, value, (a?.hidden ?? false || hideAll) ? 1 : 0)
+    }
+
     public func setChildren(_ container: NativeWidget, _ children: [(NativeWidget, CGRect)], contentSize: CGSize) {
+        let owner = (container as? GtkBox) ?? (container as? CanvasRef)?.owner
+        // An accessibility wrapper speaks for what it holds: a lone child takes
+        // its label; an element that ignores or combines hides its children.
+        if let b = owner, let a = b.props.accessibility {
+            for (child, _) in children {
+                let c = child as! GtkBox
+                if a.element && a.children != .contain {
+                    applyAccessibility(c.outer, c.props.accessibility, hideAll: true)
+                } else if children.count == 1, c.props.accessibility == nil, a.label != nil || a.hint != nil || a.value != nil {
+                    applyAccessibility(c.outer, a)
+                }
+            }
+        }
+        defer {
+            if let b = owner, var a = b.props.accessibility, a.element, a.children == .combine, a.label == nil,
+               let t = runway_accessible_text(b.outer) {
+                a.label = String(cString: t)
+                g_free(t)
+                applyAccessibility(b.outer, a)
+            }
+        }
+        // A help tag reaches every widget inside the view it's on; GTK looks
+        // for a tooltip up the hierarchy, so widgets that only repeat an
+        // ancestor's keep none (and don't repeat it to screen readers).
+        if let b = owner {
+            var inherited: String?
+            var a: GtkBox? = b
+            while let x = a, inherited == nil { inherited = x.props.tooltip; a = x.parentBox }
+            b.childBoxes = children.map { $0.0 as! GtkBox }
+            for c in b.childBoxes {
+                c.parentBox = b
+                pruneTooltips(c, inherited: inherited)
+            }
+        }
         let canvas: GW
         if let ref = container as? CanvasRef { canvas = ref.canvas } else {
             let b = container as! GtkBox
@@ -1165,7 +1372,7 @@ final class WorkBox {
             if let inner = b.inner, b.kind == .image {
                 runway_canvas_place(b.outer, inner, 0, 0, Int32(frame.width), Int32(frame.height))
             }
-            if b.kind == .button, let c = b.canvas {
+            if b.kind == .button || b.kind == .toggle(.button), let c = b.canvas {
                 let ins = contentInsets(b)
                 runway_canvas_set_content_size(c, Int32(max(0, frame.width - ins.leading - ins.trailing)), Int32(max(0, frame.height - ins.top - ins.bottom)))
             }
@@ -1181,6 +1388,8 @@ final class WorkBox {
 
     public func destroy(_ widget: NativeWidget) {
         let b = widget as! GtkBox
+        if b.destroyed { return }
+        b.destroyed = true
         if let p = gtk_widget_get_parent(b.outer) {
             if gtk_widget_get_parent(p) != nil || true { runway_canvas_remove(p, b.outer) }
         }
@@ -1280,10 +1489,13 @@ final class WorkBox {
 /// label area), as a container the layer above can address.
 @MainActor final class CanvasRef: NativeWidget {
     let canvas: GW
-    unowned let owner: GtkBox
+    /// Weak: a freed widget's canvas address can be reused by a new one,
+    /// so a cached ref must not outlive (or vouch for) its owner.
+    weak var owner: GtkBox?
     private init(_ c: GW, owner: GtkBox) { canvas = c; self.owner = owner }
     private static var refs: [UnsafeMutableRawPointer: CanvasRef] = [:]
     static func wrap(_ c: GW, owner: GtkBox) -> CanvasRef {
+        if refs.count > 256 { refs = refs.filter { $0.value.owner != nil } }
         if let r = refs[raw(c)], r.owner === owner { return r }
         let r = CanvasRef(c, owner: owner)
         refs[raw(c)] = r

@@ -92,6 +92,23 @@ open class NSEvent: NSObject, @unchecked Sendable {
     public let charactersIgnoringModifiers: String?
     public let isARepeat: Bool
     public let keyCode: UInt16
+    /// The characters the key types with `modifiers` instead of the ones
+    /// held (a US layout's Shift for symbols).
+    open func characters(byApplyingModifiers modifiers: ModifierFlags) -> String? {
+        guard let base = charactersIgnoringModifiers else { return nil }
+        let lowered = base.lowercased()
+        guard modifiers.contains(.shift) else {
+            // Undo Shift on a symbol.
+            if let i = Self.shifted.firstIndex(where: { String($0.value) == base }) { return String(Self.shifted[i].key) }
+            return lowered
+        }
+        if let c = lowered.first, let up = Self.shifted[c] { return String(up) }
+        return base.uppercased()
+    }
+    static let shifted: [Character: Character] = [
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+        "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~",
+    ]
     open var specialKey: SpecialKey? {
         guard let c = charactersIgnoringModifiers?.unicodeScalars.first else { return nil }
         let v = Int(c.value)
@@ -221,7 +238,22 @@ public let NSCarriageReturnCharacter = 0x0d, NSBackTabCharacter = 0x19, NSDelete
         return m
     }
     static func remove(_ m: Any) { monitors.removeAll { $0 === (m as AnyObject) } }
+    /// An event the monitors saw before native widgets did; sendEvent
+    /// passes it through without running them again.
+    static var alreadyFiltered: NSEvent?
+    /// Whether any monitor takes this kind of pointer event.
+    static func watches(_ kind: RawEvent.Kind) -> Bool {
+        let mask: NSEvent.EventTypeMask = switch kind {
+        case .mouseDown: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        case .mouseUp: [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        case .mouseMoved: [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        default: []
+        }
+        return monitors.contains { !$0.mask.intersection(mask).isEmpty }
+    }
     static func filter(_ e: NSEvent) -> NSEvent? {
+        if let f = alreadyFiltered, f === e { alreadyFiltered = nil; return e }
+        alreadyFiltered = nil
         var cur: NSEvent? = e
         for m in monitors where m.mask.contains(NSEvent.EventTypeMask(type: e.type)) {
             guard let c = cur else { return nil }

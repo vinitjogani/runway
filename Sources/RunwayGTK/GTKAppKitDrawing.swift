@@ -279,6 +279,8 @@ enum ImageSurfaces {
 /// Pango layouts for CGTextLayout.
 enum PangoText {
     nonisolated(unsafe) static var systemFamily: String = {
+        // Runway's bundled Inter stands in for the Mac's system font.
+        if BundledFonts.enabled { return BundledFonts.uiFamily }
         guard let settings = gtk_settings_get_default() else { return "Sans" }
         var v = GValue()
         g_value_init(&v, GType(16 << 2))   // G_TYPE_STRING
@@ -292,7 +294,7 @@ enum PangoText {
     static func markup(_ layout: CGTextLayout, alpha: Bool = true) -> String {
         var out = ""
         for r in layout.runs {
-            var desc = r.monospaced ? "Monospace" : (r.family.map { $0 == "System" || $0.hasPrefix(".") ? systemFamily : $0 } ?? systemFamily)
+            var desc = r.monospaced ? "\(BundledFonts.monoFamily),Monospace" : (r.family.map { $0 == "System" || $0.hasPrefix(".") ? systemFamily : $0 } ?? systemFamily)
             switch r.weight {
             case ..<150: desc += " Ultra-Light"
             case ..<250: desc += " Thin"

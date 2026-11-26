@@ -23,9 +23,11 @@ What each Apple API is backed by on each platform. "(to do)" marks gaps.
 | `NSApp.mainMenu`, `NSMenu.popUp` | GtkPopoverMenuBar per window, in its titlebar row; GtkPopoverMenu | key equivalents |
 | Titlebar, `NSToolbar`, full-size content | client-side titlebar row (traffic lights, menu bar, title) and a toolbar band; safe areas | (to do) |
 | `NSScreen` | GDK monitors | one screen |
+| Focus, `onKeyPress`, hover, context menus, drags | GTK focus and event controllers (see [below](#swiftui-interaction)) | (to do) |
+| `Table`, `NSViewRepresentable` | SwiftUI table; representables join the hosting view's AppKit hierarchy | table only |
 
 For the Windows backend's controls, look and services in detail, see the
-[Win32 backend README](../../Sources/RunwayWin32/README.md).
+[Win32 backend README](../../Sources/RunwayDrawn/README.md).
 
 ## Text views
 
@@ -39,6 +41,62 @@ storage as tags:
   text;
 - keys, typing (input method), clicks, selection, undo and the pasteboard go
   through AppKit's methods.
+
+## SwiftUI interaction
+
+SwiftUI's input modifiers ride on the backend's AppKit extras (event
+containers, native focus), so they work wherever AppKit's do:
+
+- **Focus.** `@FocusState` with `.focused(_:equals:)` follows the toolkit's
+  keyboard focus both ways: a text field or editor gaining focus sets the
+  state, and setting the state moves focus (to a field, or to a view made
+  `.focusable()`). A focused view that goes away leaves focus nowhere, as on
+  the Mac.
+- **Keys.** `.onKeyPress` handlers see a key pressed in the focused view or
+  inside it, innermost first, before the control handles it. A focused
+  SwiftUI text input keeps typing and editing keys even in an AppKit window.
+- **Pointer.** `onHover`, `onContinuousHover`, `contextMenu` (secondary
+  click), `DragGesture` (with `@GestureState`), `onTapGesture(count:)` and
+  `pointerStyle` wrap their content in an event container that sees the
+  pointer without taking clicks from controls inside it.
+- **Hit testing.** As in SwiftUI, only content takes hits: text, images,
+  controls, filled shapes and `contentShape`. Containers, clear shapes and
+  views with `allowsHitTesting(false)` let the pointer through. An NSView's
+  widget is picked only where its `hitTest(_:)` answers that view, so an
+  AppKit overlay that returns nil doesn't hide what's under it.
+- **Tables.** `Table` sorts by clicking headers (`KeyPathComparator`
+  order), resizes columns by dragging header dividers, selects rows
+  (⌘ and ⇧ extend), moves the selection with the arrow keys, and opens rows
+  and shows menus through `contextMenu(forSelectionType:menu:primaryAction:)`.
+- **Representables.** An `NSViewRepresentable` in an `NSHostingView` is a
+  subview of it for AppKit: it gets `window` and `viewDidMoveToWindow`, takes
+  part in hit testing, layout, display and the responder chain, and is
+  dismantled when it leaves.
+- **Scrolling.** `ScrollViewReader.scrollTo`, `defaultScrollAnchor` and
+  `scrollIndicators` work; `TextEditor(text:selection:)` reports and sets
+  the selection.
+
+## Accessibility
+
+SwiftUI's accessibility modifiers (`accessibilityLabel`, `Value`, `Hint`,
+`Identifier`, `Hidden`, `Element(children:)`, `Add/RemoveTraits`, `Heading`,
+`accessibilityAction` and `accessibilityAdjustableAction`) wrap the view in a
+pass-through container that carries `AccessibilityProps`; modifiers in a row
+share one. Its role comes from the traits (heading, button, link, image,
+toggle, a named element, or a group), for toolkits that fix roles when a
+widget is made.
+
+| Backend | Exposed through |
+|---|---|
+| GTK | GTK's own accessibility (AT-SPI): labels, descriptions, value text and hidden states on the widgets; tap areas are buttons; `ignore`/`combine` elements hide their children (combined ones are named after their text); text fields are named by their prompt; help tags stay on the view they're on instead of every widget inside it. |
+| Drawn (Windows) | UI Automation: one provider per element of RunwayCore's `AccessibilityTree`. |
+| Drawn (Linux) | AT-SPI through GTK: one invisible widget per element. |
+
+`AccessibilityTree` builds the tree as SwiftUI does: controls are elements,
+layout is transparent and reading order is view order; a label on a view that
+is a single element names that element; `ignore` and `combine` fold children
+into one element (`combine` names it after their text and takes their
+actions); images are decorative unless labelled.
 
 ## Window chrome on Linux
 
@@ -86,9 +144,12 @@ plugin.
   uses. Shortcuts, separators, checkmarks and enabled states carry over, and
   menus validate as they open.
 - While a host is present, the titlebar row drops the menu. A window with a
-  toolbar loses the row entirely: its traffic lights float at the leading
-  edge of the toolbar band, as on a Mac with a unified toolbar, and
-  `standardWindowButton(_:)` returns their frames.
+  toolbar loses the row entirely.
+- In a window with a toolbar and full-size content, the traffic lights always
+  float at the leading edge of the toolbar band, as on a Mac with a unified
+  toolbar, where such apps leave room for them. Without a global menu host the
+  row above keeps only the in-window menu bar. `standardWindowButton(_:)`
+  returns their frames.
 - The host is watched, so the in-window bar comes back if the host goes
   away. Stock GNOME, Ubuntu's default included, has no global menu, so the
   in-window bar stays there.

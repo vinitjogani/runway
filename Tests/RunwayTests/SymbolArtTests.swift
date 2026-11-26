@@ -3,6 +3,7 @@
 
 import XCTest
 @testable import RunwayCore
+import CoreGraphics
 
 final class SymbolArtTests: XCTestCase {
     func testVariantsResolveToTheirBase() {
@@ -56,5 +57,44 @@ final class SymbolArtTests: XCTestCase {
         let names = try String(contentsOfFile: path, encoding: .utf8).split(separator: "\n").map(String.init)
         let missing = names.filter { SymbolArt.svg($0) == nil }
         XCTAssertEqual(missing, [], "symbols without art")
+    }
+}
+
+final class SymbolPathsTests: XCTestCase {
+    func testPlainGlyphParsesToStrokes() throws {
+        let shapes = try XCTUnwrap(SymbolPaths.shapes("plus"))
+        XCTAssertFalse(shapes.isEmpty)
+        XCTAssertTrue(shapes.allSatisfy { $0.stroke && !$0.fill && !$0.knockout })
+        XCTAssertEqual(shapes[0].strokeWidth, 1.75, accuracy: 0.01)
+    }
+
+    func testFilledEnclosureKnocksTheGlyphOut() throws {
+        let shapes = try XCTUnwrap(SymbolPaths.shapes("checkmark.circle.fill"))
+        XCTAssertTrue(shapes.contains { $0.fill && !$0.knockout })
+        XCTAssertTrue(shapes.contains { $0.knockout })
+        // The glyph sits inside the circle, at about half size.
+        for s in shapes where s.knockout {
+            for case let .line(p) in s.elements { XCTAssertTrue((4...20).contains(p.x) && (4...20).contains(p.y), "\(p)") }
+        }
+    }
+
+    func testArcsBecomeCurvesEndingAtTheTarget() {
+        let e = SymbolPaths.pathData("M2 12a10 10 0 0120 0")
+        guard case let .curve(end, _, _)? = e.last else { return XCTFail("\(e)") }
+        XCTAssertEqual(end.x, 22, accuracy: 0.001)
+        XCTAssertEqual(end.y, 12, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(e.count, 3)
+    }
+
+    func testRelativeCommandsAndShorthands() {
+        let e = SymbolPaths.pathData("m1 1h4v4H1z")
+        XCTAssertEqual(e.count, 5)
+        if case let .line(p) = e[2] { XCTAssertEqual(p, CGPoint(x: 5, y: 5)) } else { XCTFail() }
+    }
+
+    func testEveryMappedSymbolParses() {
+        for name in ["gearshape", "magnifyingglass", "person.crop.circle.fill", "xmark.circle.fill", "bubble.left", "arrow.triangle.branch", "doc.on.doc"] {
+            XCTAssertFalse((SymbolPaths.shapes(name) ?? []).isEmpty, name)
+        }
     }
 }

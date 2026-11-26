@@ -16,6 +16,16 @@ public protocol Gesture<Value> {
     /// ends in one.
     func _runwayTap() -> (count: Int, action: () -> Void)?
     func _runwaySpatialTap() -> _RunwaySpatialTap?
+    /// Runway: the drag this gesture tracks, with its callbacks.
+    func _runwayDrag() -> _RunwayDrag?
+}
+
+/// A drag gesture's distance and callbacks (onChanged, updating, onEnded).
+public struct _RunwayDrag {
+    var minimumDistance: CGFloat
+    var changed: [(DragGesture.Value) -> Void] = []
+    var ended: [(DragGesture.Value) -> Void] = []
+    var reset: [() -> Void] = []
 }
 
 public typealias _RunwaySpatialTap = (count: Int, coordinateSpace: CoordinateSpace, action: (CGPoint) -> Void)
@@ -23,6 +33,7 @@ public typealias _RunwaySpatialTap = (count: Int, coordinateSpace: CoordinateSpa
 extension Gesture {
     public func _runwayTap() -> (count: Int, action: () -> Void)? { nil }
     public func _runwaySpatialTap() -> _RunwaySpatialTap? { nil }
+    public func _runwayDrag() -> _RunwayDrag? { nil }
 }
 
 extension Never: Gesture {
@@ -96,6 +107,7 @@ public struct DragGesture: _PrimitiveGesture {
         self.minimumDistance = minimumDistance
         self.coordinateSpace = coordinateSpace
     }
+    public func _runwayDrag() -> _RunwayDrag? { _RunwayDrag(minimumDistance: minimumDistance) }
 }
 
 public struct MagnifyGesture: _PrimitiveGesture {
@@ -137,12 +149,15 @@ public struct RotationGesture: _PrimitiveGesture {
 public struct AnyGesture<Value>: _PrimitiveGesture {
     let tap: () -> (count: Int, action: () -> Void)?
     let spatialTap: () -> _RunwaySpatialTap?
+    let drag: () -> _RunwayDrag?
     public init<T: Gesture>(_ gesture: T) where T.Value == Value {
         tap = { gesture._runwayTap() }
         spatialTap = { gesture._runwaySpatialTap() }
+        drag = { gesture._runwayDrag() }
     }
     public func _runwayTap() -> (count: Int, action: () -> Void)? { tap() }
     public func _runwaySpatialTap() -> _RunwaySpatialTap? { spatialTap() }
+    public func _runwayDrag() -> _RunwayDrag? { drag() }
 }
 
 // MARK: Gesture modifiers
@@ -153,6 +168,12 @@ public struct _ChangedGesture<Content: Gesture>: _PrimitiveGesture {
     let action: (Content.Value) -> Void
     public func _runwayTap() -> (count: Int, action: () -> Void)? { content._runwayTap() }
     public func _runwaySpatialTap() -> _RunwaySpatialTap? { content._runwaySpatialTap() }
+    public func _runwayDrag() -> _RunwayDrag? {
+        guard var d = content._runwayDrag() else { return nil }
+        let action = self.action
+        d.changed.append { v in if let value = v as? Content.Value { action(value) } }
+        return d
+    }
 }
 
 public struct _EndedGesture<Content: Gesture>: _PrimitiveGesture {
@@ -170,6 +191,12 @@ public struct _EndedGesture<Content: Gesture>: _PrimitiveGesture {
         }
         return content._runwaySpatialTap()
     }
+    public func _runwayDrag() -> _RunwayDrag? {
+        guard var d = content._runwayDrag() else { return nil }
+        let action = self.action
+        d.ended.append { v in if let value = v as? Content.Value { action(value) } }
+        return d
+    }
 }
 
 public struct _MapGesture<Content: Gesture, Value>: _PrimitiveGesture {
@@ -186,6 +213,19 @@ public struct GestureStateGesture<Base: Gesture, State>: _PrimitiveGesture {
     let update: (Base.Value, inout State, inout Transaction) -> Void
     public func _runwayTap() -> (count: Int, action: () -> Void)? { base._runwayTap() }
     public func _runwaySpatialTap() -> _RunwaySpatialTap? { base._runwaySpatialTap() }
+    public func _runwayDrag() -> _RunwayDrag? {
+        guard var d = base._runwayDrag() else { return nil }
+        let state = self.state, update = self.update
+        d.changed.append { v in
+            guard let value = v as? Base.Value else { return }
+            var current = state.wrappedValue
+            var t = Transaction()
+            update(value, &current, &t)
+            state.set(current)
+        }
+        d.reset.append { state.set(state.initial) }
+        return d
+    }
 }
 
 public struct SequenceGesture<First: Gesture, Second: Gesture>: _PrimitiveGesture {
@@ -210,6 +250,7 @@ public struct SimultaneousGesture<First: Gesture, Second: Gesture>: _PrimitiveGe
     public func _runwaySpatialTap() -> _RunwaySpatialTap? {
         first._runwaySpatialTap() ?? (first._runwayTap() == nil ? second._runwaySpatialTap() : nil)
     }
+    public func _runwayDrag() -> _RunwayDrag? { first._runwayDrag() ?? second._runwayDrag() }
 }
 
 public struct ExclusiveGesture<First: Gesture, Second: Gesture>: _PrimitiveGesture {
@@ -228,6 +269,7 @@ public struct ExclusiveGesture<First: Gesture, Second: Gesture>: _PrimitiveGestu
     public func _runwaySpatialTap() -> _RunwaySpatialTap? {
         first._runwaySpatialTap() ?? (first._runwayTap() == nil ? second._runwaySpatialTap() : nil)
     }
+    public func _runwayDrag() -> _RunwayDrag? { first._runwayDrag() ?? second._runwayDrag() }
 }
 
 public struct _ModifiersGesture<Content: Gesture>: _PrimitiveGesture {
@@ -235,6 +277,7 @@ public struct _ModifiersGesture<Content: Gesture>: _PrimitiveGesture {
     let content: Content
     public func _runwayTap() -> (count: Int, action: () -> Void)? { content._runwayTap() }
     public func _runwaySpatialTap() -> _RunwaySpatialTap? { content._runwaySpatialTap() }
+    public func _runwayDrag() -> _RunwayDrag? { content._runwayDrag() }
 }
 
 extension Gesture {
@@ -253,17 +296,28 @@ extension Gesture {
 // MARK: GestureState
 
 @propertyWrapper
-public struct GestureState<Value>: DynamicProperty {
+public struct GestureState<Value>: DynamicProperty, DynamicPropertyLink {
+    final class Link: @unchecked Sendable { var box: StateBox<Value>? }
     let initial: Value
     let reset: ((Value, inout Transaction) -> Void)?
+    let link = Link()
     public init(wrappedValue: Value) { initial = wrappedValue; reset = nil }
     public init(initialValue: Value) { self.init(wrappedValue: initialValue) }
     public init(wrappedValue: Value, resetTransaction: Transaction) { initial = wrappedValue; reset = nil }
     public init(wrappedValue: Value, reset: @escaping (Value, inout Transaction) -> Void) { initial = wrappedValue; self.reset = reset }
-    /// Gesture state is the initial value whenever no gesture is active,
-    /// which (with no pointer tracking yet) is always.
-    public var wrappedValue: Value { initial }
+    /// The value a gesture's `updating` set while it's active; the initial
+    /// value otherwise.
+    public var wrappedValue: Value { link.box?.value ?? initial }
     public var projectedValue: GestureState<Value> { self }
+
+    func link(_ ctx: ResolveContext, key: String) {
+        let initial = self.initial
+        link.box = ctx.host.stateBox(key) { initial }
+    }
+    func set(_ v: Value) {
+        guard let box = link.box else { return }
+        MainActor.assumeIsolated { box.set(v) }
+    }
 }
 
 extension GestureState where Value: ExpressibleByNilLiteral {
@@ -277,6 +331,13 @@ struct GestureView<Content: View, G: Gesture>: View, PrimitiveView {
     let content: Content
     let gesture: G
     func resolve(in ctx: ResolveContext) -> [LayoutNode] {
+        if let drag = gesture._runwayDrag() {
+            // A tap combined with it still taps.
+            if let tap = gesture._runwayTap() {
+                return ctx.resolve(content.onTapGesture(count: tap.count, perform: tap.action).dragTracking(drag), "g")
+            }
+            return ctx.resolve(content.dragTracking(drag), "g")
+        }
         if let tap = gesture._runwaySpatialTap() {
             return ctx.resolve(content.onTapGesture(count: tap.count, coordinateSpace: tap.coordinateSpace, perform: tap.action), "g")
         }
@@ -284,6 +345,61 @@ struct GestureView<Content: View, G: Gesture>: View, PrimitiveView {
             return ctx.resolve(content.onTapGesture(count: tap.count, perform: tap.action), "g")
         }
         return ctx.resolve(content, "g")
+    }
+}
+
+/// Where a drag is, between its press and its release.
+@MainActor final class DragTracker {
+    var start: CGPoint?
+    var active = false
+    var last: (CGPoint, Date)?
+    var velocity = CGSize.zero
+}
+
+extension View {
+    /// Tracks the pointer from a press as a DragGesture: onChanged (and
+    /// updating) once it has moved its minimum distance, onEnded on release.
+    func dragTracking(_ drag: _RunwayDrag) -> some View {
+        pointerArea("drag") { h, ctx in
+            let tracker = (ctx.host.interactions["drag:" + ctx.path] as? DragTracker) ?? DragTracker()
+            ctx.host.interactions["drag:" + ctx.path] = tracker
+            ctx.host.visitedInteractions.insert("drag:" + ctx.path)
+            ctx.host.record(.interaction, "drag:" + ctx.path)
+            h.pointer = { e in
+                @MainActor func value(_ p: CGPoint) -> DragGesture.Value {
+                    let start = tracker.start ?? p
+                    let predicted = CGPoint(x: p.x + tracker.velocity.width * 0.25, y: p.y + tracker.velocity.height * 0.25)
+                    return DragGesture.Value(time: Date(), location: p, startLocation: start, velocity: tracker.velocity, predictedEndLocation: predicted)
+                }
+                switch e.kind {
+                case .down where e.button == 0:
+                    tracker.start = e.location
+                    tracker.last = (e.location, Date())
+                    tracker.velocity = .zero
+                    tracker.active = drag.minimumDistance <= 0
+                    if tracker.active { drag.changed.forEach { $0(value(e.location)) } }
+                    return tracker.active
+                case .dragged:
+                    guard let start = tracker.start else { return false }
+                    if let (p, t) = tracker.last {
+                        let dt = max(0.001, Date().timeIntervalSince(t))
+                        tracker.velocity = CGSize(width: (e.location.x - p.x) / dt, height: (e.location.y - p.y) / dt)
+                    }
+                    tracker.last = (e.location, Date())
+                    if !tracker.active, hypot(e.location.x - start.x, e.location.y - start.y) >= drag.minimumDistance { tracker.active = true }
+                    if tracker.active { drag.changed.forEach { $0(value(e.location)) } }
+                    return tracker.active
+                case .up:
+                    defer { tracker.start = nil; tracker.active = false; tracker.last = nil }
+                    guard tracker.start != nil else { return false }
+                    if tracker.active { drag.ended.forEach { $0(value(e.location)) } }
+                    drag.reset.forEach { $0() }
+                    return tracker.active
+                default:
+                    return false
+                }
+            }
+        }
     }
 }
 

@@ -152,6 +152,29 @@ open class NSItemProvider: NSObject, NSCopying, @unchecked Sendable {
         })
     }
 
+    /// Runway: the text and URLs this provider hands over without waiting
+    /// (what a drag out of the app carries); loaders that answer later are skipped.
+    public func _runwayImmediateContents() -> (strings: [String], urls: [URL]) {
+        var strings: [String] = [], urls: [URL] = []
+        for r in lock.withLock({ representations }) {
+            var got: Payload?
+            _ = r.load { p, _ in got = p }
+            switch got {
+            case let .item(v as String): strings.append(v)
+            case let .item(v as NSString): strings.append(v as String)
+            case let .item(v as URL): urls.append(v)
+            case let .file(u, _): urls.append(u)
+            case let .data(d) where Self.textTypes.contains(where: { Self.type(r.type, conformsTo: $0) }):
+                strings.append(String(decoding: d, as: UTF8.self))
+            case let .data(d) where Self.type(r.type, conformsTo: Self.urlType):
+                if let u = URL(string: String(decoding: d, as: UTF8.self)) { urls.append(u) }
+            default: break
+            }
+        }
+        var seenURLs = Set<URL>(), seenStrings = Set<String>()
+        return (strings.filter { seenStrings.insert($0).inserted }, urls.filter { seenURLs.insert($0).inserted })
+    }
+
     // MARK: Asking
 
     open var registeredTypeIdentifiers: [String] {

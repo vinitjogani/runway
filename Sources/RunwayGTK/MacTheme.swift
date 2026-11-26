@@ -14,8 +14,9 @@
 import Foundation
 
 enum MacTheme {
-    /// SF can't ship with Runway; the closest installed face wins.
-    static let fontFamilies = ["SF Pro Text", "SF Pro", ".AppleSystemUIFont", "Inter Variable", "Inter", "Cantarell",
+    /// SF can't ship with Runway: Inter, which it bundles, stands in (with
+    /// RUNWAY_SYSTEM_FONTS=1, the closest installed face wins).
+    static let fontFamilies = ["SF Pro Text", "SF Pro", ".AppleSystemUIFont", "Inter", "Inter Variable", "Cantarell",
                                "Noto Sans", "Helvetica Neue", "Helvetica", "Liberation Sans", "Arial", "sans-serif"]
 
     static var pangoFamilies: String { fontFamilies.joined(separator: ",") }
@@ -204,6 +205,7 @@ enum MacTheme {
         button label:disabled { color: inherit; }
         .rw-tap { all: unset; }
         .rw-container { background: none; }
+        scrolledwindow.rw-clear-background, scrolledwindow.rw-clear-background textview, scrolledwindow.rw-clear-background textview > text { background: none; }
         scrolledwindow.rw-scroll { background: none; }
         undershoot, overshoot { background: none; }
 
@@ -372,6 +374,7 @@ enum MacTheme {
 
         /* Multi-line text (TextEditor). */
         scrolledwindow.rw-editor { background-color: \(p.textBackground); }
+        scrolledwindow.rw-editor.rw-clear-background { background: none; }
         textview, textview > text { background-color: transparent; color: \(p.text); caret-color: \(p.accent); }
         textview > border { background: none; }
 

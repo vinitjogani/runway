@@ -73,11 +73,12 @@ int runway_markup_height(GtkWidget *widget, const char *markup, int width, gbool
 
 // MARK: Pop-up menus
 
-typedef struct { GtkWidget *button; GtkWidget *canvas; } PopupInfo;
+typedef struct { GtkWidget *button; GtkWidget *canvas; GSList *tips; } PopupInfo;
 
 static gboolean popup_cleanup(gpointer data) {
     PopupInfo *p = data;
     runway_canvas_remove(p->canvas, p->button);
+    runway_restore_tooltips(p->tips);
     g_object_unref(p->button);
     g_object_unref(p->canvas);
     g_free(p);
@@ -101,6 +102,7 @@ void runway_popup_menu(GtkWidget *canvas, int x, int y, const char *const *title
     PopupInfo *info = g_new(PopupInfo, 1);
     info->button = button;
     info->canvas = g_object_ref(canvas);
+    info->tips = runway_suppress_tooltips(canvas);
     if (pop) {
         gtk_popover_set_has_arrow(pop, FALSE);
         gtk_widget_set_halign(GTK_WIDGET(pop), GTK_ALIGN_START);

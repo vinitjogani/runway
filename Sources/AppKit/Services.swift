@@ -624,10 +624,22 @@ public final class NSWorkspace: NSObject, @unchecked Sendable {
         let ok = open(url)
         completionHandler?(nil, ok ? nil : CocoaError(.fileNoSuchFile))
     }
-    public func open(_ urls: [URL], withApplicationAt app: URL, configuration: OpenConfiguration, completionHandler: ((Any?, Error?) -> Void)? = nil) {
-        urls.forEach { _ = open($0) }
-        completionHandler?(nil, nil)
+    /// Makes an application the handler of a URL scheme (the desktop's
+    /// mimeapps.list on Linux).
+    public func setDefaultApplication(at app: URL, toOpenURLsWithScheme scheme: String) async throws {
+        guard let id = DesktopApps.desktopID(for: app) else { throw CocoaError(.fileNoSuchFile) }
+        try MimeApps.setDefault(id + ".desktop", for: "x-scheme-handler/" + scheme.lowercased())
     }
+    public func setDefaultApplication(at app: URL, toOpenURLsWithScheme scheme: String, completion: @escaping ((any Error)?) -> Void) {
+        Task {
+            do { try await setDefaultApplication(at: app, toOpenURLsWithScheme: scheme); completion(nil) } catch { completion(error) }
+        }
+    }
+    public func setDefaultApplication(at app: URL, toOpen type: UTType) async throws {
+        guard let id = DesktopApps.desktopID(for: app), let mime = type.preferredMIMEType else { throw CocoaError(.fileNoSuchFile) }
+        try MimeApps.setDefault(id + ".desktop", for: mime)
+    }
+
     /// The file manager, with the files selected where it can.
     public func activateFileViewerSelecting(_ urls: [URL]) { onMainThread { Runway.backend.services.reveal(urls) } }
     @discardableResult public func selectFile(_ path: String?, inFileViewerRootedAtPath root: String) -> Bool {
@@ -636,8 +648,11 @@ public final class NSWorkspace: NSObject, @unchecked Sendable {
     }
     public func icon(forFile path: String) -> NSImage { onMainThread { NSImage(systemSymbolName: "doc", accessibilityDescription: nil)! } }
     public func icon(for type: UTType) -> NSImage { onMainThread { NSImage(systemSymbolName: "doc", accessibilityDescription: nil)! } }
-    public func urlForApplication(withBundleIdentifier id: String) -> URL? { nil }
-    public func urlForApplication(toOpen url: URL) -> URL? { nil }
+    /// The application with a bundle identifier: on Linux a desktop entry
+    /// (Mac identifiers of common apps map to theirs), as an app bundle.
+    public func urlForApplication(withBundleIdentifier id: String) -> URL? { DesktopApps.application(withIdentifier: id) }
+    /// The default handler for a URL (mimeapps.list on Linux), as an app bundle.
+    public func urlForApplication(toOpen url: URL) -> URL? { DesktopApps.defaultApplication(for: url) }
     public func recycle(_ urls: [URL], completionHandler: (([URL: URL], Error?) -> Void)? = nil) {
         var moved: [URL: URL] = [:]
         var lastError: Error?
@@ -830,6 +845,21 @@ public final class NSOpenPanel: NSSavePanel {
     public private(set) var urls: [URL] = []
     public static func openPanel() -> NSOpenPanel { NSOpenPanel() }
     public override func runModal() -> NSApplication.ModalResponse {
+        // Applications aren't bundles in a folder off the Mac: pick one
+        // from the desktop's application chooser, seen as a bundle.
+        if !allowedContentTypes.isEmpty, allowedContentTypes.allSatisfy({ $0.conforms(to: .application) || $0 == .applicationBundle }) {
+            #if os(Linux)
+            if let id = Runway.backend.services.chooseApplication(title: title ?? message ?? "Choose an Application", mimeType: nil),
+               let file = DesktopApps.desktopFile(id), let bundle = DesktopApps.bundle(for: file) {
+                urls = [bundle]
+                url = urls.first
+                return .OK
+            }
+            urls = []
+            url = nil
+            return .cancel
+            #endif
+        }
         let exts = allowedContentTypes.flatMap { $0.tags[.filenameExtension] ?? [] }
         urls = Runway.backend.services.chooseFiles(title: title ?? message ?? "Open", allowsMultiple: allowsMultipleSelection,
                                                     canChooseDirectories: canChooseDirectories, extensions: exts) ?? []
@@ -884,4 +914,257 @@ public final class NSAlertButton {
     public var hasDestructiveAction = false
     public var keyEquivalent = ""
     init(title: String) { self.title = title }
+}
+
+// MARK: Default applications (freedesktop mimeapps.list)
+
+/// The desktop's default applications, read and written as the
+/// freedesktop MIME applications spec describes (what xdg-mime and GIO use),
+/// so no helper tool is needed.
+enum MimeApps {
+    static var configHome: String {
+        ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? (NSHomeDirectory() + "/.config")
+    }
+    static var desktops: [String] {
+        (ProcessInfo.processInfo.environment["XDG_CURRENT_DESKTOP"] ?? "").split(separator: ":").map { $0.lowercased() }
+    }
+
+    /// mimeapps.list files in priority order (desktop-specific first).
+    static var lists: [String] {
+        let env = ProcessInfo.processInfo.environment
+        var dirs = [configHome] + (env["XDG_CONFIG_DIRS"] ?? "/etc/xdg").split(separator: ":").map(String.init)
+        dirs += DesktopApps.dataDirs.map { $0 + "/applications" }
+        var out: [String] = []
+        for d in dirs {
+            for desktop in desktops { out.append(d + "/\(desktop)-mimeapps.list") }
+            out.append(d + "/mimeapps.list")
+        }
+        return out + DesktopApps.dataDirs.map { $0 + "/applications/defaults.list" }
+    }
+
+    /// The groups of an ini-style file: [group] key=value.
+    static func parse(_ text: String) -> [(group: String, entries: [(String, String)])] {
+        var out: [(String, [(String, String)])] = []
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("["), line.hasSuffix("]") { out.append((String(line.dropFirst().dropLast()), [])); continue }
+            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "="), !out.isEmpty else { continue }
+            out[out.count - 1].1.append((String(line[..<eq]).trimmingCharacters(in: .whitespaces),
+                                          String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)))
+        }
+        return out
+    }
+
+    /// The desktop id of the default application for a MIME type.
+    static func defaultApplication(for mime: String) -> String? {
+        for path in lists {
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            for g in parse(text) where g.group == "Default Applications" {
+                for (k, v) in g.entries where k == mime {
+                    for id in v.split(separator: ";").map(String.init) where !id.isEmpty && DesktopApps.desktopFile(id) != nil { return id }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Makes `desktopID` the default for `mime` in the user's mimeapps.list,
+    /// keeping everything else in it.
+    static func setDefault(_ desktopID: String, for mime: String) throws {
+        let path = configHome + "/mimeapps.list"
+        let existing = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        var groups = parse(existing)
+        func set(_ group: String, _ value: (String?) -> String) {
+            if let gi = groups.firstIndex(where: { $0.group == group }) {
+                if let ei = groups[gi].entries.firstIndex(where: { $0.0 == mime }) {
+                    groups[gi].entries[ei].1 = value(groups[gi].entries[ei].1)
+                } else {
+                    groups[gi].entries.append((mime, value(nil)))
+                }
+            } else {
+                groups.append((group, [(mime, value(nil))]))
+            }
+        }
+        set("Default Applications") { _ in desktopID + ";" }
+        set("Added Associations") { old in
+            let ids = (old ?? "").split(separator: ";").map(String.init).filter { !$0.isEmpty && $0 != desktopID }
+            return ([desktopID] + ids).joined(separator: ";") + ";"
+        }
+        let text = groups.map { g in "[\(g.group)]\n" + g.entries.map { "\($0.0)=\($0.1)\n" }.joined() }.joined(separator: "\n")
+        try FileManager.default.createDirectory(atPath: configHome, withIntermediateDirectories: true)
+        try text.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+}
+
+// MARK: Desktop applications as bundles
+
+/// Desktop entries seen through AppKit's bundle-based APIs. Each is shown
+/// as a small `.app` bundle (in the user's cache) whose Info.plist holds
+/// the entry's id as `CFBundleIdentifier`, its name, and its URL schemes,
+/// so `Bundle(url:)` and display names work on them as on a Mac.
+enum DesktopApps {
+    static let aliases: [String: [String]] = [
+        "com.apple.Safari": ["org.gnome.Epiphany", "epiphany"],
+        "com.google.Chrome": ["google-chrome", "com.google.Chrome", "chromium", "chromium-browser", "org.chromium.Chromium"],
+        "org.mozilla.firefox": ["firefox", "org.mozilla.firefox", "firefox_firefox", "firefox-esr"],
+        "com.microsoft.edgemac": ["microsoft-edge", "com.microsoft.Edge"],
+        "com.brave.Browser": ["brave-browser", "com.brave.Browser"],
+        "com.microsoft.VSCode": ["code", "com.visualstudio.code"],
+        "com.apple.Terminal": ["org.gnome.Terminal", "org.gnome.Console", "konsole", "xterm"],
+    ]
+
+    static func run(_ tool: String, _ args: [String]) -> String? {
+        #if os(Windows)
+        return nil
+        #else
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = [tool] + args
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        #endif
+    }
+
+    static var dataDirs: [String] {
+        let env = ProcessInfo.processInfo.environment
+        let home = env["XDG_DATA_HOME"] ?? (NSHomeDirectory() + "/.local/share")
+        return [home] + (env["XDG_DATA_DIRS"] ?? "/usr/local/share:/usr/share").split(separator: ":").map(String.init)
+            + ["/var/lib/flatpak/exports/share", NSHomeDirectory() + "/.local/share/flatpak/exports/share", "/var/lib/snapd/desktop"]
+    }
+
+    static func desktopFile(_ id: String) -> URL? {
+        let name = id.hasSuffix(".desktop") ? id : id + ".desktop"
+        for d in dataDirs {
+            let p = d + "/applications/" + name
+            if FileManager.default.fileExists(atPath: p) { return URL(fileURLWithPath: p) }
+        }
+        return nil
+    }
+
+    static func application(withIdentifier id: String) -> URL? {
+        if id == Bundle.main.bundleIdentifier { return Bundle.main.bundleURL }
+        for candidate in [id] + (aliases[id] ?? []) + [id.split(separator: ".").last.map { String($0).lowercased() } ?? id] {
+            if let file = desktopFile(candidate) { return bundle(for: file) }
+        }
+        return nil
+    }
+
+    static func defaultApplication(for url: URL) -> URL? {
+        let mime: String
+        if url.isFileURL {
+            guard let m = run("xdg-mime", ["query", "filetype", url.path]) ?? UTType(filenameExtension: url.pathExtension)?.preferredMIMEType else { return nil }
+            mime = m
+        } else {
+            guard let scheme = url.scheme?.lowercased() else { return nil }
+            mime = "x-scheme-handler/" + scheme
+        }
+        guard let id = MimeApps.defaultApplication(for: mime), let file = desktopFile(id) else { return nil }
+        return bundle(for: file)
+    }
+
+    /// The desktop id an application URL stands for (a stand-in bundle,
+    /// a .desktop file, or this app).
+    static func desktopID(for app: URL) -> String? {
+        if app.pathExtension == "desktop" { return app.deletingPathExtension().lastPathComponent }
+        if let b = Bundle(url: app), let entry = b.object(forInfoDictionaryKey: "RunwayDesktopEntry") as? String {
+            return URL(fileURLWithPath: entry).deletingPathExtension().lastPathComponent
+        }
+        if app.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL || app == Bundle.main.executableURL {
+            return ownDesktopEntry().map { $0.deletingPathExtension().lastPathComponent }
+        }
+        return nil
+    }
+
+    /// This app's own desktop entry, written once so it can be a handler.
+    static func ownDesktopEntry() -> URL? {
+        guard let exe = Bundle.main.executableURL else { return nil }
+        let id = (Bundle.main.bundleIdentifier ?? exe.lastPathComponent).replacingOccurrences(of: " ", with: "-")
+        let dir = URL(fileURLWithPath: dataDirs[0]).appendingPathComponent("applications", isDirectory: true)
+        let file = dir.appendingPathComponent(id + ".desktop")
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? exe.lastPathComponent
+        let text = """
+        [Desktop Entry]
+        Type=Application
+        Name=\(name)
+        Exec="\(exe.path)" %U
+        Terminal=false
+        NoDisplay=false
+        MimeType=x-scheme-handler/http;x-scheme-handler/https;
+
+        """
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if (try? String(contentsOf: file, encoding: .utf8)) != text { try? text.write(to: file, atomically: true, encoding: .utf8) }
+        _ = run("update-desktop-database", [dir.path])
+        return file
+    }
+
+    /// A stand-in bundle for a desktop entry.
+    static func bundle(for desktop: URL) -> URL? {
+        guard let text = try? String(contentsOf: desktop, encoding: .utf8) else { return nil }
+        var name = desktop.deletingPathExtension().lastPathComponent
+        var mimes: [String] = []
+        var inEntry = false
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") { inEntry = line == "[Desktop Entry]"; continue }
+            guard inEntry, let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq], value = String(line[line.index(after: eq)...])
+            if key == "Name" { name = value }
+            if key == "MimeType" { mimes = value.split(separator: ";").map(String.init) }
+        }
+        let id = desktop.deletingPathExtension().lastPathComponent
+        let schemes = mimes.filter { $0.hasPrefix("x-scheme-handler/") }.map { String($0.dropFirst("x-scheme-handler/".count)) }
+        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("runway-apps/\(id)", isDirectory: true)
+        let app = root.appendingPathComponent(name.replacingOccurrences(of: "/", with: "-") + ".app", isDirectory: true)
+        let info: [String: Any] = [
+            "CFBundleIdentifier": id, "CFBundleName": name, "CFBundleDisplayName": name, "CFBundlePackageType": "APPL",
+            "RunwayDesktopEntry": desktop.path,
+            "CFBundleURLTypes": [["CFBundleURLName": id, "CFBundleURLSchemes": schemes]],
+            "CFBundleDocumentTypes": [["CFBundleTypeMIMETypes": mimes.filter { !$0.hasPrefix("x-scheme-handler/") }]],
+        ]
+        let contents = app.appendingPathComponent("Contents", isDirectory: true)
+        try? FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        if let data = try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0) {
+            let plist = contents.appendingPathComponent("Info.plist")
+            if (try? Data(contentsOf: plist)) != data { try? data.write(to: plist) }
+        }
+        return app
+    }
+
+    /// Starts an application with URLs: through GIO for a desktop entry, or
+    /// the executable itself.
+    @discardableResult
+    static func launch(_ app: URL, _ urls: [URL]) -> Bool {
+        #if os(Windows)
+        return false
+        #else
+        let args = urls.map { $0.isFileURL ? $0.path : $0.absoluteString }
+        var entry: String?
+        if app.pathExtension == "desktop" { entry = app.path }
+        else if let b = Bundle(url: app), let e = b.object(forInfoDictionaryKey: "RunwayDesktopEntry") as? String { entry = e }
+        let p = Process()
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        if let entry {
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            p.arguments = ["gio", "launch", entry] + args
+        } else if FileManager.default.isExecutableFile(atPath: app.path), !app.hasDirectoryPath {
+            p.executableURL = app
+            p.arguments = args
+        } else if let exe = Bundle(url: app)?.executableURL {
+            p.executableURL = exe
+            p.arguments = args
+        } else {
+            return false
+        }
+        return (try? p.run()) != nil
+        #endif
+    }
 }

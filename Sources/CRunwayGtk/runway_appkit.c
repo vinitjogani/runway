@@ -1,5 +1,6 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 #include "runway_appkit.h"
+#include "runway_gtk.h"
 #include <string.h>
 
 typedef struct {
@@ -43,6 +44,22 @@ static gboolean content_point(GtkWidget *content, GdkEvent *ev, double *x, doubl
     return TRUE;
 }
 
+void runway_widget_set_interactive(GtkWidget *w, int interactive) {
+    g_object_set_data(G_OBJECT(w), "rw-interactive", interactive ? GINT_TO_POINTER(1) : NULL);
+}
+
+/// Whether the widget under (x, y) in `content`, or one of its ancestors
+/// below `content`, is a control that handles presses itself.
+static int native_control_at(GtkWidget *content, double x, double y) {
+    GtkWidget *w = gtk_widget_pick(content, x, y, GTK_PICK_DEFAULT);
+    for (; w && w != content; w = gtk_widget_get_parent(w)) {
+        if (g_object_get_data(G_OBJECT(w), "rw-interactive")) return 1;
+        if (GTK_IS_BUTTON(w) || GTK_IS_TEXT(w) || GTK_IS_TEXT_VIEW(w) || GTK_IS_DROP_DOWN(w) || GTK_IS_SWITCH(w)
+            || GTK_IS_SCALE(w) || GTK_IS_CHECK_BUTTON(w) || GTK_IS_MENU_BUTTON(w) || GTK_IS_ENTRY(w)) return 1;
+    }
+    return 0;
+}
+
 static gboolean legacy_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer data) {
     (void)c;
     EventTarget *t = data;
@@ -56,6 +73,7 @@ static gboolean legacy_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer
     case GDK_BUTTON_PRESS:
     case GDK_BUTTON_RELEASE: {
         guint b = gdk_button_event_get_button(ev);
+        if (type == GDK_BUTTON_PRESS) e.native_control = native_control_at(t->content, e.x, e.y);
         e.kind = type == GDK_BUTTON_PRESS ? RUNWAY_EV_DOWN : RUNWAY_EV_UP;
         e.button = b == 1 ? 0 : b == 3 ? 1 : b == 2 ? 2 : (int)b - 1;
         break;
@@ -81,6 +99,35 @@ static gboolean legacy_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer
         break;
     }
     default: return FALSE;
+    }
+    return t->fn(&e, t->data);
+}
+
+/* Before native widgets: presses, releases and drags, for AppKit's local
+   event monitors, which can keep an event from the views under it. */
+static gboolean legacy_capture_event(GtkEventControllerLegacy *c, GdkEvent *ev, gpointer data) {
+    GdkEventType type = gdk_event_get_event_type(ev);
+    if (type == GDK_MOTION_NOTIFY) {
+        GdkModifierType state = gdk_event_get_modifier_state(ev);
+        if (!(state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK))) return FALSE;
+    } else if (type != GDK_BUTTON_PRESS && type != GDK_BUTTON_RELEASE) {
+        return FALSE;
+    }
+    EventTarget *t = data;
+    RunwayAppKitEvent e;
+    memset(&e, 0, sizeof e);
+    e.monitor_phase = 1;
+    e.modifiers = mods(gdk_event_get_modifier_state(ev));
+    e.time = gdk_event_get_time(ev) / 1000.0;
+    content_point(t->content, ev, &e.x, &e.y);
+    (void)c;
+    if (type == GDK_MOTION_NOTIFY) {
+        e.kind = RUNWAY_EV_MOTION;
+    } else {
+        guint b = gdk_button_event_get_button(ev);
+        if (type == GDK_BUTTON_PRESS) e.native_control = native_control_at(t->content, e.x, e.y);
+        e.kind = type == GDK_BUTTON_PRESS ? RUNWAY_EV_DOWN : RUNWAY_EV_UP;
+        e.button = b == 1 ? 0 : b == 3 ? 1 : b == 2 ? 2 : (int)b - 1;
     }
     return t->fn(&e, t->data);
 }
@@ -123,6 +170,9 @@ static gboolean key_common(EventTarget *t, guint keyval, guint keycode, GdkModif
         return FALSE;
     }
     e.kind = press ? RUNWAY_EV_KEY_DOWN : RUNWAY_EV_KEY_UP;
+    GtkRoot *root = gtk_widget_get_root(t->content);
+    GtkWidget *focus = root ? gtk_root_get_focus(root) : NULL;
+    e.native_text_focus = focus && (GTK_IS_TEXT(focus) || GTK_IS_TEXT_VIEW(focus)) && gtk_widget_is_sensitive(focus);
     // Repeats: a press for a key that's already down.
     int found = -1;
     for (int i = 0; i < t->n_down; i++) if (t->down_keys[i] == keycode) found = i;
@@ -156,6 +206,10 @@ void runway_appkit_install_events(GtkWidget *window, GtkWidget *content, RunwayA
     gtk_event_controller_set_propagation_phase(legacy, GTK_PHASE_BUBBLE);
     g_signal_connect_data(legacy, "event", G_CALLBACK(legacy_event), t, event_target_free, 0);
     gtk_widget_add_controller(content, legacy);
+    GtkEventController *capture = gtk_event_controller_legacy_new();
+    gtk_event_controller_set_propagation_phase(capture, GTK_PHASE_CAPTURE);
+    g_signal_connect_data(capture, "event", G_CALLBACK(legacy_capture_event), t, NULL, 0);
+    gtk_widget_add_controller(content, capture);
     // Keys share the target; it's freed with the legacy controller's closure.
     GtkEventController *keys = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
@@ -325,12 +379,14 @@ void runway_appkit_popup_menu(GtkWidget *parent, GMenuModel *model, GActionGroup
     gtk_widget_set_halign(pop, GTK_ALIGN_START);
     gboolean closed = FALSE;
     gulong id = g_signal_connect(pop, "closed", G_CALLBACK(popover_closed), &closed);
+    GSList *tips = runway_suppress_tooltips(parent);
     gtk_popover_popup(GTK_POPOVER(pop));
     while (!closed) g_main_context_iteration(NULL, TRUE);
     // Let the chosen item's action run before the popover goes.
     while (g_main_context_pending(NULL)) g_main_context_iteration(NULL, FALSE);
     g_signal_handler_disconnect(pop, id);
     gtk_widget_unparent(pop);
+    runway_restore_tooltips(tips);
 }
 
 typedef struct { RunwayIndexFunc2 fn; void *data; int index; } ActionTarget;
@@ -364,4 +420,24 @@ void runway_appkit_begin_move(GtkWidget *window, int button, double x, double y,
     GdkDevice *pointer = seat ? gdk_seat_get_pointer(seat) : NULL;
     if (!pointer) return;
     gdk_toplevel_begin_move(GDK_TOPLEVEL(surface), pointer, button, x, y, timestamp);
+}
+
+/* The first text input under w that can take focus, depth first. */
+static GtkWidget *first_text_input(GtkWidget *w) {
+    if ((GTK_IS_EDITABLE(w) || GTK_IS_TEXT_VIEW(w)) && gtk_widget_get_visible(w) &&
+        gtk_widget_is_sensitive(w) && gtk_widget_get_focusable(w)) return w;
+    for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) {
+        GtkWidget *found = first_text_input(c);
+        if (found) return found;
+    }
+    return NULL;
+}
+
+/* A popover starts with focus in its first text input, as on the Mac, or on
+   itself (so selectable text doesn't show a caret and keys still reach it). */
+void runway_popover_focus_initial(GtkWidget *popover) {
+    GtkWidget *input = first_text_input(popover);
+    if (input) { gtk_widget_grab_focus(input); return; }
+    gtk_widget_set_focusable(popover, TRUE);
+    gtk_widget_grab_focus(popover);
 }

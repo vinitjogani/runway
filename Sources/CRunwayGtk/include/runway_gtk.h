@@ -12,6 +12,8 @@ typedef void (*RunwayResizeFunc)(int width, int height, void *user_data);
 typedef void (*RunwayVoidFunc)(void *user_data);
 
 GtkWidget *runway_canvas_new(void);
+/// A canvas presenting `role` to assistive technologies (fixed at creation in GTK).
+GtkWidget *runway_canvas_new_with_role(GtkAccessibleRole role);
 /// The Mac's activity indicator: 12 steps a second while mapped, no frame clock.
 GtkWidget *runway_spinner_new(void);
 /// The size the canvas asks for (its content's size). -1 keeps GTK's minimum.
@@ -20,6 +22,13 @@ void runway_canvas_set_content_size(GtkWidget *canvas, int width, int height);
 /// do: what's under its empty parts gets the clicks (a toolbar over
 /// full-size content).
 void runway_canvas_set_pass_through(GtkWidget *canvas, int pass);
+/// Whether a point (canvas coordinates) belongs to the canvas itself when
+/// picking (its children are asked first). Replaces any earlier function.
+int runway_widget_is_canvas(GtkWidget *w);
+/* A label's first and last baselines from its top at a width (-1: natural); 0 if not a label. */
+int runway_label_baselines(GtkWidget *w, int width, double *first, double *last);
+typedef gboolean (*RunwayContainsFunc)(double x, double y, void *data);
+void runway_canvas_set_contains(GtkWidget *canvas, RunwayContainsFunc fn, void *data, GDestroyNotify notify);
 /// The smallest the canvas may be made (-1, -1: its content size): a
 /// window's content, so the window can be resized smaller than it opened.
 void runway_canvas_set_min_size(GtkWidget *canvas, int width, int height);
@@ -50,6 +59,11 @@ void runway_popovers_plain(GtkWidget *w);
 /// Keeps a mobile menu's popover horizontally inside its window.
 void runway_popovers_constrain_to_window(GtkWidget *w);
 void runway_accessible_label(GtkWidget *w, const char *label);
+/// Label, description and value text (NULL resets each), and whether the
+/// widget is hidden from assistive technologies.
+/// The text of the labels under a widget, joined (g_free it).
+char *runway_accessible_text(GtkWidget *w);
+void runway_accessible_apply(GtkWidget *w, const char *label, const char *description, const char *value, gboolean hidden);
 
 /// Light or dark: GTK settings, GTK_THEME, or the desktop's colour-scheme.
 gboolean runway_prefers_dark(void);
@@ -70,6 +84,8 @@ void runway_beep(void);
 /// NULL when cancelled. g_free() them.
 char *runway_choose_files(GtkWindow *parent, const char *title, gboolean multiple, gboolean folders, const char *const *extensions);
 char *runway_choose_save(GtkWindow *parent, const char *title, const char *suggested);
+/* The desktop's application chooser; the chosen desktop id (g_free it) or NULL. */
+char *runway_choose_application(GtkWindow *parent, const char *title, const char *content_type);
 int runway_alert(GtkWindow *parent, const char *title, const char *message, const char *const *buttons, int cancel_index, int default_index);
 
 /// Menus: a GMenu with actions "rw.<n>", callbacks by index.
@@ -115,6 +131,18 @@ void runway_appmenu_set(RunwayAppMenu *m, GMenuModel *model, GActionGroup *group
 void runway_appmenu_changed(RunwayAppMenu *m);
 gboolean runway_appmenu_has_host(RunwayAppMenu *m);
 void runway_appmenu_free(RunwayAppMenu *m);
+
+/// Registers font files with fontconfig for this process, and Mac family
+/// names that should draw with them (pairs: name, family). Call before
+/// text is first laid out; a font map made earlier is told of the change.
+void runway_register_fonts(const char *const *paths, int count, const char *const *aliases, int alias_pairs);
+/// Exact glyph positions, slight hinting, greyscale antialiasing (after gtk_init).
+void runway_tune_text_rendering(void);
+/// Turns off the tooltips of the widgets under the pointer in `anchor`'s
+/// window while a menu is open (as on the Mac); pass the result to
+/// runway_restore_tooltips when it closes.
+GSList *runway_suppress_tooltips(GtkWidget *anchor);
+void runway_restore_tooltips(GSList *list);
 
 G_END_DECLS
 #endif

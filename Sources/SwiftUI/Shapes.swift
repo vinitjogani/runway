@@ -356,6 +356,9 @@ public struct _ShapeView<S: Shape>: View, PrimitiveView {
         let shape = self.shape
         var p = WidgetProps()
         p.tooltip = env._help
+        // A filled shape takes hits where it's drawn, as in SwiftUI (a clear
+        // one doesn't: that's what contentShape is for).
+        p.hitTestable = paints.contains { paint, stroke, _ in stroke == nil && paint.averageColor.a > 0.001 }
         return [ShapeNode(widget: ctx.widget(.canvas), backend: ctx.host.backend, props: p, events: WidgetEvents()) { rect in
             paints.map { paint, stroke, inset in
                 if let stroke {
@@ -484,6 +487,13 @@ public struct Image: View, PrimitiveView, Equatable {
     /// RGBA8 pixels (what CGImage and NSImage hold here).
     public init(width: Int, height: Int, rgba: [UInt8]) { source = .pixels(width, height, rgba) }
     init(file path: String) { source = .file(path) }
+    /// A Core Graphics image (its pixels shown at one point per pixel).
+    public init(_ cgImage: CGImage, scale: CGFloat, orientation: Orientation = .up, label: Text) {
+        source = .pixels(cgImage.width, cgImage.height, cgImage.pixels)
+    }
+    public init(decorative cgImage: CGImage, scale: CGFloat, orientation: Orientation = .up) {
+        source = .pixels(cgImage.width, cgImage.height, cgImage.pixels)
+    }
 
     public enum ResizingMode: Sendable { case tile, stretch }
     public enum TemplateRenderingMode: Sendable { case template, original }

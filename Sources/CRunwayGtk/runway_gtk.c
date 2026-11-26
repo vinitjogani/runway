@@ -18,6 +18,11 @@ struct _RunwayCanvas {
     // a scroll redraws the (culled) children.
     GtkAdjustment *hadj, *vadj;
     gboolean pass_through;
+    // Whether a point (in the canvas) is the widget's own: an AppKit view
+    // answers as its hitTest(_:) does.
+    RunwayContainsFunc contains_fn;
+    void *contains_data;
+    GDestroyNotify contains_notify;
     unsigned backdrop_count;
     // A window's content: the smallest it may get (-1: its content size,
     // as for any canvas), so the window can still be made smaller.
@@ -229,6 +234,7 @@ static void runway_canvas_dispose(GObject *object) {
     RunwayCanvas *self = RUNWAY_CANVAS(object);
     canvas_watch(self, &self->hadj, NULL);
     canvas_watch(self, &self->vadj, NULL);
+    runway_canvas_set_contains(GTK_WIDGET(object), NULL, NULL, NULL);
     GtkWidget *w = GTK_WIDGET(object);
     GtkWidget *c;
     while ((c = gtk_widget_get_first_child(w))) gtk_widget_unparent(c);
@@ -238,8 +244,21 @@ static void runway_canvas_dispose(GObject *object) {
 // Picking asks the children first, then whether the widget itself
 // contains the point: a pass-through canvas never does.
 static gboolean runway_canvas_contains(GtkWidget *widget, double x, double y) {
-    if (RUNWAY_CANVAS(widget)->pass_through) return FALSE;
-    return GTK_WIDGET_CLASS(runway_canvas_parent_class)->contains(widget, x, y);
+    RunwayCanvas *self = RUNWAY_CANVAS(widget);
+    if (self->pass_through) return FALSE;
+    if (!GTK_WIDGET_CLASS(runway_canvas_parent_class)->contains(widget, x, y)) return FALSE;
+    if (self->contains_fn) return self->contains_fn(x, y, self->contains_data);
+    return TRUE;
+}
+
+int runway_widget_is_canvas(GtkWidget *w) { return RUNWAY_IS_CANVAS(w); }
+
+void runway_canvas_set_contains(GtkWidget *canvas, RunwayContainsFunc fn, void *data, GDestroyNotify notify) {
+    RunwayCanvas *self = RUNWAY_CANVAS(canvas);
+    if (self->contains_notify && self->contains_data) self->contains_notify(self->contains_data);
+    self->contains_fn = fn;
+    self->contains_data = data;
+    self->contains_notify = notify;
 }
 
 void runway_canvas_set_pass_through(GtkWidget *canvas, int pass) {
@@ -270,6 +289,7 @@ void runway_canvas_set_min_size(GtkWidget *canvas, int width, int height) {
 }
 
 GtkWidget *runway_canvas_new(void) { return g_object_new(RUNWAY_TYPE_CANVAS, NULL); }
+GtkWidget *runway_canvas_new_with_role(GtkAccessibleRole role) { return g_object_new(RUNWAY_TYPE_CANVAS, "accessible-role", role, NULL); }
 
 void runway_canvas_set_content_size(GtkWidget *canvas, int width, int height) {
     RunwayCanvas *self = RUNWAY_CANVAS(canvas);
@@ -287,7 +307,14 @@ void runway_canvas_place(GtkWidget *canvas, GtkWidget *child, int x, int y, int 
     }
     gboolean changed = r->x != x || r->y != y || r->w != width || r->h != height;
     r->x = x; r->y = y; r->w = width; r->h = height;
-    if (gtk_widget_get_parent(child) != canvas) {
+    GtkWidget *old_parent = gtk_widget_get_parent(child);
+    if (old_parent != canvas) {
+        // A view that moved to another container this render (a modifier
+        // wrapper came or went) leaves the old one first.
+        if (old_parent) {
+            if (RUNWAY_IS_CANVAS(old_parent)) runway_canvas_remove(old_parent, child);
+            else gtk_widget_unparent(child);
+        }
         gtk_widget_set_parent(child, canvas);
         if (widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count++;
         changed = TRUE;
@@ -302,6 +329,11 @@ void runway_canvas_raise(GtkWidget *canvas, GtkWidget *child) {
 
 void runway_canvas_remove(GtkWidget *canvas, GtkWidget *child) {
     if (gtk_widget_get_parent(child) == canvas) {
+        // A field that's going away leaves focus nowhere, as AppKit's first
+        // responder would; GTK would otherwise move it to another field.
+        GtkRoot *root = gtk_widget_get_root(child);
+        GtkWidget *focus = root ? gtk_root_get_focus(root) : NULL;
+        if (focus && (focus == child || gtk_widget_is_ancestor(focus, child))) gtk_root_set_focus(root, NULL);
         if (RUNWAY_IS_CANVAS(canvas) && widget_backdrop(child)) RUNWAY_CANVAS(canvas)->backdrop_count--;
         gtk_widget_unparent(child);
     }
@@ -423,6 +455,32 @@ void runway_popovers_constrain_to_window(GtkWidget *w) {
 
 void runway_accessible_label(GtkWidget *w, const char *label) {
     gtk_accessible_update_property(GTK_ACCESSIBLE(w), GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
+}
+
+void runway_accessible_apply(GtkWidget *w, const char *label, const char *description, const char *value, gboolean hidden) {
+    GtkAccessible *a = GTK_ACCESSIBLE(w);
+    if (label) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_LABEL);
+    if (description) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, description, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION);
+    if (value) gtk_accessible_update_property(a, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, value, -1);
+    else gtk_accessible_reset_property(a, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT);
+    gtk_accessible_update_state(a, GTK_ACCESSIBLE_STATE_HIDDEN, hidden, -1);
+}
+
+static void collect_text(GtkWidget *w, GString *out) {
+    if (GTK_IS_LABEL(w)) {
+        const char *t = gtk_label_get_text(GTK_LABEL(w));
+        if (t && *t) { if (out->len) g_string_append(out, ", "); g_string_append(out, t); }
+        return;
+    }
+    for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c)) collect_text(c, out);
+}
+
+char *runway_accessible_text(GtkWidget *w) {
+    GString *out = g_string_new(NULL);
+    collect_text(w, out);
+    return g_string_free(out, FALSE);
 }
 
 gboolean runway_prefers_dark(void) {
@@ -669,7 +727,14 @@ void runway_menu_button_set(GtkWidget *menu_button, const char *const *titles, c
         g_object_unref(a);
         char detailed[40];
         g_snprintf(detailed, sizeof detailed, "rw.%s", name);
-        g_menu_append(sections[depth], titles[i], detailed);
+        // "Title\t<Control>z": the shortcut shown trailing, as menus show them.
+        const char *tab = strchr(titles[i], '\t');
+        char *label = tab ? g_strndup(titles[i], (gsize)(tab - titles[i])) : g_strdup(titles[i]);
+        GMenuItem *item = g_menu_item_new(label, detailed);
+        if (tab && tab[1]) g_menu_item_set_attribute(item, "accel", "s", tab + 1);
+        g_menu_append_item(sections[depth], item);
+        g_object_unref(item);
+        g_free(label);
     }
     gtk_widget_insert_action_group(menu_button, "rw", G_ACTION_GROUP(group));
     gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(stack[0]));
@@ -802,4 +867,97 @@ void runway_timeout(unsigned ms, RunwayVoidFunc fn, void *user_data) {
     pair[1] = user_data;
     g_timeout_add(ms, timeout_trampoline, pair);
 }
+GSList *runway_suppress_tooltips(GtkWidget *anchor) {
+    GtkRoot *root = anchor ? gtk_widget_get_root(anchor) : NULL;
+    if (!root) return NULL;
+    GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(root));
+    GdkSeat *seat = gdk_display_get_default_seat(gtk_widget_get_display(GTK_WIDGET(root)));
+    GdkDevice *pointer = seat ? gdk_seat_get_pointer(seat) : NULL;
+    double x = 0, y = 0, tx = 0, ty = 0;
+    if (!surface || !pointer || !gdk_surface_get_device_position(surface, pointer, &x, &y, NULL)) return NULL;
+    gtk_native_get_surface_transform(GTK_NATIVE(root), &tx, &ty);
+    GSList *out = NULL;
+    for (GtkWidget *w = gtk_widget_pick(GTK_WIDGET(root), x - tx, y - ty, GTK_PICK_DEFAULT); w; w = gtk_widget_get_parent(w)) {
+        if (!gtk_widget_get_has_tooltip(w)) continue;
+        gtk_widget_set_has_tooltip(w, FALSE);
+        out = g_slist_prepend(out, g_object_ref(w));
+    }
+    return out;
+}
+
+void runway_restore_tooltips(GSList *list) {
+    for (GSList *l = list; l; l = l->next) {
+        gtk_widget_set_has_tooltip(l->data, TRUE);
+        g_object_unref(l->data);
+    }
+    g_slist_free(list);
+}
+
 #endif
+
+/* A label's first and last baselines (from its top, in points) when laid out
+   `width` points wide (-1: its natural width): GTK's measured baseline for
+   the first line, and Pango's line positions for the distance to the last. */
+int runway_label_baselines(GtkWidget *w, int width, double *first, double *last) {
+    if (!GTK_IS_LABEL(w)) return 0;
+    int min = 0, nat = 0, min_base = -1, nat_base = -1;
+    gtk_widget_measure(w, GTK_ORIENTATION_VERTICAL, width, &min, &nat, &min_base, &nat_base);
+    if (nat_base < 0) return 0;
+    PangoLayout *layout = pango_layout_copy(gtk_label_get_layout(GTK_LABEL(w)));
+    if (width >= 0) {
+        int mw = 0, nw = 0;
+        gtk_widget_measure(w, GTK_ORIENTATION_HORIZONTAL, -1, &mw, &nw, NULL, NULL);
+        // The layout's width is the label's less its padding and border.
+        int chrome = nw - 0;
+        PangoRectangle ink, logical;
+        pango_layout_set_width(layout, -1);
+        pango_layout_get_pixel_extents(layout, &ink, &logical);
+        chrome = nw - logical.width;
+        if (chrome < 0) chrome = 0;
+        pango_layout_set_width(layout, (width - chrome) * PANGO_SCALE);
+    } else {
+        pango_layout_set_width(layout, -1);
+    }
+    PangoLayoutIter *it = pango_layout_get_iter(layout);
+    int base0 = pango_layout_iter_get_baseline(it);
+    int baseN = base0;
+    while (pango_layout_iter_next_line(it)) baseN = pango_layout_iter_get_baseline(it);
+    pango_layout_iter_free(it);
+    g_object_unref(layout);
+    *first = nat_base;
+    *last = nat_base + (double)(baseN - base0) / PANGO_SCALE;
+    return 1;
+}
+
+static void app_chosen(GtkDialog *dialog, int response, gpointer data) {
+    DialogWait *w = data;
+    if (response == GTK_RESPONSE_OK) {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GAppInfo *info = gtk_app_chooser_get_app_info(GTK_APP_CHOOSER(dialog));
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        if (info) {
+            const char *id = g_app_info_get_id(info);
+            if (id) w->paths = g_strdup(id);
+            g_object_unref(info);
+        }
+    }
+    w->done = TRUE;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+/* The desktop's application chooser: the desktop id of the application
+   picked (all applications, or those for `content_type`), or NULL. */
+char *runway_choose_application(GtkWindow *parent, const char *title, const char *content_type) {
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    GtkWidget *d = gtk_app_chooser_dialog_new_for_content_type(parent, GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                                content_type && *content_type ? content_type : "application/octet-stream");
+    if (title && *title) gtk_window_set_title(GTK_WINDOW(d), title);
+    GtkWidget *widget = gtk_app_chooser_dialog_get_widget(GTK_APP_CHOOSER_DIALOG(d));
+    gtk_app_chooser_widget_set_show_all(GTK_APP_CHOOSER_WIDGET(widget), TRUE);
+    G_GNUC_END_IGNORE_DEPRECATIONS
+    DialogWait w = { FALSE, NULL, -1 };
+    g_signal_connect(d, "response", G_CALLBACK(app_chosen), &w);
+    gtk_window_present(GTK_WINDOW(d));
+    wait_until(&w.done, -1);
+    return w.paths;
+}

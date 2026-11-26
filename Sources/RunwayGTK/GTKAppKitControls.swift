@@ -111,8 +111,14 @@ private let pressedCB: @convention(c) (UnsafeMutableRawPointer?, Int32, Double, 
     MainActor.assumeIsolated {
         guard let s = widgetState(data) else { return }
         s.clickCount = Int(n)
-        s.button = Int(gtk_gesture_single_get_current_button(OpaquePointer(g))) - 1
-        if s.button < 0 { s.button = 0 }
+        // GTK numbers buttons 1 left, 2 middle, 3 right; events use 0
+        // primary, 1 secondary, 2 middle.
+        switch gtk_gesture_single_get_current_button(OpaquePointer(g)) {
+        case 3: s.button = 1
+        case 2: s.button = 2
+        case let b where b > 3: s.button = Int(b) - 1
+        default: s.button = 0
+        }
         s.pressed = true
         s.dragStart = CGPoint(x: x, y: y)
         if let w = data?.assumingMemoryBound(to: GtkWidget.self), gtk_widget_get_focusable(w) != 0 { gtk_widget_grab_focus(w) }
@@ -295,6 +301,9 @@ private let timeoutCB: @convention(c) (UnsafeMutableRawPointer?) -> Void = { dat
     let content: GtkBox
     let onClose: () -> Void
     var isOpen = true
+    /// Points at the whole anchor, measured when it pops up.
+    var pointsAtAnchor = false
+    var keys: KeyHandlerBox?
     init(popover: GW, content: GtkBox, onClose: @escaping () -> Void) { self.popover = popover; self.content = content; self.onClose = onClose }
     func closed() {
         guard isOpen else { return }
@@ -411,6 +420,9 @@ extension GTKBackend: AppKitBackend {
         connectState(UnsafeMutableRawPointer(drag), "drag-update", unsafeBitCast(dragUpdateCB, to: GCallback.self), w)
         connectState(UnsafeMutableRawPointer(drag), "drag-end", unsafeBitCast(dragEndCB, to: GCallback.self), w)
         gtk_widget_add_controller(w, drag)
+        // One group: claiming the press for the click gesture would
+        // otherwise deny the drag gesture, so a drag never updated.
+        gtk_gesture_group(click, drag)
         let motion = gtk_event_controller_motion_new()!
         connectState(UnsafeMutableRawPointer(motion), "motion", unsafeBitCast(motionCB, to: GCallback.self), w)
         connectState(UnsafeMutableRawPointer(motion), "leave", unsafeBitCast(leaveCB, to: GCallback.self), w)
@@ -429,10 +441,40 @@ extension GTKBackend: AppKitBackend {
         _ = gtk_widget_grab_focus(b.inner ?? b.outer)
     }
 
+    public func resignFocus(_ widget: NativeWidget) {
+        let b = box(widget)
+        let w = b.inner ?? b.outer
+        guard let root = gtk_widget_get_root(w), let focused = gtk_root_get_focus(root) else { return }
+        // Only when focus is in this widget: another may have taken it already.
+        let f = UnsafeMutableRawPointer(focused).assumingMemoryBound(to: GtkWidget.self)
+        if f == w || gtk_widget_is_ancestor(f, w) != 0 || f == b.outer || gtk_widget_is_ancestor(f, b.outer) != 0 {
+            gtk_root_set_focus(root, nil)
+        }
+    }
+
+    public func setOwnsPoint(_ container: NativeWidget, _ owns: (@MainActor (CGPoint) -> Bool)?) {
+        guard let c = (container as? GtkBox)?.canvas, runway_widget_is_canvas(c) != 0 else { return }
+        guard let owns else { runway_canvas_set_contains(c, nil, nil, nil); return }
+        let box = OwnsPointBox(owns)
+        runway_canvas_set_contains(c, { x, y, data in
+            guard let data else { return 1 }
+            let f = Unmanaged<OwnsPointBox>.fromOpaque(data).takeUnretainedValue().f
+            return MainActor.assumeIsolated { f(CGPoint(x: x, y: y)) } ? 1 : 0
+        }, Unmanaged.passRetained(box).toOpaque(), { data in
+            if let data { Unmanaged<OwnsPointBox>.fromOpaque(data).release() }
+        })
+    }
+
+    public func setHitTestable(_ widget: NativeWidget, _ testable: Bool) {
+        gtk_widget_set_can_target(box(widget).outer, testable ? 1 : 0)
+    }
+
     public func observeFocus(_ widget: NativeWidget, _ changed: @escaping @MainActor (Bool) -> Void) {
         let w = box(widget).outer
-        akState(w).focus = changed
-        addFocusController(w)
+        let s = akState(w)
+        let first = s.focus == nil
+        s.focus = changed
+        if first { addFocusController(w) }
     }
 
     private func addFocusController(_ w: GW) {
@@ -669,7 +711,7 @@ extension GTKBackend: AppKitBackend {
     static func pangoFont(_ f: FontSpec) -> String {
         var d: [String] = []
         switch f.design {
-        case .monospaced: d.append("Monospace")
+        case .monospaced: d.append("\(BundledFonts.monoFamily),Monospace")
         case .serif: d.append("Serif")
         default: d.append(f.family ?? MacTheme.pangoFamilies)
         }
@@ -878,6 +920,7 @@ extension GTKBackend: AppKitBackend {
         gtk_popover_set_position(typed(pop), pos)
         gtk_popover_set_autohide(typed(pop), transient ? 1 : 0)
         let handle = GTKPopover(popover: pop, content: c, onClose: onClose)
+        handle.pointsAtAnchor = rect == .zero
         Self.openPopovers.append(handle)
         _ = g_signal_connect_data(UnsafeMutableRawPointer(pop), "closed", unsafeBitCast(popoverClosedCB, to: GCallback.self),
                                   Unmanaged.passUnretained(handle).toOpaque(), nil, GConnectFlags(rawValue: 0))
@@ -888,8 +931,14 @@ extension GTKBackend: AppKitBackend {
     static func popUpWhenMapped(_ p: GTKPopover, anchor: GW, tries: Int) {
         guard p.isOpen else { return }
         if gtk_widget_get_mapped(anchor) != 0 {
+            if p.pointsAtAnchor {
+                var r = GdkRectangle(x: 0, y: 0, width: max(1, gtk_widget_get_width(anchor)), height: max(1, gtk_widget_get_height(anchor)))
+                gtk_popover_set_pointing_to(typed(p.popover), &r)
+            }
             gtk_popover_popup(typed(p.popover))
             gtk_widget_queue_allocate(anchor)
+            // GTK focuses the first focusable child once the popover maps.
+            current?.after(0.03) { if p.isOpen { runway_popover_focus_initial(p.popover) } }
             return
         }
         guard tries > 0 else { return }
@@ -899,6 +948,10 @@ extension GTKBackend: AppKitBackend {
     public func setPopoverSize(_ popover: AnyObject, _ size: CGSize) {
         guard let p = popover as? GTKPopover else { return }
         runway_canvas_set_content_size(p.content.outer, Int32(size.width), Int32(size.height))
+    }
+    public func setPopoverKeyHandler(_ popover: AnyObject, _ handler: @escaping @MainActor (KeyPress) -> Bool) {
+        guard let p = popover as? GTKPopover else { return }
+        p.keys = addCaptureKeyHandler(p.popover) { key in MainActor.assumeIsolated { handler(key) } }
     }
     public func closePopover(_ popover: AnyObject) {
         guard let p = popover as? GTKPopover, p.isOpen else { return }
@@ -913,6 +966,10 @@ extension GTKBackend: AppKitBackend {
     public func setToolbarBand(_ window: NativeWindow, height: CGFloat) {
         (window as? GtkNativeWindow)?.setBandHeight(height)
     }
+    public func setContentUnderToolbarBand(_ window: NativeWindow, _ under: Bool) {
+        (window as? GtkNativeWindow)?.setContentUnderBand(under)
+    }
+
     public func windowButtonFrames(_ window: NativeWindow) -> [CGRect]? {
         (window as? GtkNativeWindow)?.windowButtonFrames
     }
@@ -964,7 +1021,7 @@ extension GTKBackend: AppKitBackend {
         var flat: [MenuItemSpec] = []
         func walk(_ list: [MenuItemSpec], _ depth: Int32) {
             for i in list {
-                titles.append(i.title); depths.append(depth); enabled.append(i.enabled ? 1 : 0); checked.append(i.checked ? 1 : 0); flat.append(i)
+                titles.append(i.shortcut.map { i.title + "\t" + $0.gtkAccelerator } ?? i.title); depths.append(depth); enabled.append(i.enabled ? 1 : 0); checked.append(i.checked ? 1 : 0); flat.append(i)
                 if i.isSeparator { kinds.append(1) } else if !i.children.isEmpty { kinds.append(2); walk(i.children, depth + 1) } else { kinds.append(0) }
             }
         }
@@ -977,5 +1034,9 @@ extension GTKBackend: AppKitBackend {
         }
     }
     private static var menuActions: GTKMenuActions?
+}
+final class OwnsPointBox {
+    let f: @MainActor (CGPoint) -> Bool
+    init(_ f: @escaping @MainActor (CGPoint) -> Bool) { self.f = f }
 }
 #endif

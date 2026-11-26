@@ -65,9 +65,14 @@ public struct TextRun: Hashable, Sendable {
     public var underline: Bool = false
     public var strikethrough: Bool = false
     public var tracking: CGFloat
-    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false, tracking: CGFloat = 0) {
+    /// A highlight behind the run.
+    public var background: RGBA?
+    /// A link the run opens when clicked.
+    public var link: String?
+    public init(string: String, font: FontSpec, color: RGBA?, underline: Bool = false, strikethrough: Bool = false, tracking: CGFloat = 0,
+                background: RGBA? = nil, link: String? = nil) {
         self.string = string; self.font = font; self.color = color; self.underline = underline; self.strikethrough = strikethrough
-        self.tracking = tracking
+        self.tracking = tracking; self.background = background; self.link = link
     }
 }
 
@@ -76,6 +81,10 @@ public struct StyledText: Hashable, Sendable {
     public var alignment: TextAlignmentValue = .leading
     public var lineLimit: Int?
     public var truncation: TruncationValue = .tail
+    /// The user can select and copy the text.
+    public var selectable = false
+    /// Extra space between lines (points).
+    public var lineSpacing: CGFloat = 0
     public init(runs: [TextRun], alignment: TextAlignmentValue = .leading, lineLimit: Int? = nil, truncation: TruncationValue = .tail) {
         self.runs = runs; self.alignment = alignment; self.lineLimit = lineLimit; self.truncation = truncation
     }
@@ -104,6 +113,65 @@ public struct BackdropBlur: Equatable, Sendable {
 }
 
 /// Everything a widget shows. Backends read what applies to their kind.
+/// Accessibility information a view declares (SwiftUI's accessibility
+/// modifiers, AppKit's accessibility properties). Backends expose it to
+/// screen readers with the widget's own role and state.
+public struct AccessibilityProps: Equatable, Sendable {
+    public enum Children: Sendable, Equatable {
+        /// Children are separate elements (the default).
+        case contain
+        /// One element; children aren't exposed.
+        case ignore
+        /// One element named after its children's text.
+        case combine
+    }
+    public struct Traits: OptionSet, Sendable, Hashable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+        public static let button = Traits(rawValue: 1), header = Traits(rawValue: 2), selected = Traits(rawValue: 4)
+        public static let link = Traits(rawValue: 8), image = Traits(rawValue: 16), staticText = Traits(rawValue: 32)
+        public static let toggle = Traits(rawValue: 128), modal = Traits(rawValue: 256), searchField = Traits(rawValue: 512)
+        public static let tabBar = Traits(rawValue: 65536)
+    }
+    public var label: String?
+    public var value: String?
+    public var hint: String?
+    public var identifier: String?
+    public var hidden = false
+    /// Whether this view is an element of its own (accessibilityElement):
+    /// without it, a label on a plain container names the group.
+    public var element = false
+    public var children: Children = .contain
+    public var traits: Traits = []
+    public var removedTraits: Traits = []
+    public init() {}
+
+    /// The role a wrapper carrying this information presents.
+    public var wrapperRole: AccessibleRole {
+        if traits.contains(.header) { return .heading }
+        if traits.contains(.link) { return .link }
+        if traits.contains(.toggle) { return .toggleButton }
+        if traits.contains(.button) { return .button }
+        if traits.contains(.image) { return .image }
+        if element && children != .contain { return .staticText }
+        return .group
+    }
+
+    /// This information layered over `inner`'s (an outer modifier wins).
+    public func over(_ inner: AccessibilityProps) -> AccessibilityProps {
+        var r = inner
+        if let label { r.label = label }
+        if let value { r.value = value }
+        if let hint { r.hint = hint }
+        if let identifier { r.identifier = identifier }
+        r.hidden = hidden || inner.hidden
+        if element { r.element = true; r.children = children }
+        r.traits = inner.traits.subtracting(removedTraits).union(traits)
+        r.removedTraits = inner.removedTraits.union(removedTraits)
+        return r
+    }
+}
+
 public struct WidgetProps: Equatable, Sendable {
     public var text: StyledText?
     /// Button/toggle/link title, placeholder for text fields.
@@ -139,13 +207,35 @@ public struct WidgetProps: Equatable, Sendable {
     public var imagePointSize: CGFloat = 13
     // Canvas.
     public var drawing: [DrawCommand] = []
+    /// A text editor's selection to apply (Unicode scalar offsets); nil
+    /// leaves the user's.
+    public var selection: Range<Int>?
     public var backdropBlur: BackdropBlur?
     public var clips = false
+    /// A canvas that takes pointer events where it's drawn (SwiftUI's
+    /// filled shapes); canvases are otherwise transparent to the pointer.
+    public var hitTestable = false
+    /// What assistive technologies are told about this widget beyond what
+    /// its kind and content say (SwiftUI's accessibility modifiers).
+    public var accessibility: AccessibilityProps?
+    /// A tap area's clicks per tap (2: double-click).
+    public var tapCount = 1
+    /// A text editor or list without its own background (SwiftUI's
+    /// scrollContentBackground(.hidden)).
+    public var clearBackground = false
     public init() {}
 }
 
 /// What a widget reports back. Closures are replaced on every render.
 @MainActor public struct WidgetEvents {
+    /// Actions assistive technologies can perform on the widget, by name
+    /// ("default" is its primary action; "increment" and "decrement"
+    /// adjust it), beyond what its kind already offers.
+    public var accessibilityActions: [(name: String, perform: () -> Void)] = []
+    /// A drag over the widget (SwiftUI's drop destinations); return the
+    /// operation accepted. Backends route a window's drags to the innermost
+    /// widget with one, else to the window's own handler.
+    public var onDrop: ((RawDragEvent) -> RawDragOperation)?
     public var onTap: (() -> Void)?
     public var onTapLocation: ((CGPoint) -> Void)?
     public var onToggle: ((Bool) -> Void)?
@@ -155,6 +245,8 @@ public struct WidgetProps: Equatable, Sendable {
     public var onSelect: ((Int) -> Void)?
     public var onColor: ((RGBA) -> Void)?
     public var onFocus: ((Bool) -> Void)?
+    /// A text editor's selection changed (Unicode scalar offsets).
+    public var onSelection: ((Range<Int>) -> Void)?
     public var menu: [MenuItemSpec] = []
     public init() {}
 }
@@ -167,8 +259,16 @@ public struct WidgetProps: Equatable, Sendable {
     public var isSeparator: Bool
     public var children: [MenuItemSpec]
     public var action: (() -> Void)?
-    public init(title: String, enabled: Bool = true, checked: Bool = false, isSeparator: Bool = false, children: [MenuItemSpec] = [], action: (() -> Void)? = nil) {
-        self.title = title; self.enabled = enabled; self.checked = checked; self.isSeparator = isSeparator; self.children = children; self.action = action
+    /// An SF Symbol shown before the title.
+    public var symbol: String?
+    /// The key that does the same, shown after the title.
+    public var shortcut: KeyPress?
+    /// Drawn in red (a destructive action).
+    public var destructive = false
+    public init(title: String, enabled: Bool = true, checked: Bool = false, isSeparator: Bool = false, children: [MenuItemSpec] = [],
+                symbol: String? = nil, shortcut: KeyPress? = nil, action: (() -> Void)? = nil) {
+        self.title = title; self.enabled = enabled; self.checked = checked; self.isSeparator = isSeparator; self.children = children
+        self.symbol = symbol; self.shortcut = shortcut; self.action = action
     }
     public static var separator: MenuItemSpec { MenuItemSpec(title: "", isSeparator: true) }
 }
@@ -191,6 +291,13 @@ public struct WidgetProps: Equatable, Sendable {
     func showWithoutActivating()
     func close()
     func center()
+    /// Moves the window's outer top-left to a point on the desktop (top-left
+    /// desktop coordinates, points). Desktops that place windows themselves
+    /// (Wayland) ignore it.
+    func setPosition(_ topLeft: CGPoint)
+    /// Called with the outer top-left (desktop points) when the window moves,
+    /// where the desktop reports it.
+    var onMove: ((CGPoint) -> Void)? { get set }
     /// Called with the new content size when the user resizes.
     var onResize: ((CGSize) -> Void)? { get set }
     /// Return false to keep the window open.
@@ -202,9 +309,37 @@ public struct WidgetProps: Equatable, Sendable {
 
 extension NativeWindow {
     public func showWithoutActivating() { show() }
+    public func setPosition(_ topLeft: CGPoint) {}
+    public var onMove: ((CGPoint) -> Void)? { get { nil } set {} }
 }
 
 public struct KeyPress: Hashable, Sendable {
+    /// As a menu shows it ("⌘⇧Z" on the Mac; "Ctrl+Shift+Z" elsewhere).
+    public var displayText: String {
+        let names = ["return": "Enter", "escape": "Esc", "delete": "Del", "backspace": "Backspace", "tab": "Tab", "space": "Space",
+                     "up": "Up", "down": "Down", "left": "Left", "right": "Right", "pageup": "PgUp", "pagedown": "PgDn",
+                     "home": "Home", "end": "End"]
+        var parts: [String] = []
+        if control { parts.append("Win") }
+        if command { parts.append("Ctrl") }
+        if option { parts.append("Alt") }
+        if shift { parts.append("Shift") }
+        parts.append(names[key] ?? (key.count == 1 ? key.uppercased() : key.capitalized))
+        return parts.joined(separator: "+")
+    }
+    /// In GTK's accelerator syntax ("<Control><Shift>z").
+    public var gtkAccelerator: String {
+        let names = ["return": "Return", "escape": "Escape", "delete": "Delete", "backspace": "BackSpace", "tab": "Tab", "space": "space",
+                     "up": "Up", "down": "Down", "left": "Left", "right": "Right", "pageup": "Page_Up", "pagedown": "Page_Down",
+                     "home": "Home", "end": "End", ",": "comma", ".": "period", "/": "slash", ";": "semicolon", "[": "bracketleft",
+                     "]": "bracketright", "-": "minus", "=": "equal", "+": "plus", "\\": "backslash", "'": "apostrophe", "`": "grave"]
+        var s = ""
+        if command { s += "<Control>" }
+        if shift { s += "<Shift>" }
+        if option { s += "<Alt>" }
+        if control { s += "<Super>" }
+        return s + (names[key] ?? (key.count > 1 && key.hasPrefix("f") ? key.uppercased() : key))
+    }
     public var key: String           // "return", "escape", "tab", "a"…, lowercased
     public var command: Bool         // ⌘ on macOS; Ctrl on Linux and Windows
     public var shift: Bool
@@ -241,6 +376,8 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     /// The widget's size for a proposal: its natural size, wrapped to the
     /// proposed width where it can wrap.
     func measure(_ widget: NativeWidget, proposal: ProposedSize) -> CGSize
+    /// Text baselines from the widget's top at a width (see the default).
+    func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)?
     /// The chrome a button or scroll view adds around its content.
     func contentInsets(_ widget: NativeWidget) -> EdgeInsetsValue
     /// The container children go in: the widget itself for containers and
@@ -251,6 +388,14 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
     /// container asks for (a scroll view's document size).
     func setChildren(_ container: NativeWidget, _ children: [(NativeWidget, CGRect)], contentSize: CGSize)
     func destroy(_ widget: NativeWidget)
+    /// A pass-through container that carries accessibility information
+    /// (SwiftUI's accessibility modifiers wrap views in one), made with the
+    /// role it presents: toolkits whose roles are fixed at creation use it.
+    func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget
+    /// Starts dragging `payload` out of `widget` (the pointer is down and
+    /// moving over it); `ended` gets the operation the drop took (empty:
+    /// cancelled). Backends without drag sources end it at once.
+    func beginDrag(_ payload: DragPayload, from widget: NativeWidget, ended: @escaping (RawDragOperation) -> Void)
 
     // Windows and the loop.
     func makeWindow(_ options: WindowOptions, parent: NativeWindow?) -> NativeWindow
@@ -263,6 +408,20 @@ public enum ColorSchemeValue: Hashable, Sendable { case light, dark }
 
     // Platform services AppKit-style code expects.
     var services: PlatformServices { get }
+}
+
+extension PlatformServices {
+    public func chooseApplication(title: String, mimeType: String?) -> String? { nil }
+}
+
+extension Backend {
+    public func makeAccessibilityContainer(role: AccessibleRole) -> NativeWidget { makeWidget(.container) }
+    public func beginDrag(_ payload: DragPayload, from widget: NativeWidget, ended: @escaping (RawDragOperation) -> Void) { ended([]) }
+
+    /// Where a text widget's first and last lines sit (their baselines,
+    /// from the widget's top) at a width; nil for widgets without text or
+    /// backends that can't tell. Used for text-baseline alignment.
+    public func textBaselines(_ widget: NativeWidget, width: CGFloat?) -> (first: CGFloat, last: CGFloat)? { nil }
 }
 
 public struct EdgeInsetsValue: Hashable, Sendable {
@@ -290,6 +449,9 @@ public struct EdgeInsetsValue: Hashable, Sendable {
     /// File dialogs; `nil` when cancelled.
     func chooseFiles(title: String, allowsMultiple: Bool, canChooseDirectories: Bool, extensions: [String]) -> [URL]?
     func chooseSaveLocation(title: String, suggestedName: String) -> URL?
+    /// The desktop's application chooser (all applications, or those for a
+    /// MIME type): the chosen desktop entry's id, or nil.
+    func chooseApplication(title: String, mimeType: String?) -> String?
     /// A blocking alert; returns the index of the button clicked.
     func alert(title: String, message: String, buttons: [String], destructive: Int?) -> Int
 }

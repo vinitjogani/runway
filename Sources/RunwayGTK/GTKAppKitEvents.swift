@@ -62,6 +62,9 @@ private let eventTrampoline: @convention(c) (UnsafePointer<RunwayAppKitEvent>?, 
     e.characters = chars
     e.charactersIgnoringModifiers = chars
     e.isRepeat = c.is_repeat != 0
+    e.nativeTextFocus = c.native_text_focus != 0
+    e.onNativeControl = c.native_control != 0
+    e.monitorPhase = c.monitor_phase != 0
     return MainActor.assumeIsolated { box.f(e) } ? 1 : 0
 }
 
@@ -314,9 +317,28 @@ extension GTKBackend: ViewSystemBackend {
     public func setKeyboardFocus(_ widget: NativeWidget?, in window: NativeWindow) {
         guard let w = gtkWindow(window) else { return }
         if let b = widget as? GtkBox {
-            _ = gtk_widget_grab_focus(b.inner ?? b.outer)
+            Self.focus(b.inner ?? b.outer, in: w.window, attempts: 10)
         } else {
             gtk_window_set_focus(typed(w.window), nil)
+        }
+    }
+
+    /// Focuses `target` (or, for an AppKit view's container, the control in
+    /// it); a widget that isn't mapped yet (a view added this turn) is tried
+    /// again shortly.
+    private static func focus(_ target: GW, in window: GW, attempts: Int) {
+        func holds() -> Bool {
+            guard let f = gtk_root_get_focus(OpaquePointer(window)) else { return false }
+            let fw = UnsafeMutableRawPointer(f).assumingMemoryBound(to: GtkWidget.self)
+            return fw == target || gtk_widget_is_ancestor(fw, target) != 0
+        }
+        if gtk_widget_grab_focus(target) == 0 { _ = gtk_widget_child_focus(target, GTK_DIR_TAB_FORWARD) }
+        guard !holds(), attempts > 0 else { return }
+        g_object_ref(raw(target))
+        GTKBackend.current?.after(0.03) {
+            defer { g_object_unref(raw(target)) }
+            guard gtk_widget_get_root(target) != nil else { return }
+            focus(target, in: window, attempts: attempts - 1)
         }
     }
 

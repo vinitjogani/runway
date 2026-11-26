@@ -25,7 +25,7 @@ mapped yet.
 |---|---|
 | macOS apps on Linux (GTK 4) | Working: the main target |
 | iOS SwiftUI apps previewed on Linux | Alpha |
-| macOS apps on Windows (Win32) | In progress: the backend has not been compiled with Swift for Windows yet ([details](Sources/RunwayWin32/README.md)) |
+| macOS apps on Windows (Win32) | Working: cross-compiled with the Swift Windows SDK and run under Wine ([details](Sources/RunwayDrawn/README.md)) |
 
 On macOS there's nothing to do: apps build with Apple's own frameworks.
 
@@ -94,7 +94,7 @@ missing Apple API.
 | [Configuration](docs/configuration.md) | Environment variables |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and what to do |
 | [Corpus status](docs/corpus/status.md) | Results on real open-source Mac apps |
-| [Windows backend](Sources/RunwayWin32/README.md) | Design and verification of the Win32 backend |
+| [Windows backend](Sources/RunwayDrawn/README.md) | Design and verification of the Win32 backend |
 
 ## Contributing
 

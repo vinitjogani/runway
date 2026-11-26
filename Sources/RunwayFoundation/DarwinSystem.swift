@@ -261,6 +261,7 @@ extension RunLoop {
 
 // MARK: libproc
 
+
 /// `proc_bsdinfo` (sys/proc_info.h), filled from /proc on Linux.
 public struct proc_bsdinfo {
     public var pbi_flags: UInt32 = 0
@@ -420,3 +421,39 @@ public func clearerr(_ stream: UnsafeMutablePointer<FILE>?) { if let stream { cl
 /// Seconds between the Unix epoch and Core Foundation's reference date (1 January 2001).
 public let kCFAbsoluteTimeIntervalSince1970: CFTimeInterval = 978_307_200
 public let kCFAbsoluteTimeIntervalSince1904: CFTimeInterval = 3_061_152_000
+
+// MARK: SIGPIPE and sockets
+
+/// Darwin's fcntl command that turns off SIGPIPE for a descriptor. Linux has
+/// none; this is F_GETFD, so the call is harmless, and Runway's apps ignore
+/// SIGPIPE (`RunwaySignals.ignoreBrokenPipes`), so a write to a closed pipe
+/// fails with EPIPE as it would with the flag set.
+public let F_SETNOSIGPIPE: Int32 = 1
+
+#if canImport(Glibc) || canImport(Musl)
+/// Darwin's socket option with the same effect; Linux rejects the unknown
+/// option (ENOPROTOOPT) and the process ignores SIGPIPE instead.
+public let SO_NOSIGPIPE: Int32 = 0x1022
+
+/// Darwin's `socket(AF_UNIX, SOCK_STREAM, 0)`: Glibc's socket types are an enum.
+@discardableResult
+public func socket(_ domain: Int32, _ type: __socket_type, _ proto: Int32) -> Int32 {
+    socket(domain, Int32(type.rawValue), proto)
+}
+/// Darwin's `shutdown(fd, SHUT_RDWR)`: Glibc imports the constants as Int.
+@discardableResult
+public func shutdown(_ fd: Int32, _ how: Int) -> Int32 {
+    shutdown(fd, Int32(how))
+}
+#endif
+
+public enum RunwaySignals {
+    /// Writes to closed pipes and sockets fail with EPIPE instead of
+    /// terminating the process, as Mac apps get with F_SETNOSIGPIPE /
+    /// SO_NOSIGPIPE.
+    public static func ignoreBrokenPipes() {
+        #if canImport(Glibc) || canImport(Musl)
+        signal(SIGPIPE, SIG_IGN)
+        #endif
+    }
+}

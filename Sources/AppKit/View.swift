@@ -23,6 +23,13 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
 
     open private(set) var subviews: [NSView] = []
     open private(set) weak var superview: NSView?
+    /// Runway: views a SwiftUI host lays out itself (NSViewRepresentable):
+    /// their superview is this view, for the window, coordinates, hit
+    /// testing and the responder chain, but it doesn't place their widgets.
+    var hostedSubviews: [NSView] = []
+    /// Subviews and hosted subviews: what tree walks (layout, display,
+    /// tracking, key equivalents) visit.
+    var treeChildren: [NSView] { hostedSubviews.isEmpty ? subviews : subviews + hostedSubviews }
     /// The window: the content view's, inherited down the tree.
     open internal(set) weak var window: NSWindow?
     weak var _viewController: NSViewController?
@@ -100,6 +107,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
         _bounds = CGRect(origin: .zero, size: frameRect.size)
         super.init()
         needsDisplay = true
+        installHitTesting()
     }
     public override convenience init() { self.init(frame: .zero) }
     /// Interface Builder documents decode views through this (InterfaceBuilder/).
@@ -113,6 +121,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
         _bounds = CGRect(origin: .zero, size: frameRect.size)
         super.init(coder: coder)
         needsDisplay = true
+        installHitTesting()
         IBDecoding.leave(self, coder)
     }
 
@@ -350,6 +359,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
         guard let s = superview else { return }
         s.willRemoveSubview(self)
         s.subviews.removeAll { $0 === self }
+        s.hostedSubviews.removeAll { $0 === self }
         s.setNeedsPlacement()
         s.layoutStructureChanged()
         superview = nil
@@ -398,7 +408,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     }
     open func viewWithTag(_ tag: Int) -> NSView? {
         if self.tag == tag { return self }
-        for s in subviews { if let v = s.viewWithTag(tag) { return v } }
+        for s in treeChildren { if let v = s.viewWithTag(tag) { return v } }
         return nil
     }
     open var opaqueAncestor: NSView? { isOpaque ? self : superview?.opaqueAncestor }
@@ -418,11 +428,13 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     func setWindowRecursively(_ w: NSWindow?) {
         window = w
         for s in subviews { s.setWindowRecursively(w) }
+        for s in hostedSubviews { s.setWindowRecursively(w) }
     }
     func viewDidMoveToWindowRecursively() {
         viewDidMoveToWindow()
         if window != nil { needsDisplay = true; ViewSystem.geometryChanged(self) }
         for s in subviews { s.viewDidMoveToWindowRecursively() }
+        for s in hostedSubviews { s.viewDidMoveToWindowRecursively() }
         if let vc = _viewController { vc.viewMovedToWindow(window) }
     }
 
@@ -447,7 +459,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     open var previousKeyView: NSView? {
         guard let root = window?.contentView else { return nil }
         var found: NSView?
-        func walk(_ v: NSView) { if v.nextKeyView === self { found = v }; v.subviews.forEach(walk) }
+        func walk(_ v: NSView) { if v.nextKeyView === self { found = v }; v.treeChildren.forEach(walk) }
         walk(root)
         return found
     }
@@ -461,6 +473,23 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
 
     // MARK: Hit testing
 
+    /// The toolkit picks this view's widget under the pointer only where
+    /// `hitTest(_:)` answers this view, so a view that lets clicks through
+    /// (an overlay returning nil) doesn't hide the controls beneath it.
+    private func installHitTesting() {
+        Runway.appKit?.setOwnsPoint(widget) { [weak self] p in self?.ownsWidgetPoint(p) ?? true }
+    }
+
+    /// Whether the pointer at `p` (the widget's top-left coordinates) hits
+    /// this view itself.
+    func ownsWidgetPoint(_ p: CGPoint) -> Bool {
+        guard window != nil else { return true }
+        let local = CGPoint(x: bounds.minX + p.x, y: isFlipped ? bounds.minY + p.y : bounds.maxY - p.y)
+        let outside = superview.map { convert(local, to: $0) } ?? convert(local, to: nil)
+        let hit = hitTest(outside)
+        return hit === self
+    }
+
     /// The deepest visible view containing `point` (in the superview's
     /// coordinates), front-most first.
     open func hitTest(_ point: NSPoint) -> NSView? {
@@ -470,7 +499,44 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
         for s in subviews.reversed() {
             if let hit = s.hitTest(local) { return hit }
         }
+        for s in hostedSubviews.reversed() {
+            if let hit = s.hitTest(local) { return hit }
+        }
         return self
+    }
+
+    /// Runway: makes `view` a subview a SwiftUI host lays out (an
+    /// NSViewRepresentable's), at `frame` given from the host's top-left.
+    /// It joins the hierarchy (window, viewDidMoveToWindow, coordinates,
+    /// hit testing) without this view placing its widget.
+    @_spi(Runway) public func attachHostedSubview(_ view: NSView, topLeftFrame r: CGRect) {
+        let f = isFlipped ? r.offsetBy(dx: bounds.minX, dy: bounds.minY)
+                          : CGRect(x: bounds.minX + r.minX, y: bounds.minY + bounds.height - r.maxY, width: r.width, height: r.height)
+        if view.superview === self {
+            if let i = hostedSubviews.firstIndex(where: { $0 === view }), i != hostedSubviews.count - 1 {
+                // Placed later, drawn above: keep the order SwiftUI placed them in.
+                hostedSubviews.remove(at: i)
+                hostedSubviews.append(view)
+            }
+            if view.frame != f { view.frame = f }
+            return
+        }
+        let oldWindow = view.window
+        if oldWindow !== window { view.viewWillMove(toWindow: window) }
+        view.viewWillMove(toSuperview: self)
+        if view.superview != nil { view.detachFromSuperview() }
+        hostedSubviews.append(view)
+        view.superview = self
+        view.frame = f
+        view.setWindowRecursively(window)
+        view.viewDidMoveToSuperview()
+        if oldWindow !== window { view.viewDidMoveToWindowRecursively() }
+        if window != nil { view.appearanceMayHaveChanged() }
+    }
+
+    @_spi(Runway) public func detachHostedSubview(_ view: NSView) {
+        guard view.superview === self, hostedSubviews.contains(where: { $0 === view }) else { return }
+        view.removeFromSuperview()
     }
     open func isMousePoint(_ point: NSPoint, in rect: NSRect) -> Bool { mouse(point, in: rect) }
     open func mouse(_ point: NSPoint, in rect: NSRect) -> Bool {
@@ -497,7 +563,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     }
 
     open override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        for s in subviews where !s.isHidden { if s.performKeyEquivalent(with: event) { return true } }
+        for s in treeChildren where !s.isHidden { if s.performKeyEquivalent(with: event) { return true } }
         return false
     }
 
@@ -515,7 +581,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     open func display() { needsDisplay = false; render(); ViewSystem.flushPlacement() }
     open func displayIfNeeded() {
         if _needsDisplay { needsDisplay = false; render() }
-        for s in subviews { s.displayIfNeeded() }
+        for s in treeChildren { s.displayIfNeeded() }
     }
     open func displayIfNeededIgnoringOpacity() { displayIfNeeded() }
     open func display(_ rect: NSRect) { display() }
@@ -681,7 +747,7 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
             needsDisplay = true
             if !first { viewDidChangeEffectiveAppearance() }
         }
-        for s in subviews { s.appearanceMayHaveChanged() }
+        for s in treeChildren { s.appearanceMayHaveChanged() }
     }
 
     // MARK: Tracking areas and cursor rects
@@ -715,6 +781,8 @@ open class NSView: NSResponder, NSAppearanceCustomization, NSUserInterfaceItemId
     open func setAccessibilityTitle(_ title: String?) { accessibility.title = title }
     open func accessibilityHelp() -> String? { accessibility.help ?? toolTip }
     open func setAccessibilityHelp(_ help: String?) { accessibility.help = help }
+    open func accessibilityPlaceholderValue() -> String? { accessibility.placeholderValue }
+    open func setAccessibilityPlaceholderValue(_ value: String?) { accessibility.placeholderValue = value }
     open func accessibilityIdentifier() -> String { accessibility.identifier ?? identifier?.rawValue ?? "" }
     open func setAccessibilityIdentifier(_ identifier: String?) { accessibility.identifier = identifier }
     open func accessibilityRole() -> NSAccessibility.Role? { accessibility.role ?? .group }

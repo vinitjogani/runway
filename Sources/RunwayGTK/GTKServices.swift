@@ -82,6 +82,12 @@ import RunwayCore
         return URL(fileURLWithPath: String(cString: result))
     }
 
+    func chooseApplication(title: String, mimeType: String?) -> String? {
+        guard let result = runway_choose_application(parent, title, mimeType) else { return nil }
+        defer { g_free(result) }
+        return String(cString: result)
+    }
+
     func alert(title: String, message: String, buttons: [String], destructive: Int?) -> Int {
         let dup = buttons.map { strdup($0) }
         defer { dup.forEach { free($0) } }
