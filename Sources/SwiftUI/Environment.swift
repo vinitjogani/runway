@@ -2,6 +2,9 @@
 // enabled state, actions such as dismiss and openURL).
 
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 import RunwayCore
 
 public protocol EnvironmentKey {
@@ -127,6 +130,11 @@ struct WeakHost { weak var host: ViewHost? }
 /// Whether this is the main thread, without Foundation's Thread.isMainThread
 /// (a system call on Linux): the main thread's pthread, read once.
 enum MainThread {
+    #if os(Windows)
+    nonisolated(unsafe) private static var main: DWORD? = nil
+    static func record() { if main == nil { main = GetCurrentThreadId() } }
+    static var isCurrent: Bool { main == GetCurrentThreadId() }
+    #else
     nonisolated(unsafe) private static var main: pthread_t? = nil
     /// Called on the main thread before any view is resolved.
     static func record() { if main == nil { main = pthread_self() } }
@@ -134,6 +142,7 @@ enum MainThread {
         guard let m = main else { return false }
         return pthread_equal(m, pthread_self()) != 0
     }
+    #endif
 }
 
 struct FontKey: EnvironmentKey { static var defaultValue: Font? { nil } }

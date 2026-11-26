@@ -531,7 +531,7 @@ public final class CVDisplayLink: @unchecked Sendable {
             let period = UInt64(refreshPeriod * 1e9)
             let target = start + frame * period
             let now = DispatchTime.now().uptimeNanoseconds
-            if target > now { usleep(UInt32((target - now) / 1000)) }
+            if target > now { Thread.sleep(forTimeInterval: Double(target - now) / 1e9) }
             guard isRunning else { break }
             var nowStamp = CVTimeStamp(), out = CVTimeStamp()
             nowStamp.hostTime = DispatchTime.now().uptimeNanoseconds

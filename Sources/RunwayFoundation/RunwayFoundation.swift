@@ -147,7 +147,10 @@ public enum Deflate {
         return out
     }
 
-    public static func decompress(_ input: Data) throws -> Data { try Inflater(Array(input)).run() }
+    public static func decompress(_ input: Data) throws -> Data {
+        var inflater = Inflater(Array(input))
+        return try inflater.run()
+    }
     #endif
 }
 
