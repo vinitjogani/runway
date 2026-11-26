@@ -670,7 +670,9 @@ import CRunwayDrawn
                 if setPaint(paint, shape.bounds) {
                     let dash = style.dashLengths
                     if !dash.isEmpty { var d = dash.map { Float($0) }; rw_draw_set_dash(n, &d, Int32(d.count)) }
+                    if style.lineCap == .round { rw_draw_set_round_caps(n, 1) }
                     drawShape(w, i, shape, fill: false, width: style.lineWidth)
+                    if style.lineCap == .round { rw_draw_set_round_caps(n, 0) }
                     if !dash.isEmpty { rw_draw_set_dash(n, nil, 0) }
                 }
             case let .image(source, rect):

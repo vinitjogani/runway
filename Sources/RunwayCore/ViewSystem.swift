@@ -100,8 +100,12 @@ public struct MenuNode: Hashable, Sendable {
     /// GTK accelerator syntax ("<Control>n", "<Control><Shift>z"), for display.
     public var accelerator: String?
     public var children: [MenuNode]
-    public init(id: Int, kind: Kind = .item, title: String, enabled: Bool = true, checked: Bool = false, accelerator: String? = nil, children: [MenuNode] = []) {
-        self.id = id; self.kind = kind; self.title = title; self.enabled = enabled; self.checked = checked; self.accelerator = accelerator; self.children = children
+    /// An SF Symbol shown before the title.
+    public var symbol: String?
+    public init(id: Int, kind: Kind = .item, title: String, enabled: Bool = true, checked: Bool = false, accelerator: String? = nil,
+                children: [MenuNode] = [], symbol: String? = nil) {
+        self.id = id; self.kind = kind; self.title = title; self.enabled = enabled; self.checked = checked; self.accelerator = accelerator
+        self.children = children; self.symbol = symbol
     }
 }
 

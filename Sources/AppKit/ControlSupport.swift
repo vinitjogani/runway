@@ -210,7 +210,7 @@ extension NSMenu {
         items.filter { !$0.isHidden }.map { item in
             if item.isSeparatorItem { return .separator }
             return MenuItemSpec(title: item.title, enabled: item.isEnabled, checked: item.state == .on,
-                                children: item.submenu?.specs(sender: sender) ?? []) { [weak item] in
+                                children: item.submenu?.specs(sender: sender) ?? [], symbol: item.menuSymbol, shortcut: item.shortcut) { [weak item] in
                 item?.perform()
             }
         }

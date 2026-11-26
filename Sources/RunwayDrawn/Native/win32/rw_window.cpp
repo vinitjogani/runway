@@ -437,6 +437,10 @@ extern "C" void rw_window_show(rw_window *w) {
         if (w->modal && w->parent && w->parent->hwnd) EnableWindow(w->parent->hwnd, FALSE);
     }
     ShowWindow(w->hwnd, IsIconic(w->hwnd) ? SW_RESTORE : SW_SHOW);
+    if (w->popup && w->placed) {
+        RECT r = w->popupRect;
+        SetWindowPos(w->hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOACTIVATE);
+    }
     SetForegroundWindow(w->hwnd);
 }
 

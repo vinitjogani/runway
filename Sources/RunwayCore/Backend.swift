@@ -189,8 +189,16 @@ public struct WidgetProps: Equatable, Sendable {
     public var isSeparator: Bool
     public var children: [MenuItemSpec]
     public var action: (() -> Void)?
-    public init(title: String, enabled: Bool = true, checked: Bool = false, isSeparator: Bool = false, children: [MenuItemSpec] = [], action: (() -> Void)? = nil) {
-        self.title = title; self.enabled = enabled; self.checked = checked; self.isSeparator = isSeparator; self.children = children; self.action = action
+    /// An SF Symbol shown before the title.
+    public var symbol: String?
+    /// The key that does the same, shown after the title.
+    public var shortcut: KeyPress?
+    /// Drawn in red (a destructive action).
+    public var destructive = false
+    public init(title: String, enabled: Bool = true, checked: Bool = false, isSeparator: Bool = false, children: [MenuItemSpec] = [],
+                symbol: String? = nil, shortcut: KeyPress? = nil, action: (() -> Void)? = nil) {
+        self.title = title; self.enabled = enabled; self.checked = checked; self.isSeparator = isSeparator; self.children = children
+        self.symbol = symbol; self.shortcut = shortcut; self.action = action
     }
     public static var separator: MenuItemSpec { MenuItemSpec(title: "", isSeparator: true) }
 }
@@ -236,6 +244,19 @@ extension NativeWindow {
 }
 
 public struct KeyPress: Hashable, Sendable {
+    /// As a menu shows it ("⌘⇧Z" on the Mac; "Ctrl+Shift+Z" elsewhere).
+    public var displayText: String {
+        let names = ["return": "Enter", "escape": "Esc", "delete": "Del", "backspace": "Backspace", "tab": "Tab", "space": "Space",
+                     "up": "Up", "down": "Down", "left": "Left", "right": "Right", "pageup": "PgUp", "pagedown": "PgDn",
+                     "home": "Home", "end": "End"]
+        var parts: [String] = []
+        if control { parts.append("Win") }
+        if command { parts.append("Ctrl") }
+        if option { parts.append("Alt") }
+        if shift { parts.append("Shift") }
+        parts.append(names[key] ?? (key.count == 1 ? key.uppercased() : key.capitalized))
+        return parts.joined(separator: "+")
+    }
     public var key: String           // "return", "escape", "tab", "a"…, lowercased
     public var command: Bool         // ⌘ on macOS; Ctrl on Linux and Windows
     public var shift: Bool

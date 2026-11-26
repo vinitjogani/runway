@@ -37,7 +37,7 @@ enum Drag {
     // Input state.
     private(set) var drag: Drag?
     private(set) var pressedInside = false
-    private(set) var hovered: DrawnWidget?
+    var hovered: DrawnWidget?
     private(set) var hoveredScroll: DrawnWidget?
     private(set) var mouse = CGPoint(x: -1, y: -1)
 
@@ -600,6 +600,12 @@ enum Drag {
     }
 
     func showMenu(_ items: [MenuItemSpec], at p: CGPoint, _ n: OpaquePointer) {
+        if !DrawnMenu.native {
+            hovered = nil
+            invalidate()
+            DrawnMenu.run(items, in: self, at: p)?.action?()
+            return
+        }
         guard !items.isEmpty, let menu = rw_menu_create() else { return }
         defer { rw_menu_free(menu) }
         var actions: [(() -> Void)?] = [nil]

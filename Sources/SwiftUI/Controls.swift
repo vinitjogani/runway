@@ -53,6 +53,19 @@ extension ResolveContext {
     }
 }
 
+// MARK: Menu items
+
+/// Labels that show an SF Symbol (Label with an Image icon, an Image):
+/// what a menu item shows beside its title.
+protocol _MenuSymbolLabel { var _menuSymbol: String? { get } }
+extension Image: _MenuSymbolLabel {
+    var _menuSymbol: String? { if case let .symbol(s) = imageSource { return s }; return nil }
+}
+extension Label: _MenuSymbolLabel where Icon == Image {
+    var _menuSymbol: String? { icon._menuSymbol }
+}
+func menuSymbol<L: View>(_ label: L) -> String? { (label as? _MenuSymbolLabel)?._menuSymbol }
+
 // MARK: Button
 
 public struct Button<Label: View>: View, PrimitiveView {
@@ -75,7 +88,9 @@ public struct Button<Label: View>: View, PrimitiveView {
         let after = env[AfterButtonActionKey.self]
         let base = self.action
         let action: @MainActor () -> Void = { base(); after?.run() }
-        let item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, action: action)
+        var item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, symbol: menuSymbol(label), action: action)
+        if let s = env._shortcut, s != .defaultAction, s != .cancelAction { item.shortcut = s.keyPress }
+        item.destructive = role == .destructive
         ctx.registerShortcut(action)
         if role == .cancel, env._shortcut == nil, !ctx.dryRun { ctx.host.cancelAction = ctx.host.cancelAction ?? action }
 
@@ -239,7 +254,8 @@ public struct Toggle<Label: View>: View, PrimitiveView {
         events.onToggle = { isOn.wrappedValue = $0 }
         var p = ctx.baseProps()
         p.isOn = isOn.wrappedValue
-        let item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, checked: p.isOn) { isOn.wrappedValue.toggle() }
+        var item = MenuItemSpec(title: ctx.labelText(label), enabled: env.isEnabled, checked: p.isOn, symbol: menuSymbol(label)) { isOn.wrappedValue.toggle() }
+        if let s = env._shortcut, s != .defaultAction, s != .cancelAction { item.shortcut = s.keyPress }
         let kind: ToggleKind = style == .switch ? .switch : style == .button ? .button : .checkbox
         let title = ctx.plainTitle(label) ?? ctx.labelText(label)
         // Checkboxes and toggle buttons carry their own title; switches sit

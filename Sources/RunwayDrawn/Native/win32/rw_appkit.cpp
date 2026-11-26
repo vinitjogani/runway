@@ -211,6 +211,9 @@ extern "C" void rw_popup_place(rw_window *w, double x, double y, double width, d
     if (p.x < a.left) p.x = a.left;
     if (p.y < a.top) p.y = a.top;
     SetWindowPos(w->hwnd, HWND_TOP, p.x, p.y, cw, ch, SWP_NOACTIVATE);
+    // Kept, so showing it puts it back if a window manager moved it on mapping.
+    w->popupRect = RECT{p.x, p.y, p.x + cw, p.y + ch};
+    w->placed = true;
 }
 
 extern "C" void rw_window_offset_in(rw_window *w, rw_window *other, double *x, double *y) {

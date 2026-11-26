@@ -129,6 +129,7 @@ struct rw_window {
     // AppKit support.
     bool popup = false;
     bool placed = false;                   // positioned by the app: not centred on show
+    RECT popupRect = {0, 0, 0, 0};          // where a popup was placed (screen pixels)
     bool decorated = true;
     HCURSOR ownedCursor = nullptr;         // made from an image; destroyed with the window
     struct RwDropTarget *drop = nullptr;

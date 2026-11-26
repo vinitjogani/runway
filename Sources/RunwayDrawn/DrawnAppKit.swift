@@ -186,6 +186,29 @@ enum MenuText {
         return parts.joined(separator: "+")
     }
 
+    /// "<Control><Shift>z" as a key press.
+    static func keyPress(_ a: String?) -> KeyPress? {
+        guard var s = a, !s.isEmpty else { return nil }
+        var k = KeyPress(key: "")
+        while s.hasPrefix("<"), let end = s.firstIndex(of: ">") {
+            switch s[s.startIndex...end] {
+            case "<Control>", "<Primary>": k.command = true
+            case "<Shift>": k.shift = true
+            case "<Alt>": k.option = true
+            case "<Super>", "<Meta>": k.control = true
+            default: break
+            }
+            s = String(s[s.index(after: end)...])
+        }
+        let names = ["Return": "return", "KP_Enter": "return", "Escape": "escape", "BackSpace": "backspace", "Delete": "delete", "Tab": "tab",
+                     "space": "space", "Up": "up", "Down": "down", "Left": "left", "Right": "right", "Home": "home", "End": "end",
+                     "Page_Up": "pageup", "Page_Down": "pagedown", "comma": ",", "period": ".", "slash": "/", "semicolon": ";",
+                     "bracketleft": "[", "bracketright": "]", "minus": "-", "equal": "=", "plus": "+", "backslash": "\\",
+                     "apostrophe": "'", "grave": "`"]
+        k.key = names[s] ?? s.lowercased()
+        return k.key.isEmpty ? nil : k
+    }
+
     static func title(_ node: MenuNode) -> String {
         if let a = accelerator(node.accelerator) { return node.title + "\t" + a }
         return node.title
@@ -283,7 +306,10 @@ extension DrawnBackend: ViewSystemBackend {
                 case .submenu: return MenuItemSpec(title: node.title, enabled: node.enabled, children: specs(node.children)) {}
                 case .item:
                     let s = states[node.id]
-                    return MenuItemSpec(title: MenuText.title(node), enabled: s?.enabled ?? node.enabled, checked: s?.checked ?? node.checked) {
+                    let native = DrawnMenu.native
+                    return MenuItemSpec(title: native ? MenuText.title(node) : node.title, enabled: s?.enabled ?? node.enabled,
+                                        checked: s?.checked ?? node.checked, symbol: node.symbol,
+                                        shortcut: native ? nil : MenuText.keyPress(node.accelerator)) {
                         callbacks.activate(node.id)
                     }
                 }
