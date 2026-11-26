@@ -42,8 +42,7 @@ public enum BundledFonts {
             guard let name = f.file_name.map({ String(cString: $0) }), let data = f.data else { continue }
             let url = dir.appendingPathComponent(name)
             let size = Int(f.size)
-            let existing = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
-            if existing != size {
+            if fileSize(url.path) != size {
                 // Write beside it, then move into place: other app instances may be reading.
                 let temp = dir.appendingPathComponent(name + ".\(ProcessInfo.processInfo.processIdentifier).tmp")
                 do {
@@ -52,13 +51,21 @@ public enum BundledFonts {
                     try FileManager.default.moveItem(at: temp, to: url)
                 } catch {
                     try? FileManager.default.removeItem(at: temp)
-                    if (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) != size { continue }
+                    if fileSize(url.path) != size { continue }
                 }
             }
             out.append(url.path)
         }
         cached = out
         return out
+    }
+
+    /// A file's size, read through a handle (attributesOfItem on Windows
+    /// also works out POSIX permissions, which needs more of the system).
+    private static func fileSize(_ path: String) -> Int? {
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? h.close() }
+        return (try? h.seekToEnd()).map { Int($0) }
     }
 
     /// The font files to register (none when the system's fonts are asked for).
