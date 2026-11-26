@@ -60,7 +60,7 @@ private let eventCallback: rw_event_fn = { event in
             let scheme: ColorSchemeValue = preferredScheme ?? (rw_dark_mode() != 0 ? .dark : .light)
             if scheme != colorScheme { setColorScheme(scheme) }
             return 0
-        case RW_EV_RICH_CHANGED, RW_EV_RICH_SELECTION, RW_EV_RICH_FOCUS, RW_EV_RICH_CHAR, RW_EV_RICH_KEY, RW_EV_RICH_POINTER, RW_EV_RICH_HEIGHT:
+        case RW_EV_RICH_CHANGED, RW_EV_RICH_SELECTION, RW_EV_RICH_FOCUS, RW_EV_RICH_CHAR, RW_EV_RICH_KEY, RW_EV_RICH_POINTER, RW_EV_RICH_HEIGHT, RW_EV_RICH_PAINT:
             guard let ctx = ev.ctx else { return 0 }
             let widget = Unmanaged<W32Widget>.fromOpaque(ctx).takeUnretainedValue()
             return richEvent(widget, ev) ? 1 : 0

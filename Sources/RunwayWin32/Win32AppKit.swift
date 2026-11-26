@@ -553,6 +553,13 @@ extension Win32Backend: AppKitBackend {
         withRichRuns(runs, w.richConfig) { rw_rich_replace(r, Int32(a), Int32(b), $0, $1) }
     }
 
+    public func setTextViewLayers(_ view: NativeWidget, below: CGDisplayList?, above: CGDisplayList?) {
+        let w = widget(view)
+        guard w.richLayers.below != below || w.richLayers.above != above else { return }
+        w.richLayers = (below, above)
+        if let r = w.rich?.pointer { rw_rich_set_layers(r, below == nil ? 0 : 1, above == nil ? 0 : 1) }
+    }
+
     public func textViewMove(_ view: NativeWidget, by step: TextMoveStep, count: Int, extend: Bool) {
         let w = widget(view)
         guard let r = w.rich?.pointer else { return }
@@ -625,6 +632,7 @@ extension Win32Backend: AppKitBackend {
     // Window chrome: the system title bar holds the title and buttons.
     public func labelAreaInsets(_ native: NativeWidget) -> EdgeInsetsValue { contentInsets(native) }
     public func beginWindowMove(_ window: NativeWindow, button: Int, at point: CGPoint, timestamp: TimeInterval) {
+        if Win32Backend.debugInput { FileHandle.standardError.write("beginWindowMove \(point)\n".data(using: .utf8)!) }
         if button == 0, let n = w32(window)?.native { rw_window_begin_move(n) }
     }
     public func setPassesThrough(_ container: NativeWidget, _ passes: Bool) { widget(container).passesThrough = passes }
@@ -682,6 +690,9 @@ extension Win32Backend {
         let a = TextOffsets.utf16Offset(scalar: w.richSelection.lowerBound, in: w.richString)
         let b = TextOffsets.utf16Offset(scalar: w.richSelection.upperBound, in: w.richString)
         rw_rich_set_selection(r, Int32(a), Int32(b))
+        if w.richLayers.below != nil || w.richLayers.above != nil {
+            rw_rich_set_layers(r, w.richLayers.below == nil ? 0 : 1, w.richLayers.above == nil ? 0 : 1)
+        }
     }
 
     func applyRichConfig(_ w: W32Widget, background: RGBA) {
@@ -689,6 +700,7 @@ extension Win32Backend {
         let key = W32Widget.RichApplied(config: w.richConfig, background: background, typing: w.richEvents.insertText != nil)
         guard key != w.richConfigApplied else { return }
         w.richConfigApplied = key
+        w.richBackground = background
         let c = w.richConfig
         var typing = RichTextRun(string: "", font: c.font, color: c.textColor ?? theme.label)
         if c.monospaced { typing.font.family = Fonts.mono }
@@ -782,6 +794,17 @@ extension Win32Backend {
             let up = ev.flags & UInt32(RW_MOUSE_RELEASE) != 0
             return handler(PointerEvent(kind: up ? .up : .down, location: CGPoint(x: ev.x, y: ev.y), button: Int(ev.button),
                                         clickCount: max(1, Int(ev.clicks)), modifiers: KeyModifiers(raw: RawModifiers(ev.mods))))
+        case RW_EV_RICH_PAINT:
+            guard let r = w.rich?.pointer, let surface = rw_rich_surface(r) else { return false }
+            if ev.button == 0 {
+                // Under the text: the view's background, then what's drawn under it.
+                let c = w.richConfig
+                rw_draw_clear(surface, (c.drawsBackground ? (c.background ?? theme.textBackground) : (w.richBackground ?? theme.textBackground)).over(theme.windowBackground).rw)
+                if let list = w.richLayers.below { DisplayListPlayer.replay(list, surface, origin: .zero, alpha: 1) }
+            } else if let list = w.richLayers.above {
+                DisplayListPlayer.replay(list, surface, origin: .zero, alpha: 1)
+            }
+            return true
         case RW_EV_RICH_HEIGHT:
             w.richHeight = CGFloat(ev.dy)
             e.heightChanged?(CGFloat(ev.dy))

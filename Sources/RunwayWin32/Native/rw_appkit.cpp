@@ -191,6 +191,8 @@ extern "C" rw_window *rw_popup_create(rw_window *owner, void *ctx) {
     if (!h) { delete w; return nullptr; }
     w->dpi = GetDpiForWindow(h);
     w->shown = true;   // placed by its owner, never centred
+    int corners = 3;   // DWMWA_WINDOW_CORNER_PREFERENCE (33): small rounded corners (Windows 11)
+    DwmSetWindowAttribute(h, 33, &corners, sizeof(corners));
     return w;
 }
 
@@ -514,6 +516,8 @@ struct rw_rich {
     std::wstring text;                 // the text as last reported, "\n" breaks
     LONG anchor = -1;                  // the fixed end of a selection rw_rich_move extended
     CHARRANGE lastSel = {-1, -1};
+    int layers = 0;                    // 1 below the text, 2 above it
+    rw_window *surface = nullptr;      // a drawing surface for the layers
 };
 
 static const wchar_t *kRichProp = L"rw.rich";
@@ -599,6 +603,50 @@ static void reportHeight(rw_rich *r) {
     rwSendEvent(ev);
 }
 
+/// The view with drawing under and over its text: the background and the
+/// layer under the text into a memory DC, RichEdit's text over them
+/// (WM_PRINTCLIENT; the control is transparent), then that and the layer
+/// over the text onto the window in one pass.
+static void paintLayered(rw_rich *r, HWND h, WNDPROC original) {
+    PAINTSTRUCT ps;
+    HDC target = BeginPaint(h, &ps);
+    RECT rc;
+    GetClientRect(h, &rc);
+    int width = rc.right > 0 ? rc.right : 1, height = rc.bottom > 0 ? rc.bottom : 1;
+    rc.right = width;
+    rc.bottom = height;
+    if (!r->surface) { r->surface = new rw_window(); r->surface->hwnd = h; }
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+    bi.bmiHeader.biWidth = width;
+    bi.bmiHeader.biHeight = -height;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    void *bits = nullptr;
+    HDC mem = CreateCompatibleDC(target);
+    HBITMAP dib = mem ? CreateDIBSection(target, &bi, DIB_RGB_COLORS, &bits, nullptr, 0) : nullptr;
+    if (!dib) {
+        if (mem) DeleteDC(mem);
+        EndPaint(h, &ps);
+        CallWindowProcW(original, h, WM_PAINT, 0, 0);
+        return;
+    }
+    HGDIOBJ old = SelectObject(mem, dib);
+    rwPaintDC(r->surface, mem, rc, r->window->dpi, nullptr, RW_EV_RICH_PAINT, r->ctx, 0);
+    GdiFlush();
+    SendMessageW(h, WM_PRINTCLIENT, (WPARAM)mem, PRF_CLIENT);
+    GdiFlush();
+    if (r->layers & 2) {
+        rwPaintDC(r->surface, target, rc, r->window->dpi, bits, RW_EV_RICH_PAINT, r->ctx, 1);
+    } else {
+        BitBlt(target, 0, 0, width, height, mem, 0, 0, SRCCOPY);
+    }
+    SelectObject(mem, old);
+    DeleteObject(dib);
+    DeleteDC(mem);
+    EndPaint(h, &ps);
+}
+
 static LRESULT CALLBACK richProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     rw_rich *r = richFor(h);
     if (!r || !r->original) return DefWindowProcW(h, m, wp, lp);
@@ -681,6 +729,12 @@ static LRESULT CALLBACK richProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         if (m == WM_RBUTTONDOWN || m == WM_RBUTTONUP) return 0;   // no native context menu
         break;
     }
+    case WM_PAINT:
+        if (r->layers && r->window) {
+            paintLayered(r, h, original);
+            return 0;
+        }
+        break;
     case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
         // The view is as tall as its text: the scroll view around it scrolls.
         if (r->window && r->window->hwnd) return SendMessageW(r->window->hwnd, m, wp, lp);
@@ -764,6 +818,7 @@ extern "C" rw_rich *rw_rich_create(rw_window *w, void *ctx) {
 extern "C" void rw_rich_destroy(rw_rich *r) {
     if (!r) return;
     r->ctx = nullptr;
+    if (r->surface) { rwDiscardTarget(r->surface); delete r->surface; r->surface = nullptr; }
     if (r->window) {
         auto &v = r->window->riches;
         for (size_t i = 0; i < v.size(); i++) if (v[i] == r) { v.erase(v.begin() + (long)i); break; }
@@ -1148,6 +1203,19 @@ extern "C" void rw_rich_move(rw_rich *r, int step, int count, int extend) {
     SendMessageW(r->hwnd, EM_EXSETSEL, 0, (LPARAM)&out);
     SendMessageW(r->hwnd, EM_SCROLLCARET, 0, 0);
 }
+
+extern "C" void rw_rich_set_layers(rw_rich *r, int below, int above) {
+    if (!r || !r->hwnd) return;
+    int layers = (below ? 1 : 0) | (above ? 2 : 0);
+    // Under the text the view paints its own background, so RichEdit doesn't.
+    LONG_PTR ex = GetWindowLongPtrW(r->hwnd, GWL_EXSTYLE);
+    LONG_PTR next = layers ? (ex | WS_EX_TRANSPARENT) : (ex & ~(LONG_PTR)WS_EX_TRANSPARENT);
+    if (next != ex) SetWindowLongPtrW(r->hwnd, GWL_EXSTYLE, next);
+    r->layers = layers;
+    InvalidateRect(r->hwnd, nullptr, TRUE);
+}
+
+extern "C" rw_window *rw_rich_surface(rw_rich *r) { return r ? r->surface : nullptr; }
 
 extern "C" void rw_rich_focus(rw_rich *r) { if (r && r->hwnd) SetFocus(r->hwnd); }
 extern "C" int rw_rich_has_focus(rw_rich *r) { return r && r->hwnd && GetFocus() == r->hwnd ? 1 : 0; }

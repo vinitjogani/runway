@@ -372,6 +372,7 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
                                                         titlebar: titled ? .standard : .none), parent: parent)
         native = n
         n.onResize = { [weak self] s in self?.nativeResized(s) }
+        n.onMove = { [weak self] topLeft in self?.nativeMoved(topLeft) }
         n.onCloseRequest = { [weak self] in
             guard let self else { return true }
             if self.delegate?.windowShouldClose(self) == false { return false }
@@ -397,7 +398,20 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         attachContent()
         updateTitlebarTitle()
         dropTargetsChanged()
+        applyPosition()
         return n
+    }
+
+    /// The user (or the desktop) moved the window.
+    private func nativeMoved(_ topLeft: CGPoint) {
+        let ph = NSScreen.screens.first?.frame.height ?? 0
+        let origin = CGPoint(x: topLeft.x, y: ph - topLeft.y - _frame.height)
+        guard origin != _frame.origin else { return }
+        let old = _frame
+        _frame.origin = origin
+        KVO.didChange(self, "frame", old: old, new: _frame)
+        saveFrameIfAutosaving()
+        post(Self.didMoveNotification) { $0.windowDidMove($1) }
     }
 
     private func nativeResized(_ canvas: CGSize) {
@@ -539,7 +553,20 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         let x = s.midX - _frame.width / 2
         let y = s.minY + (s.height - _frame.height) * 2 / 3
         _frame.origin = CGPoint(x: x.rounded(), y: y.rounded())
+        placed = true
         native?.center()
+        applyPosition()
+    }
+
+    /// Whether the app placed the window (center, setFrame…): its position
+    /// then goes to the native window; otherwise the desktop places it.
+    private var placed = false
+
+    /// The frame's place on the desktop, for backends that can move windows.
+    private func applyPosition() {
+        guard placed, let n = native else { return }
+        let ph = NSScreen.screens.first?.frame.height ?? 0
+        n.setPosition(CGPoint(x: _frame.minX, y: ph - _frame.maxY))
     }
     open func cascadeTopLeft(from p: NSPoint) -> NSPoint {
         if p == .zero { return CGPoint(x: _frame.minX, y: _frame.maxY) }
@@ -564,7 +591,11 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
             layoutIfNeeded()
             post(Self.didResizeNotification) { $0.windowDidResize($1) }
         }
-        if moved { post(Self.didMoveNotification) { $0.windowDidMove($1) } }
+        if moved {
+            placed = true
+            applyPosition()
+            post(Self.didMoveNotification) { $0.windowDidMove($1) }
+        }
         saveFrameIfAutosaving()
     }
     open func setFrame(_ r: NSRect, display: Bool, animate: Bool) { setFrame(r, display: display) }
@@ -574,7 +605,18 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
     }
     open func setFrameOrigin(_ p: NSPoint) { setFrame(CGRect(origin: p, size: _frame.size), display: true) }
     open func setFrameTopLeftPoint(_ p: NSPoint) { setFrameOrigin(CGPoint(x: p.x, y: p.y - _frame.height)) }
-    open func constrainFrameRect(_ r: NSRect, to screen: NSScreen?) -> NSRect { r }
+    /// As the Mac does: the title bar stays on the screen (the frame moves
+    /// down below its top, and up to show the title bar above its bottom).
+    open func constrainFrameRect(_ r: NSRect, to screen: NSScreen?) -> NSRect {
+        guard styleMask.contains(.titled), let v = (screen ?? self.screen ?? NSScreen.main)?.visibleFrame, v.height > 0 else { return r }
+        var out = r
+        if out.maxY > v.maxY { out.origin.y = v.maxY - out.height }
+        let titlebar = max(chromeAbove, 28)
+        if out.maxY < v.minY + titlebar { out.origin.y = v.minY + titlebar - out.height }
+        if out.minX > v.maxX - 40 { out.origin.x = v.maxX - 40 }
+        if out.maxX < v.minX + 40 { out.origin.x = v.minX + 40 - out.width }
+        return out
+    }
     open func animationResizeTime(_ r: NSRect) -> TimeInterval { 0.2 }
 
     /// Grows the window to what its content's required constraints need,
@@ -635,7 +677,10 @@ open class NSWindow: NSResponder, NSAppearanceCustomization, NSUserInterfaceItem
         guard n.count >= 4, n[2] > 0, n[3] > 0 else { return }
         let saving = frameAutosaveName
         frameAutosaveName = ""
-        setFrame(CGRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true)
+        let saved = CGRect(x: n[0], y: n[1], width: n[2], height: n[3])
+        // On whichever screen it's on now, with its title bar showing.
+        let screen = NSScreen.screens.first { $0.frame.intersects(saved) } ?? NSScreen.main
+        setFrame(constrainFrameRect(saved, to: screen), display: true)
         frameAutosaveName = saving
     }
     public static func removeFrame(usingName name: FrameAutosaveName) { UserDefaults.standard.removeObject(forKey: "NSWindow Frame \(name)") }

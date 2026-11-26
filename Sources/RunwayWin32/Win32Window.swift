@@ -22,6 +22,7 @@ enum Drag {
     private var closed = false
     private var modal: Bool
     var onResize: ((CGSize) -> Void)?
+    var onMove: ((CGPoint) -> Void)?
     var onCloseRequest: (() -> Bool)?
     var onClosed: (() -> Void)?
     var onKey: ((KeyPress) -> Bool)?
@@ -96,6 +97,7 @@ enum Drag {
     func show() { if let n = native { rw_window_show(n) } }
     func showWithoutActivating() { if let n = native { rw_window_show_inactive(n) } }
     func center() { if let n = native { rw_window_center(n) } }
+    func setPosition(_ topLeft: CGPoint) { if let n = native { rw_window_set_position(n, Double(topLeft.x), Double(topLeft.y)) } }
 
     func close() {
         guard !closed else { return }
@@ -216,6 +218,7 @@ enum Drag {
             return sendRaw(up ? .mouseUp : .mouseDown, at: point, mods: RawModifiers(ev.mods), button: b,
                            monitor: ev.type == RW_EV_CHILD_MOUSE, onNative: true)
         case RW_EV_TIMER: invalidate()
+        case RW_EV_MOVED: onMove?(CGPoint(x: ev.x, y: ev.y))
         case RW_EV_DPI_CHANGED:
             scale = CGFloat(rw_window_scale(n))
             invalidate()

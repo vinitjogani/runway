@@ -27,8 +27,9 @@ static bool ensureTarget(rw_window *w) {
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, format, (float)w->dpi, (float)w->dpi);
     D2D1_HWND_RENDER_TARGET_PROPERTIES hwndProps =
         D2D1::HwndRenderTargetProperties(w->hwnd, D2D1::SizeU((UINT32)(rc.right > 0 ? rc.right : 1), (UINT32)(rc.bottom > 0 ? rc.bottom : 1)));
-    HRESULT hr = rwG.d2d->CreateHwndRenderTarget(props, hwndProps, &w->rt);
+    HRESULT hr = rwG.d2d->CreateHwndRenderTarget(props, hwndProps, &w->hwndRt);
     if (FAILED(hr)) { RW_LOG("CreateHwndRenderTarget failed: 0x%08lx", (unsigned long)hr); return false; }
+    w->rt = w->hwndRt;
     w->rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 1), &w->solid);
     w->rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 1), &w->textBrush);
     // Grey-scale antialiasing on transparent (Mica) surfaces and at high
@@ -50,30 +51,79 @@ void rwDiscardTarget(rw_window *w) {
     rwRelease(w->solid);
     rwRelease(w->textBrush);
     rwRelease(w->rt);
+    w->hwndRt = nullptr;
 }
 
-void rwPaintWindow(rw_window *w) {
-    if (!ensureTarget(w)) return;
+/// Readies a target for a pass of rw_draw_* calls.
+static void beginPass(rw_window *w) {
     w->painting = true;
     w->rt->BeginDraw();
     w->rt->SetTransform(D2D1::Matrix3x2F::Identity());
     w->alpha = 1;
     w->offsetX = w->offsetY = 0;
     w->clipDepth = 0;
+    w->clipKinds.clear();
     w->paintColor = rw_color{0, 0, 0, 1};
     w->paint = w->solid;
     rw_draw_set_round_caps(w, 0);
     rw_draw_set_dash(w, nullptr, 0);
-    w->clipKinds.clear();
-    rwSend(RW_EV_PAINT, w->ctx);
+}
+
+static HRESULT endPass(rw_window *w) {
     while (w->clipDepth > 0) rw_draw_pop_clip(w);
     HRESULT hr = w->rt->EndDraw();
     w->painting = false;
     if (FAILED(hr)) RW_LOG("EndDraw failed: 0x%08lx", (unsigned long)hr);
+    return hr;
+}
+
+void rwPaintWindow(rw_window *w) {
+    if (!ensureTarget(w)) return;
+    beginPass(w);
+    rwSend(RW_EV_PAINT, w->ctx);
+    HRESULT hr = endPass(w);
     if (hr == (HRESULT)D2DERR_RECREATE_TARGET) {
         rwDiscardTarget(w);
         InvalidateRect(w->hwnd, nullptr, FALSE);
     }
+}
+
+/// A drawing surface over a device context (a native child's layers): the
+/// same rw_draw_* calls through a DC render target, which replaces the
+/// whole rect, so `underlay` (top-down BGRA of the rect's size, or NULL) is
+/// drawn first. `event` goes to `ctx` while the pass runs.
+void rwPaintDC(rw_window *surface, HDC dc, RECT rc, UINT dpi, const void *underlay, int event, void *ctx, int button) {
+    if (!surface->rt) {
+        D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), (float)dpi, (float)dpi);
+        ID2D1DCRenderTarget *t = nullptr;
+        if (FAILED(rwG.d2d->CreateDCRenderTarget(&props, &t))) return;
+        surface->rt = t;
+        t->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 1), &surface->solid);
+        t->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 1), &surface->textBrush);
+        static unsigned generations = 0x80000000u;
+        surface->generation = ++generations;
+    }
+    surface->dpi = dpi;
+    surface->rt->SetDpi((float)dpi, (float)dpi);
+    if (FAILED(((ID2D1DCRenderTarget *)surface->rt)->BindDC(dc, &rc))) return;
+    beginPass(surface);
+    if (underlay) {
+        UINT32 w = (UINT32)(rc.right - rc.left), h = (UINT32)(rc.bottom - rc.top);
+        ID2D1Bitmap *b = nullptr;
+        D2D1_BITMAP_PROPERTIES bp = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), 96, 96);
+        if (SUCCEEDED(surface->rt->CreateBitmap(D2D1::SizeU(w, h), underlay, w * 4, bp, &b))) {
+            D2D1_SIZE_F s = surface->rt->GetSize();
+            surface->rt->DrawBitmap(b, D2D1::RectF(0, 0, s.width, s.height), 1, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, nullptr);
+            b->Release();
+        }
+    }
+    rw_event ev = {};
+    ev.type = event;
+    ev.ctx = ctx;
+    ev.button = button;
+    rwSendEvent(ev);
+    if (endPass(surface) == (HRESULT)D2DERR_RECREATE_TARGET) rwDiscardTarget(surface);
 }
 
 ID2D1SolidColorBrush *rwRunBrush(rw_window *w, rw_color c) {
@@ -639,13 +689,13 @@ struct rw_image {
     unsigned generation = 0;
 };
 
-static bool ensureWIC() {
+bool rwEnsureWIC() {
     if (rwG.wic) return true;
     return SUCCEEDED(CoCreateInstance(kWICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory), (void **)&rwG.wic));
 }
 
 extern "C" rw_image *rw_image_load_file(const char *path) {
-    if (!ensureWIC()) return nullptr;
+    if (!rwEnsureWIC()) return nullptr;
     std::wstring p = rwNativePath(path);
     IWICBitmapDecoder *decoder = nullptr;
     IWICBitmapFrameDecode *frame = nullptr;

@@ -65,6 +65,8 @@ typedef struct { float location; rw_color color; } rw_stop;
 #define RW_EV_RICH_POINTER  32   // button, x, y (the view's DIPs), flags RW_MOUSE_RELEASE, key: click count; return 1 to swallow
 #define RW_EV_RICH_HEIGHT   33   // dy: the text's new height
 #define RW_EV_TRAY          34   // ctx: the tray item's; button: 0 primary, 1 secondary
+#define RW_EV_MOVED         35   // x, y: the window's outer top-left on the desktop (DIPs)
+#define RW_EV_RICH_PAINT    36   // ctx: the rich edit's; button: 0 under the text, 1 over it; draw on rw_rich_surface()
 
 #define RW_MOD_SHIFT 1
 #define RW_MOD_CTRL  2
@@ -133,6 +135,8 @@ void rw_window_set_min_size(rw_window *w, double width, double height);
 void rw_window_set_resizable(rw_window *w, int resizable);
 void rw_window_show(rw_window *w);
 void rw_window_center(rw_window *w);
+// The outer top-left on the desktop (DIPs of the window's monitor).
+void rw_window_set_position(rw_window *w, double x, double y);
 void rw_window_invalidate(rw_window *w);
 void rw_window_set_dark(rw_window *w, int dark);
 void rw_window_set_cursor(rw_window *w, int cursor);
@@ -285,6 +289,11 @@ void rw_rich_move(rw_rich *r, int step, int count, int extend);
 void rw_rich_focus(rw_rich *r);
 int rw_rich_has_focus(rw_rich *r);
 char *rw_rich_copy_text(rw_rich *r);
+// Drawing under and over the text (RW_EV_RICH_PAINT); under it, the view
+// paints its background itself.
+void rw_rich_set_layers(rw_rich *r, int below, int above);
+// The surface to draw on while handling RW_EV_RICH_PAINT.
+rw_window *rw_rich_surface(rw_rich *r);
 
 // Tray icons (Shell notification area).
 typedef struct rw_tray rw_tray;

@@ -6,6 +6,7 @@
 #if os(Windows)
 import Foundation
 import RunwayCore
+import CoreGraphics
 import CRunwayWin32
 
 // MARK: Native handles
@@ -299,6 +300,8 @@ final class PathBox {
     var richSelection = 0..<0
     var richHeight: CGFloat = 0
     weak var richWindow: W32Window?
+    var richBackground: RGBA?
+    var richLayers: (below: CGDisplayList?, above: CGDisplayList?) = (nil, nil)
     struct RichApplied: Equatable { let config: TextViewConfig; let background: RGBA; let typing: Bool }
     var richConfigApplied: RichApplied?
 
@@ -365,6 +368,8 @@ struct Theme {
     var accent: RGBA { dark ? RGBA(hex: 0x0A84FF) : RGBA(hex: 0x007AFF) }
     var destructive: RGBA { dark ? RGBA(hex: 0xFF453A) : RGBA(hex: 0xFF3B30) }
     var windowBackground: RGBA { dark ? RGBA(hex: 0x1F1F1F) : RGBA(hex: 0xEDEDED) }
+    var popoverBackground: RGBA { dark ? RGBA(hex: 0x2B2B2B) : RGBA(hex: 0xF7F7F7) }
+    var popoverBorder: RGBA { dark ? RGBA(1, 1, 1, 0.16) : RGBA(0, 0, 0, 0.14) }
     var label: RGBA { dark ? RGBA(1, 1, 1, 0.85) : RGBA(0, 0, 0, 0.85) }
     var secondaryLabel: RGBA { dark ? RGBA(1, 1, 1, 0.55) : RGBA(0, 0, 0, 0.5) }
     var placeholder: RGBA { dark ? RGBA(1, 1, 1, 0.3) : RGBA(0, 0, 0, 0.3) }

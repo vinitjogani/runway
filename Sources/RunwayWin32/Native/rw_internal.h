@@ -102,7 +102,8 @@ struct rw_window {
     UINT_PTR timer = 0;
 
     // Direct2D state; valid between BeginDraw and EndDraw.
-    ID2D1HwndRenderTarget *rt = nullptr;
+    ID2D1RenderTarget *rt = nullptr;           // the window's, or a DC target (rich text layers)
+    ID2D1HwndRenderTarget *hwndRt = nullptr;   // the same object for a window (not a reference of its own)
     ID2D1SolidColorBrush *solid = nullptr;
     ID2D1SolidColorBrush *textBrush = nullptr;
     ID2D1Brush *paint = nullptr;           // solid or one of gradients
@@ -125,6 +126,7 @@ struct rw_window {
 
     // AppKit support.
     bool popup = false;
+    bool placed = false;                   // positioned by the app: not centred on show
     bool decorated = true;
     HCURSOR ownedCursor = nullptr;         // made from an image; destroyed with the window
     struct RwDropTarget *drop = nullptr;
@@ -157,6 +159,8 @@ void rwTrayMessage(WPARAM wp, LPARAM lp);
 extern const UINT rwTrayMessageId;
 HMENU rwMenuHandle(rw_menu *m);
 void rwMenuRelease(rw_menu *m);
+bool rwEnsureWIC();
+void rwPaintDC(rw_window *surface, HDC dc, RECT rc, UINT dpi, const void *underlay, int event, void *ctx, int button);
 SIZE rwOuterSize(HWND h, DWORD style, UINT dpi, double width, double height);
 
 #endif

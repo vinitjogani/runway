@@ -213,6 +213,13 @@ public struct WidgetProps: Equatable, Sendable {
     func showWithoutActivating()
     func close()
     func center()
+    /// Moves the window's outer top-left to a point on the desktop (top-left
+    /// desktop coordinates, points). Desktops that place windows themselves
+    /// (Wayland) ignore it.
+    func setPosition(_ topLeft: CGPoint)
+    /// Called with the outer top-left (desktop points) when the window moves,
+    /// where the desktop reports it.
+    var onMove: ((CGPoint) -> Void)? { get set }
     /// Called with the new content size when the user resizes.
     var onResize: ((CGSize) -> Void)? { get set }
     /// Return false to keep the window open.
@@ -224,6 +231,8 @@ public struct WidgetProps: Equatable, Sendable {
 
 extension NativeWindow {
     public func showWithoutActivating() { show() }
+    public func setPosition(_ topLeft: CGPoint) {}
+    public var onMove: ((CGPoint) -> Void)? { get { nil } set {} }
 }
 
 public struct KeyPress: Hashable, Sendable {

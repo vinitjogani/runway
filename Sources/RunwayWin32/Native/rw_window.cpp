@@ -361,10 +361,17 @@ extern "C" void rw_window_center(rw_window *w) {
     SetWindowPos(w->hwnd, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+extern "C" void rw_window_set_position(rw_window *w, double x, double y) {
+    if (!w || !w->hwnd) return;
+    w->placed = true;
+    double s = w->scale();
+    SetWindowPos(w->hwnd, nullptr, (int)lround(x * s), (int)lround(y * s), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 extern "C" void rw_window_show(rw_window *w) {
     if (!w->shown) {
         w->shown = true;
-        if (w->parent) rw_window_center(w);
+        if (w->parent && !w->placed) rw_window_center(w);
         if (w->modal && w->parent && w->parent->hwnd) EnableWindow(w->parent->hwnd, FALSE);
     }
     ShowWindow(w->hwnd, IsIconic(w->hwnd) ? SW_RESTORE : SW_SHOW);
@@ -480,7 +487,7 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
     }
     case WM_SIZE: {
         UINT width = LOWORD(lp), height = HIWORD(lp);
-        if (w->rt) w->rt->Resize(D2D1::SizeU(width, height));
+        if (w->hwndRt) w->hwndRt->Resize(D2D1::SizeU(width, height));
         if (wp != SIZE_MINIMIZED) {
             rw_event ev = {};
             ev.type = RW_EV_RESIZE;
@@ -491,6 +498,18 @@ static LRESULT CALLBACK windowProc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         }
         InvalidateRect(h, nullptr, FALSE);
         return 0;
+    }
+    case WM_MOVE: {
+        if (w->popup) break;
+        RECT r;
+        GetWindowRect(h, &r);
+        rw_event ev = {};
+        ev.type = RW_EV_MOVED;
+        ev.ctx = w->ctx;
+        ev.x = r.left / w->scale();
+        ev.y = r.top / w->scale();
+        rwSendEvent(ev);
+        break;
     }
     case WM_DPICHANGED: {
         w->dpi = HIWORD(wp);

@@ -30,11 +30,18 @@ import CRunwayWin32
         scale = window.scale
         fills.removeAll(keepingCapacity: true)
         frameInterval = nil
-        rw_draw_clear(n, (rw_window_backdrop(n) != 0 ? theme.windowBackground.withAlpha(0) : theme.windowBackground).rw)
+        let popover = window.popover != nil
+        let base = popover ? theme.popoverBackground : theme.windowBackground
+        rw_draw_clear(n, (rw_window_backdrop(n) != 0 && !popover ? base.withAlpha(0) : base).rw)
         window.beginEditPass()
         let bounds = CGRect(origin: .zero, size: window.contentSize)
         for c in window.root.children { paint(c, origin: .zero, clip: bounds, alpha: 1) }
         window.endEditPass()
+        if popover {
+            rw_draw_set_offset(n, 0, 0)
+            rw_draw_set_alpha(n, 1)
+            stroke(bounds, 0, theme.popoverBorder, width: hairline)
+        }
         rw_window_set_timer(n, frameInterval.map { Int32(($0 * 1000).rounded()) } ?? 0)
         n = nil
     }
