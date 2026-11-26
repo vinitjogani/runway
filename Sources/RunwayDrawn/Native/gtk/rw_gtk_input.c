@@ -8,7 +8,16 @@
 
 // MARK: The clipping container
 
-typedef struct { GtkWidget parent_instance; GtkWidget *child; int ox, oy, cw, ch; } RwClip;
+typedef struct {
+    GtkWidget parent_instance;
+    GtkWidget *child;
+    int ox, oy, cw, ch;
+    // Placement asked for while the window was painting, applied on idle
+    // (widgets can't move in the middle of a snapshot).
+    gboolean pending, pending_visible;
+    int pm[4], po[4];
+    guint idle;
+} RwClip;
 typedef struct { GtkWidgetClass parent_class; } RwClipClass;
 GType rw_clip_get_type(void);
 G_DEFINE_TYPE(RwClip, rw_clip, GTK_TYPE_WIDGET)
@@ -62,36 +71,55 @@ static void clip_set_child(GtkWidget *clipper, GtkWidget *child) {
     gtk_widget_set_parent(child, clipper);
 }
 
-void rwg_clipper_place(rw_window *w, GtkWidget *clipper, GtkWidget *child, double x, double y, double width, double height,
-                       double cx, double cy, double cw, double ch, int visible) {
-    (void)child;
-    double vx = fmax(x, cx), vy = fmax(y, cy);
-    double vr = fmin(x + width, cx + cw), vb = fmin(y + height, cy + ch);
-    gboolean show = visible && vr - vx >= 1 && vb - vy >= 1;
-    if (!show) {
+static void apply_place(RwClip *c, gboolean visible, const int m[4], const int o[4]) {
+    GtkWidget *clipper = GTK_WIDGET(c);
+    if (!visible) {
         if (gtk_widget_get_visible(clipper)) {
-            GtkWidget *f = gtk_root_get_focus(GTK_ROOT(gtk_widget_get_root(w->area)));
-            if (f && (f == child || gtk_widget_is_ancestor(f, clipper))) gtk_widget_grab_focus(w->area);
+            GtkRoot *root = gtk_widget_get_root(clipper);
+            GtkWidget *f = root ? gtk_root_get_focus(root) : NULL;
+            if (f && (f == c->child || gtk_widget_is_ancestor(f, clipper))) gtk_root_set_focus(root, NULL);
             gtk_widget_set_visible(clipper, FALSE);
         }
         return;
     }
-    RwClip *c = (RwClip *)clipper;
-    int nx = (int)lround(x - vx), ny = (int)lround(y - vy), nw = (int)lround(width), nh = (int)lround(height);
-    int mx = (int)lround(vx), my = (int)lround(vy), sw = (int)lround(vr - vx), sh = (int)lround(vb - vy);
-    gboolean changed = c->ox != nx || c->oy != ny || c->cw != nw || c->ch != nh ||
-                       gtk_widget_get_margin_start(clipper) != mx || gtk_widget_get_margin_top(clipper) != my;
+    gboolean changed = c->ox != o[0] || c->oy != o[1] || c->cw != o[2] || c->ch != o[3] ||
+                       gtk_widget_get_margin_start(clipper) != m[0] || gtk_widget_get_margin_top(clipper) != m[1];
     int rw = 0, rh = 0;
     gtk_widget_get_size_request(clipper, &rw, &rh);
-    changed = changed || rw != sw || rh != sh;
-    c->ox = nx; c->oy = ny; c->cw = nw; c->ch = nh;
+    changed = changed || rw != m[2] || rh != m[3];
+    c->ox = o[0]; c->oy = o[1]; c->cw = o[2]; c->ch = o[3];
     if (changed) {
-        gtk_widget_set_margin_start(clipper, mx);
-        gtk_widget_set_margin_top(clipper, my);
-        gtk_widget_set_size_request(clipper, sw, sh);
+        gtk_widget_set_margin_start(clipper, m[0]);
+        gtk_widget_set_margin_top(clipper, m[1]);
+        gtk_widget_set_size_request(clipper, m[2], m[3]);
         gtk_widget_queue_allocate(clipper);
     }
     if (!gtk_widget_get_visible(clipper)) gtk_widget_set_visible(clipper, TRUE);
+}
+
+static gboolean apply_pending(gpointer data) {
+    RwClip *c = data;
+    c->idle = 0;
+    if (c->pending) { c->pending = FALSE; apply_place(c, c->pending_visible, c->pm, c->po); }
+    g_object_unref(c);
+    return G_SOURCE_REMOVE;
+}
+
+void rwg_clipper_place(rw_window *w, GtkWidget *clipper, GtkWidget *child, double x, double y, double width, double height,
+                       double cx, double cy, double cw, double ch, int visible) {
+    (void)child;
+    RwClip *c = (RwClip *)clipper;
+    double vx = fmax(x, cx), vy = fmax(y, cy);
+    double vr = fmin(x + width, cx + cw), vb = fmin(y + height, cy + ch);
+    gboolean show = visible && vr - vx >= 1 && vb - vy >= 1;
+    int m[4] = {(int)lround(vx), (int)lround(vy), (int)lround(vr - vx), (int)lround(vb - vy)};
+    int o[4] = {(int)lround(x - vx), (int)lround(y - vy), (int)lround(width), (int)lround(height)};
+    if (!w->cr) { c->pending = FALSE; apply_place(c, show, m, o); return; }
+    c->pending = TRUE;
+    c->pending_visible = show;
+    memcpy(c->pm, m, sizeof m);
+    memcpy(c->po, o, sizeof o);
+    if (!c->idle) c->idle = g_idle_add_full(G_PRIORITY_HIGH_IDLE, apply_pending, g_object_ref(c), NULL);
 }
 
 // MARK: Presses in native children

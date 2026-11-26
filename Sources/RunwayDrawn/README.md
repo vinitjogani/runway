@@ -1,6 +1,6 @@
-# RunwayWin32
+# RunwayDrawn
 
-The Windows backend: `Win32Backend: Backend`. It runs unchanged SwiftUI apps
+The drawn backend: `DrawnBackend: Backend` (`Win32Backend` is an alias). It runs unchanged SwiftUI apps
 on Windows 10 (1703+) and 11, with controls drawn to look like the Mac's rather
 than like Win32 common controls.
 
@@ -42,28 +42,42 @@ than like Win32 common controls.
   (macOS sound names mapped to Windows events), `IFileOpenDialog` /
   `IFileSaveDialog`, and alerts drawn as Mac-style modal windows.
 
+## One backend, two platforms
+
+The Swift half never touches platform types: it speaks the flat C API in
+`Native/include/runway_drawn.h`. That API has two bindings:
+
+- `Native/win32/` — Win32, Direct2D, DirectWrite, WIC, DWM, OLE and the Shell
+  (C++). The default backend on Windows.
+- `Native/gtk/` — GTK 4, Cairo and Pango (C): windows with a drawing area,
+  native `GtkText`/`GtkTextView` children for text input in clipping
+  containers, popovers for popups, GMenu menu bars and context menus. Opt-in
+  on Linux with `RUNWAY_BACKEND=drawn`; RunwayGTK stays the default there
+  until the drawn backend has reached parity.
+
+So controls, layout, input routing and AppKit's view system (raw window
+events, monitors, menus, cursors, drag and drop, popovers, rich text views
+with layers, CGDisplayList replay) are written once.
+
+Fonts: Inter (for San Francisco) and JetBrains Mono (for SF Mono and Menlo),
+under the SIL Open Font License, are compiled into every app (CRunwayFonts)
+and registered at start; `RUNWAY_SYSTEM_FONTS=1` uses the desktop's fonts.
+SF Symbols are drawn from Runway's vector art (`SymbolPaths`), not fonts.
+
 ## Verification
 
-This module has not been compiled with Swift for Windows here. No Windows
-Swift SDK can be installed for cross-compilation on Linux, and `WinSDK` needs
-Microsoft's SDK headers. What was checked:
-
-- `Native/*.cpp` compile warning-free with Clang and GCC (C++14) against the
-  mingw-w64 Windows headers. They also link into a Windows executable, where
-  every Win32/D2D/DWrite/Shell import resolves.
-- That executable runs under Wine. Tests cover the window, DPI scale, Direct2D
-  drawing (checked by reading back pixels and a screenshot), DirectWrite
-  measurement (wrapping, line limits, truncation), EDIT text and line-break
-  round trips, clipboard text and files, and key mapping.
-- The Swift files type-check against `RunwayCore` and the C header. They were
-  also run on Linux over a recording stub of the C API, driving the Runway
-  Gallery: painting, clicks, typing and submit, pop-up and segmented pickers,
-  sheets, alerts, the slider, switch animation, wheel scrolling, resize, ⌘Q,
-  and dark mode.
+The backend is cross-compiled with the Swift 6.4 Windows SDK (SwiftPM's
+native build system, Microsoft's SDK and CRT via xwin) and run under Wine 9:
+the Runway Gallery and Merge, including its inbox, diffs, inline comments
+(RichEdit composer with drawn placeholders), popovers, the native menu bar,
+settings, the agent panel and its model picker. On Linux the GTK binding runs
+the same apps under Xvfb. `RUNWAY_DEBUG_INPUT=1` logs how presses are routed;
+Ctrl+Shift+F12 dumps a window's widget tree to stderr.
 
 ## Known gaps
 
-No accessibility tree (UI Automation) for the custom-drawn controls, no
-tooltips, no keyboard focus for non-text controls (Tab moves between text
-fields, as on the Mac by default), no text selection in `Text`, and no drag and
-drop. The EDIT font is GDI Segoe UI rather than Segoe UI Variable.
+No accessibility tree (UI Automation / AT-SPI) for the custom-drawn controls
+yet, no tooltips, no keyboard focus for non-text controls (Tab moves between
+text fields, as on the Mac by default), no text selection in `Text`, and no
+dragging out of the app (drops in work). On Linux, GTK 4 can't place windows
+(`setPosition` is ignored).

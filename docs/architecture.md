@@ -24,7 +24,7 @@ toolkit.
         ▼  services); layout is computed above it, identical everywhere
  RunwayGTK (Linux)      GTK 4 widgets in an absolute-layout container, Cairo,
                         GdkPixbuf, GIO, D-Bus FileManager1, GtkFileDialog…
- RunwayWin32 (Windows)  custom-drawn controls, DirectWrite, Windows shell APIs
+ RunwayDrawn            custom-drawn controls over Win32/D2D (Windows) or GTK/Cairo (Linux)
  HeadlessBackend        no display: tests, CI, `--headless`
 ```
 
@@ -51,9 +51,9 @@ This keeps them small and makes every platform lay out the same way.
 - **RunwayGTK** (Linux): GTK 4 widgets, Mac-styled, in an absolute-layout
   container; drawing with Cairo and Pango. See
   [native mappings](frameworks/native-mappings.md).
-- **RunwayWin32** (Windows): lightweight custom-drawn widgets painted with
-  Direct2D, with native `EDIT` controls for text input. See the
-  [Win32 backend README](../Sources/RunwayWin32/README.md) for its design,
+- **RunwayDrawn** (Windows; Linux with `RUNWAY_BACKEND=drawn`): lightweight
+  custom-drawn widgets over a flat C layer, Direct2D on Windows and Cairo on
+  Linux, with native text inputs. See the [drawn backend README](../Sources/RunwayDrawn/README.md) for its design,
   how it has been verified, and known gaps.
 - **HeadlessBackend** (in RunwayCore): no display, for tests, CI and
   `--headless`. Select it with `RUNWAY_BACKEND=headless`.
@@ -67,7 +67,7 @@ Sources/SwiftUI            the SwiftUI layer
 Sources/AppKit             the AppKit slice (Interface Builder loading in InterfaceBuilder/)
 Sources/RunwayCore         backend contract, paint/font model, headless backend
 Sources/RunwayGTK          Linux backend (+ CRunwayGtk: the absolute-layout container, dialogs)
-Sources/RunwayWin32        Windows backend (Swift half; Native/ is its C/C++ half)
+Sources/RunwayDrawn        Drawn backend (Swift half; Native/win32 and Native/gtk are its C layers)
 Sources/RunwayPlatform     picks the backend (RUNWAY_BACKEND=headless for none)
 Sources/<Apple framework>  shims (CoreGraphics, ImageIO, Security, …)
 Sources/runway             the build tool

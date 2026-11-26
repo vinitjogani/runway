@@ -48,9 +48,9 @@ the app.
 - Add tests next to the area you change (`Tests/RunwayTests` for SwiftUI,
   `Tests/AppKitTests`, `Tests/FrameworkTests`, `Tests/RunwayToolTests` for
   the importers). They run against the headless backend.
-- Windows changes can't be compiled with Swift for Windows on Linux yet; see
-  how the backend is verified in its
-  [README](Sources/RunwayWin32/README.md#verification).
+- Drawn-backend changes can be tried on Linux with `RUNWAY_BACKEND=drawn`;
+  see how the Windows side is cross-compiled and verified in its
+  [README](Sources/RunwayDrawn/README.md#verification).
 
 ## Website and brand
 

@@ -27,7 +27,7 @@ What each Apple API is backed by on each platform. "(to do)" marks gaps.
 | `Table`, `NSViewRepresentable` | SwiftUI table; representables join the hosting view's AppKit hierarchy | table only |
 
 For the Windows backend's controls, look and services in detail, see the
-[Win32 backend README](../../Sources/RunwayWin32/README.md).
+[Win32 backend README](../../Sources/RunwayDrawn/README.md).
 
 ## Text views
 
