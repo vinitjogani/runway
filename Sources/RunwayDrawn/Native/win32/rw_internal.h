@@ -38,6 +38,7 @@
 #include <mmsystem.h>
 #include <ole2.h>
 #include <richedit.h>
+#include <commctrl.h>
 
 #include <math.h>
 #include <string.h>
@@ -134,6 +135,7 @@ struct rw_window {
     struct RwDropTarget *drop = nullptr;
     unsigned downKeys[16] = {0};           // keys held, for repeats
     int downCount = 0;
+    HWND tooltip = nullptr;
 
     double scale() const { return dpi / 96.0; }
 };

@@ -155,6 +155,8 @@ rw_window *rw_popup_create(rw_window *owner, void *ctx);
 void rw_popup_place(rw_window *popup, double x, double y, double width, double height);
 // Where `w`'s client origin is in `other`'s client DIPs.
 void rw_window_offset_in(rw_window *w, rw_window *other, double *x, double *y);
+// A tooltip at (x, y) in the window's DIPs (the pointer); NULL hides it.
+void rw_window_set_tooltip(rw_window *w, const char *text, double x, double y);
 void rw_window_set_cursor_image(rw_window *w, int width, int height, const uint8_t *rgba, int hot_x, int hot_y);
 void rw_window_set_decorated(rw_window *w, int decorated);
 void rw_window_begin_move(rw_window *w);

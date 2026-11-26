@@ -356,10 +356,38 @@ public struct ContentTransition: Sendable {
     public static func symbolEffect<T: SymbolEffect>(_ effect: T, options: SymbolEffectOptions = .default) -> ContentTransition { ContentTransition() }
 }
 
+/// Liquid Glass. Without a live blur of what's behind, it's drawn as the
+/// Mac shows it over a calm background: a frosted fill in the shape, a
+/// bright rim with a faint outer edge, a soft shadow, and the tint.
 public struct Glass: Sendable {
-    public static let regular = Glass(), clear = Glass(), identity = Glass()
-    public func tint(_ c: Color?) -> Glass { self }
+    var tintColor: Color?
+    var isClear = false
+    var isIdentity = false
+    public static let regular = Glass()
+    public static let clear = Glass(isClear: true)
+    public static let identity = Glass(isIdentity: true)
+    public func tint(_ c: Color?) -> Glass { var g = self; g.tintColor = c; return g }
     public func interactive(_ on: Bool = true) -> Glass { self }
+}
+
+/// The surface glassEffect draws behind its content.
+struct GlassSurface<S: Shape>: View {
+    let shape: S
+    let glass: Glass
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let dark = scheme == .dark
+        let frost = dark ? Color.white.opacity(glass.isClear ? 0.05 : 0.10) : Color.white.opacity(glass.isClear ? 0.38 : 0.74)
+        ZStack {
+            shape.fill(frost)
+            if let t = glass.tintColor { shape.fill(t) }
+            // The rim: a highlight inside, a faint edge outside.
+            shape.stroke(Color.black.opacity(dark ? 0.5 : 0.13), lineWidth: 1)
+            shape.stroke(Color.white.opacity(dark ? 0.14 : 0.9), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(dark ? 0.30 : 0.08), radius: 5, x: 0, y: 1.5)
+        .allowsHitTesting(false)
+    }
 }
 
 public struct ScrollEdgeEffectStyle: Sendable {
@@ -431,7 +459,14 @@ extension View {
     public func contentTransition(_ t: ContentTransition) -> some View { self }
     public func symbolEffect<E: SymbolEffect>(_ effect: E, options: SymbolEffectOptions = .default, isActive: Bool = true) -> some View { self }
     public func symbolEffect<E: SymbolEffect, U: Equatable>(_ effect: E, options: SymbolEffectOptions = .default, value: U) -> some View { self }
-    public func glassEffect(_ glass: Glass = .regular, in shape: some Shape = Capsule(), isEnabled: Bool = true) -> some View { self }
+    @ViewBuilder
+    public func glassEffect<S: Shape>(_ glass: Glass = .regular, in shape: S = Capsule(), isEnabled: Bool = true) -> some View {
+        if isEnabled, !glass.isIdentity {
+            self.background { GlassSurface(shape: shape, glass: glass) }
+        } else {
+            self
+        }
+    }
     public func glassEffectID<ID: Hashable>(_ id: ID, in namespace: Namespace.ID) -> some View { self }
     public func scrollEdgeEffectStyle(_ style: ScrollEdgeEffectStyle?, for edges: Edge.Set) -> some View { self }
     public func scrollBounceBehavior(_ behavior: ScrollBounceBehavior, axes: Axis.Set = [.vertical]) -> some View { self }

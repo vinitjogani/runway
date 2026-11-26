@@ -59,6 +59,10 @@ enum Drag {
     var clickCount = 1
     var lastClick: (time: Double, point: CGPoint, button: Int)?
     var pressChain: [DrawnWidget] = []
+    // Tooltips: the text under the pointer, shown after a pause.
+    var tooltipText: String?
+    var tooltipShown = false
+    var tooltipGeneration = 0
     var hoverChain: [DrawnWidget] = []
     weak var focusedContainer: DrawnWidget?
     var menuBar: MenuBarState?
@@ -159,16 +163,20 @@ enum Drag {
             for c in pressChain { _ = deliver(.dragged, to: c, at: point) }
             mouseMoved(point)
             updateHover(point)
+            updateTooltip(buttonsDown == 0 ? point : nil)
             _ = sendRaw(.mouseMoved, at: point, mods: mods)
         case RW_EV_MOUSE_LEAVE:
             mouseMoved(CGPoint(x: -1e6, y: -1e6))
             if pressChain.isEmpty { updateHover(CGPoint(x: -1e6, y: -1e6)) }
+            if DrawnBackend.debugInput { FileHandle.standardError.write("leave\n".data(using: .utf8)!) }
+            updateTooltip(nil)
             if pointerInside {
                 pointerInside = false
                 _ = sendRaw(.mouseExited, at: mouse, mods: RawModifiers(ev.mods))
             }
         case RW_EV_MOUSE_DOWN:
             let b = Int(ev.button)
+            updateTooltip(nil)
             countClick(point, button: b)
             buttonsDown |= 1 << b
             keyModifiers = KeyModifiers(raw: RawModifiers(ev.mods))
@@ -198,7 +206,9 @@ enum Drag {
                 _ = rawHandler?(e)
             }
         case RW_EV_KEY_DOWN: return key(Int(ev.key), mods: ev.mods)
-        case RW_EV_RAW_KEY: return rawKey(ev)
+        case RW_EV_RAW_KEY:
+            if ev.flags & UInt32(RW_KEY_UP) == 0 { updateTooltip(nil) }
+            return rawKey(ev)
         case RW_EV_ACTIVATE:
             let active = ev.button != 0
             activationHandler?(active)
@@ -296,6 +306,30 @@ enum Drag {
         for c in now {
             if !old.contains(where: { $0 === c }) { deliver(.entered, to: c, at: p) }
             deliver(.moved, to: c, at: p)
+        }
+    }
+
+    /// The tooltip of what's under `p` (the innermost widget with one),
+    /// shown after a pause as on the Mac and hidden once the pointer
+    /// leaves it, presses or types (nil).
+    func updateTooltip(_ p: CGPoint?) {
+        let text = p.flatMap { point in pick(point).reversed().lazy.compactMap { $0.props.tooltip }.first { !$0.isEmpty } }
+        guard text != tooltipText else { return }
+        if DrawnBackend.debugInput { FileHandle.standardError.write("tooltip \(text ?? "-")\n".data(using: .utf8)!) }
+        tooltipText = text
+        tooltipGeneration += 1
+        if tooltipShown, let n = native {
+            rw_window_set_tooltip(n, nil, 0, 0)
+            tooltipShown = false
+        }
+        guard let text else { return }
+        let generation = tooltipGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.tooltipGeneration == generation, let n = self.native else { return }
+                self.tooltipShown = true
+                rw_window_set_tooltip(n, text, Double(self.mouse.x), Double(self.mouse.y))
+            }
         }
     }
 

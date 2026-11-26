@@ -266,6 +266,41 @@ extern "C" void rw_window_set_cursor_image(rw_window *w, int width, int height, 
     if (WindowFromPoint(p) == w->hwnd) SetCursor(c);
 }
 
+extern "C" void rw_window_set_tooltip(rw_window *w, const char *text, double x, double y) {
+    if (!w || !w->hwnd) return;
+    TOOLINFOW ti = {};
+    ti.cbSize = sizeof(ti);
+    ti.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+    ti.hwnd = w->hwnd;
+    ti.uId = 1;
+    if (!text || !*text) {
+        if (w->tooltip) SendMessageW(w->tooltip, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
+        return;
+    }
+    if (!w->tooltip) {
+        static bool initialised = false;
+        if (!initialised) {
+            INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_WIN95_CLASSES};
+            InitCommonControlsEx(&icc);
+            initialised = true;
+        }
+        w->tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+                                     CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, w->hwnd, nullptr, rwG.instance, nullptr);
+        if (!w->tooltip) return;
+        ti.lpszText = (LPWSTR)L"";
+        SendMessageW(w->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+        SendMessageW(w->tooltip, TTM_SETMAXTIPWIDTH, 0, (LPARAM)lround(320 * w->scale()));
+    }
+    std::wstring t = rwWiden(text);
+    ti.lpszText = &t[0];
+    SendMessageW(w->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+    // Below the pointer's hot spot, as the Mac places them.
+    POINT p = {(LONG)lround(x * w->scale()), (LONG)lround((y + 20) * w->scale())};
+    ClientToScreen(w->hwnd, &p);
+    SendMessageW(w->tooltip, TTM_TRACKPOSITION, 0, MAKELPARAM(p.x, p.y));
+    SendMessageW(w->tooltip, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
+}
+
 static DWORD decoratedStyle(rw_window *w) {
     if (!w->decorated) return WS_POPUP | WS_CLIPCHILDREN | (w->resizable ? WS_THICKFRAME : 0);
     return w->resizable ? WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN

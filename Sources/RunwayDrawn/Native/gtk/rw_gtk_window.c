@@ -601,6 +601,17 @@ void rw_window_set_cursor_image(rw_window *w, int width, int height, const uint8
     gtk_widget_set_cursor(w->area, w->cursor);
 }
 
+void rw_window_set_tooltip(rw_window *w, const char *text, double x, double y) {
+    (void)x; (void)y;   // GTK places it by the pointer
+    if (!w || !w->area) return;
+    const char *now = gtk_widget_get_tooltip_text(w->area);
+    if ((!text || !*text) && !now) return;
+    if (text && now && !strcmp(text, now)) return;
+    gtk_widget_set_tooltip_text(w->area, text && *text ? text : NULL);
+    // Shown now (the Swift half waited already), not on the next motion.
+    if (text && *text) gtk_widget_trigger_tooltip_query(w->area);
+}
+
 void rw_window_capture(rw_window *w, int on) { (void)w; (void)on; }   // GTK grabs the pointer while a button is down
 
 static gboolean timer_cb(gpointer data) {
